@@ -1,45 +1,54 @@
-def materialdefinition_parse(lines):
-    materials = []
-    current_material = None
-    in_simple_sprite_inst = False
+def materialdefinition_parse(r, parse_property):
+    material = {}
 
-    for line in lines:
-        line = line.strip()
+    # Parse MATERIALDEFINITION
+    records = parse_property(r, "MATERIALDEFINITION", 1)
+    material['name'] = records[1]
 
-        if line.startswith("TAG") and not in_simple_sprite_inst:
-            if current_material:
-                materials.append(current_material)
-            current_material = {
-                'name': line.split('"')[1],
-                'rendermethod': '',
-                'rgbpen': (1.0, 1.0, 1.0),
-                'brightness': 0.0,
-                'scaledambient': 0.75,
-                'texture_tag': ''
-            }
-        elif current_material is not None:
-            if line.startswith("RENDERMETHOD"):
-                # Extract the method without the parentheses
-                current_material['rendermethod'] = line.split('"')[1]
-            elif line.startswith("RGBPEN"):
-                parts = line.split()
-                current_material['rgbpen'] = (
-                    int(parts[1]) / 255.0,
-                    int(parts[2]) / 255.0,
-                    int(parts[3]) / 255.0
-                )
-            elif line.startswith("BRIGHTNESS"):
-                current_material['brightness'] = float(line.split()[1])
-            elif line.startswith("SCALEDAMBIENT"):
-                current_material['scaledambient'] = float(line.split()[1])
-            elif line.startswith("SIMPLESPRITEINST"):
-                in_simple_sprite_inst = True
-            elif line.startswith("ENDSIMPLESPRITEINST"):
-                in_simple_sprite_inst = False
-            elif in_simple_sprite_inst and line.startswith("TAG"):
-                current_material['texture_tag'] = line.split('"')[1]
+    # Parse VARIATION
+    records = parse_property(r, "VARIATION", 1)
+    material['variation'] = int(records[1])
 
-    if current_material:
-        materials.append(current_material)
+    # Parse RENDERMETHOD
+    records = parse_property(r, "RENDERMETHOD", 1)
+    material['rendermethod'] = records[1]
 
-    return materials
+    # Parse RGBPEN
+    records = parse_property(r, "RGBPEN", 4)
+    material['rgbpen'] = (
+        int(records[1]) / 255.0,
+        int(records[2]) / 255.0,
+        int(records[3]) / 255.0
+    )
+
+    # Parse BRIGHTNESS
+    records = parse_property(r, "BRIGHTNESS", 1)
+    material['brightness'] = float(records[1])
+
+    # Parse SCALEDAMBIENT
+    records = parse_property(r, "SCALEDAMBIENT", 1)
+    material['scaledambient'] = float(records[1])
+
+    # Parse SIMPLESPRITEINST block
+    records = parse_property(r, "SIMPLESPRITEINST", 0)
+
+    # Parse TAG within SIMPLESPRITEINST
+    records = parse_property(r, "TAG", 1)
+    material['texture_tag'] = records[1]
+
+    # Parse HEXFIFTYFLAG
+    records = parse_property(r, "HEXFIFTYFLAG", 1)
+    material['hexfiftyflag'] = int(records[1])
+
+    # Parse PAIRS? and handle NULL
+    records = parse_property(r, "PAIRS?", 2)
+    if records[1] != "NULL":
+        material['pairs'] = (int(records[1]), float(records[2]))
+    else:
+        material['pairs'] = None
+
+    # Parse HEXONEFLAG
+    records = parse_property(r, "HEXONEFLAG", 1)
+    material['hexoneflag'] = int(records[1])
+
+    return material
