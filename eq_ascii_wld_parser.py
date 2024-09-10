@@ -1,65 +1,115 @@
+import io
 import os
+import shlex
 import sys
 
-# Manually set the directory containing your scripts
-script_dir = r'C:\Users\dariu\Documents\Quail\Importer'  # Replace with the actual path
-print(f"Script directory: {script_dir}")  # Check the path
-if script_dir not in sys.path:
-    sys.path.append(script_dir)
+# Function to open and initiate the parsing
+def parse(filepath: str):
+    with open(filepath, 'r') as file:
+        data = file.read()
+    r = io.StringIO(data)
+    try:
+        return parse_definitions(r)
+    except Exception as e:
+        raise Exception(f"Error while parsing: {e}") from e
 
-from main_parse import main_parse
-from material_palette_parse import material_palette_parse
-from dmspritedef2_parse import dmspritedef2_parse
-from hierarchicalspritedef_parse import hierarchicalspritedef_parse
-from track_parse import track_parse
-from polyhedrondefinition_parse import polyhedrondefinition_parse
-from simplespritedef_parse import simplespritedef_parse
-from materialdefinition_parse import materialdefinition_parse
+# Main function to handle definition switching and return results
+def parse_definitions(r: io.TextIOWrapper = None):
+    if r is None:
+        raise Exception("reader is none")
 
-def eq_ascii_parse(filepath):
-    def recursive_parse(filepath, parsed_sections=None, include_paths=None):
-        if parsed_sections is None:
-            parsed_sections = {}
-        if include_paths is None:
-            include_paths = []
-
-        sections, includes = main_parse(filepath)
-
-        # Merge sections into parsed_sections
-        for section, instances in sections.items():
-            if section not in parsed_sections:
-                parsed_sections[section] = []
-            parsed_sections[section].extend(instances)
-
-        # Process INCLUDE statements
-        for include in includes:
-            include_path = os.path.join(os.path.dirname(filepath), include)
-            if include_path not in include_paths:
-                include_paths.append(include_path)
-                recursive_parse(include_path, parsed_sections, include_paths)
-
-        return parsed_sections, include_paths
-
-    # Start the recursive parsing from the main file
-    parsed_sections, include_paths = recursive_parse(filepath)
-
-    # Parse material palettes
     material_palettes = {}
-    for instance in parsed_sections.get('MATERIALPALETTE', []):
-        material_palette = material_palette_parse(instance)
-        if material_palette['name']:
-            material_palettes[material_palette['name']] = material_palette['materials']
-
-    # Parse DMSPRITEDEF2 sections
     meshes = []
-    for instance in parsed_sections.get('DMSPRITEDEF2', []):
-        dmspritedef2, inner_sections = dmspritedef2_parse(instance)
-        meshes.append(dmspritedef2)
-
-    # Parse HIERARCHICALSPRITEDEF sections
     armature_data = None
-    for instance in parsed_sections.get('HIERARCHICALSPRITEDEF', []):
-        armature_data = hierarchicalspritedef_parse(instance)
+    polyhedrons = []
+    textures = {}
+    materials = []
+    track_definitions = []
+    includes = []
+
+    for line in r:
+        line = line.strip()
+        if not line or line.startswith("//"):
+            continue
+
+        if line.startswith("INCLUDE"):
+            include = shlex.split(line)[1].strip('"')
+            includes.append(include)
+            include_filepath = os.path.join(os.path.dirname(r.name), include)
+            print(f"Processing INCLUDE file: {include_filepath}")
+            # Parse the include file recursively
+            include_results = parse(include_filepath)
+            # Unpack the include file results and merge with the main results
+            meshes.extend(include_results[0])
+            if include_results[1]:
+                armature_data = include_results[1]
+            track_definitions.extend(include_results[2])
+            material_palettes.update(include_results[3])
+            polyhedrons.extend(include_results[5])
+            textures.update(include_results[6])
+            materials.extend(include_results[7])
+        elif line.startswith("MATERIALPALETTE"):
+            from material_palette_parse import material_palette_parse
+            material_palette = material_palette_parse(r, parse_property)
+            if material_palette['name']:
+                material_palettes[material_palette['name']] = material_palette['materials']
+        elif line.startswith("DMSPRITEDEF2"):
+            from dmspritedef2_parse import dmspritedef2_parse
+            dmsprite, inner_sections = dmspritedef2_parse(r, parse_property)
+            meshes.append(dmsprite)
+        elif line.startswith("TRACKDEFINITION"):
+            from track_parse import trackdefinition_parse
+            track_def = trackdefinition_parse(r, parse_property)
+            track_definitions.append(track_def)
+        elif line.startswith("TRACKINSTANCE"):
+            from track_parse import trackinstance_parse
+            track_instance = trackinstance_parse(r, parse_property)
+            track_definitions.append(track_instance)
+        elif line.startswith("HIERARCHICALSPRITEDEF"):
+            from hierarchicalspritedef_parse import hierarchicalspritedef_parse
+            armature_data = hierarchicalspritedef_parse(r, parse_property)
+        elif line.startswith("POLYHEDRONDEFINITION"):
+            from polyhedrondefinition_parse import polyhedrondefinition_parse
+            polyhedron = polyhedrondefinition_parse(r, parse_property)
+            polyhedrons.append(polyhedron)
+        elif line.startswith("SIMPLESPRITEDEF"):
+            from simplespritedef_parse import simplespritedef_parse
+            sprite_textures = simplespritedef_parse(r, parse_property)
+            if sprite_textures:
+                textures.update(sprite_textures)
+        elif line.startswith("MATERIALDEFINITION"):
+            from materialdefinition_parse import materialdefinition_parse
+            material_defs = materialdefinition_parse(r, parse_property)
+            materials.extend(material_defs)
+
+    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials
+
+# Shared utility function to parse a single property and validate it
+def parse_property(r: io.TextIOWrapper = None, property: str = "", num_args: int = -1) -> list[str]:
+    if r is None:
+        raise Exception("reader is none")
+    if property == "":
+        raise Exception("empty property")
+
+    for line in r:
+        if "//" in line:
+            line = line.split("//")[0]
+        line = line.strip()
+        if not line:
+            continue
+        records = shlex.split(line)
+        if len(records) == 0:
+            raise Exception(f"{property}: empty records ({line})")
+        if records[0] != property:
+            raise Exception(f"{property}: expected {property} got {records[0]}")
+        if num_args != -1 and len(records) - 1 != num_args:
+            raise Exception(f"{property}: expected {num_args} arguments, got {len(records) - 1}")
+        return records
+
+# Main function to start parsing from the main file
+def eq_ascii_parse(filepath):
+    # Start parsing the main file
+    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials = parse(filepath)
 
     # Debug print to display the collected armature data
     if armature_data:
@@ -67,36 +117,9 @@ def eq_ascii_parse(filepath):
         for key, value in armature_data.items():
             print(f"{key}: {value}")
 
-    # Parse POLYHEDRONDEFINITION sections
-    polyhedrons = []
-    for instance in parsed_sections.get('POLYHEDRONDEFINITION', []):
-        polyhedron = polyhedrondefinition_parse(instance)
-        polyhedrons.append(polyhedron)
-
-    # Parse SIMPLESPRITEDEF sections
-    textures = {}
-    for instance in parsed_sections.get('SIMPLESPRITEDEF', []):
-        sprite_textures = simplespritedef_parse(instance)
-        if sprite_textures:
-            textures.update(sprite_textures)
-
-    # Parse MATERIALDEFINITION sections
-    materials = []
-    for instance in parsed_sections.get('MATERIALDEFINITION', []):
-        material_defs = materialdefinition_parse(instance)
-        materials.extend(material_defs)
-
-    # Get the base name for the main object
-    base_name = os.path.splitext(os.path.basename(filepath))[0]
-    base_name = base_name.upper()
-
-    # Parse track definitions and instances
-    track_definitions = track_parse(parsed_sections, base_name)
-
-    return meshes, armature_data, track_definitions, material_palettes, include_paths, polyhedrons, textures, materials
+    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials
 
 if __name__ == '__main__':
-    # Example usage:
     filepath = r"C:\Users\dariu\Documents\Quail\crushbone.quail\r.mod"
     meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials = eq_ascii_parse(filepath)
 
