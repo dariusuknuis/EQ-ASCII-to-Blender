@@ -14,7 +14,7 @@ def materialdefinition_parse(r, parse_property):
     material['rendermethod'] = records[1]
 
     # Parse RGBPEN
-    records = parse_property(r, "RGBPEN", 4)
+    records = parse_property(r, "RGBPEN", 3)
     material['rgbpen'] = (
         int(records[1]) / 255.0,
         int(records[2]) / 255.0,
