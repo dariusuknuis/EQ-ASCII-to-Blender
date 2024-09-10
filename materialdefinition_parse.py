@@ -14,11 +14,12 @@ def materialdefinition_parse(r, parse_property):
     material['rendermethod'] = records[1]
 
     # Parse RGBPEN
-    records = parse_property(r, "RGBPEN", 3)
+    records = parse_property(r, "RGBPEN", 4)
     material['rgbpen'] = (
         int(records[1]) / 255.0,
         int(records[2]) / 255.0,
-        int(records[3]) / 255.0
+        int(records[3]) / 255.0,
+        int(records[4]) / 255.0
     )
 
     # Parse BRIGHTNESS
@@ -44,8 +45,6 @@ def materialdefinition_parse(r, parse_property):
     records = parse_property(r, "PAIRS?", 2)
     if records[1] != "NULL":
         material['pairs'] = (int(records[1]), float(records[2]))
-    else:
-        material['pairs'] = None
 
     # Parse HEXONEFLAG
     records = parse_property(r, "HEXONEFLAG", 1)
