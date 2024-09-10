@@ -76,7 +76,7 @@ def parse_definitions(r: io.TextIOWrapper = None):
         elif line.startswith("MATERIALDEFINITION"):
             from materialdefinition_parse import materialdefinition_parse
             material_defs = materialdefinition_parse(r, parse_property)
-            materials.extend(material_defs)
+            materials.append(material_defs)
 
     return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials
 
