@@ -42,7 +42,7 @@ def parse_definitions(r: io.TextIOWrapper = None):
             # Unpack the include file results and merge with the main results
             meshes.extend(include_results[0])
             if include_results[1]:
-                armature_data = include_results[1]
+            armature_data = include_results[1]
             track_definitions.extend(include_results[2])
             material_palettes.update(include_results[3])
             polyhedrons.extend(include_results[5])
@@ -58,13 +58,9 @@ def parse_definitions(r: io.TextIOWrapper = None):
             dmsprite, inner_sections = dmspritedef2_parse(r, parse_property)
             meshes.append(dmsprite)
         elif line.startswith("TRACKDEFINITION"):
-            from track_parse import trackdefinition_parse
-            track_def = trackdefinition_parse(r, parse_property)
-            track_definitions.append(track_def)
+            track_definitions.append(trackdefinition_parse(r, parse_property))
         elif line.startswith("TRACKINSTANCE"):
-            from track_parse import trackinstance_parse
-            track_instance = trackinstance_parse(r, parse_property)
-            track_definitions.append(track_instance)
+            track_definitions.append(trackinstance_parse(r, parse_property))
         elif line.startswith("HIERARCHICALSPRITEDEF"):
             from hierarchicalspritedef_parse import hierarchicalspritedef_parse
             armature_data = hierarchicalspritedef_parse(r, parse_property)
