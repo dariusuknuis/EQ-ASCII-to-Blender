@@ -1,120 +1,98 @@
 import re
 
-def simplespritedef_parse(lines):
-    textures = {}
-    current_texture = None
-    current_frames = []
-    sleep_time = None
-    animated_frame_count = 0
-    tiled_frame_count = 0  # Variable to keep track of the number of "tiled" frames
+def simplespritedef_parse(r, parse_property):
+    texture = {}
 
-    # Regular expression to check for a number before the file extension
+    # Parse SIMPLESPRITEDEF
+    records = parse_property(r, "SIMPLESPRITEDEF", 1)
+    texture['name'] = records[1]
+    
+    # Parse VARIATION
+    records = parse_property(r, "VARIATION", 1)
+    texture['variation'] = int(records[1])
+    
+    # Parse SKIPFRAMES? (nullable)
+    records = parse_property(r, "SKIPFRAMES?", 1)
+    if records[1] != "NULL":
+        texture['skipframes'] = int(records[1])
+
+    # Parse ANIMATED? (nullable)
+    records = parse_property(r, "ANIMATED?", 1)
+    if records[1] != "NULL":
+        texture['animated_flag'] = int(records[1])
+    
+    # Parse SLEEP?
+    records = parse_property(r, "SLEEP?", 1)
+    if records[1] == "NULL":
+        texture['sleep'] = None
+        texture['animated'] = False
+    else:
+        sleep_value = int(records[1])
+        texture['sleep'] = sleep_value
+        texture['animated'] = sleep_value > 0
+
+    # Parse CURRENTFRAME? (nullable)
+    records = parse_property(r, "CURRENTFRAME?", 1)
+    if records[1] != "NULL":
+        texture['current_frame'] = int(records[1])
+
+    # Parse NUMFRAMES
+    records = parse_property(r, "NUMFRAMES", 1)
+    num_frames = int(records[1])
+    texture['num_frames'] = num_frames
+
+    # Initialize variables to hold frame details
+    frame_files = []
+    frames = []
+    animated_frame_count = 0
+    tiled_frame_count = 0
     animated_frame_regex = re.compile(r'.*\d(?=\.[a-zA-Z]+$)')
 
-    for line in lines:
-        line = line.strip()
-#        print(f"Processing line: {line}")
+    # Parse FRAME lines for the given number of frames
+    for i in range(num_frames):
+        records = parse_property(r, "FRAME", 2)
+        frame_file = records[1].strip()
+        frame_data = {'file': frame_file}
 
-        if line.startswith("SIMPLESPRITETAG"):
-            # Store the previous texture data if any
-            if current_texture:
-                current_texture['num_tiled_frames'] = tiled_frame_count  # Save the count of tiled frames
-                textures[current_texture['name']] = current_texture
-#                print(f"Added texture to dictionary: {current_texture['name']}")
+        # Determine the frame type based on the file name
+        if "_LAYER" in frame_file:
+            frame_data['type'] = 'layer'
+            frame_data['file'] = frame_file.replace("_LAYER", "").strip()
+        elif "_DETAIL" in frame_file:
+            detail_value = frame_file.split('_DETAIL_')[1]
+            frame_data['type'] = 'detail'
+            frame_data['detail_value'] = float(detail_value)
+            frame_data['file'] = frame_file.split('_DETAIL_')[0].strip()
+        elif "PAL.BMP" in frame_file:
+            previous_file = frames[-1]['file'] if frames else ''
+            if previous_file.split('.')[0] == frame_file.replace("PAL.BMP", "").strip():
+                frame_data['type'] = 'palette_mask'
+                frame_data['file'] = frame_file
+                texture['palette_mask_file'] = frame_file  # Store palette mask file separately
+        elif "," in frame_file:
+            # Handle tiled frames
+            num_values, file_name = frame_file.split(", ", 3)[-1], frame_file.split(", ", 3)[-1]
+            numbers = frame_file.split(", ")[:3]
+            frame_data['type'] = 'tiled'
+            frame_data['color_index'] = int(numbers[0]) - 1
+            frame_data['scale'] = int(numbers[1]) * 10
+            frame_data['blend'] = int(numbers[2])
+            frame_data['file'] = file_name.strip()
+            tiled_frame_count += 1
+        else:
+            # Check if this is an animated frame
+            if texture['animated'] and animated_frame_regex.match(frame_file):
+                animated_frame_count += 1
+                frame_data['animation_frame'] = animated_frame_count
 
-            # Initialize new texture data
-            current_texture = {
-                'name': line.split('"')[1],
-                'frames': [],
-                'animated': False,
-                'sleep': 'NULL',
-                'number_frames': 0,
-                'frame_files': [],
-                'properties': [],
-                'num_tiled_frames': 0,  # Initialize num_tiled_frames for the new texture
-                'palette_mask_file': None  # Initialize the palette_mask_file key
-            }
-#            print(f"Started new SIMPLESPRITEDEF: {current_texture['name']}")
-            current_frames = []
-            animated_frame_count = 0
-            tiled_frame_count = 0  # Reset tiled frame count for new texture
-            sleep_time = 'NULL'
+        # Save frame data and file names
+        frames.append(frame_data)
+        frame_files.append(frame_data['file'])
 
-        elif line.startswith("SLEEP?"):
-            sleep_value = line.split('?')[1].strip()
-            if sleep_value == "NULL":
-                sleep_time = "NULL"
-                current_texture['animated'] = False
-            elif sleep_value.isdigit():
-                sleep_time = float(sleep_value) / 1000.0
-                current_texture['sleep'] = sleep_time
-                # Set animated to True only if sleep_time is greater than 0
-                current_texture['animated'] = sleep_time > 0
-            else:
-                sleep_time = "NULL"
-                current_texture['animated'] = False
-#            print(f"Set sleep time for {current_texture['name']}: {sleep_time}")
+    # Store the frames and frame file names in the texture
+    texture['frames'] = frames
+    texture['frame_files'] = frame_files
+    texture['number_frames'] = animated_frame_count  # Calculated from animated frames
+    texture['num_tiled_frames'] = tiled_frame_count  # Calculated from tiled frames
 
-        elif line.startswith("FRAME"):
-            parts = line.split('"')
-            if len(parts) > 3:
-                frame_file = parts[1].strip()
-                frame_data = {'file': frame_file}
-
-                if "_LAYER" in frame_file:
-                    frame_data['type'] = 'layer'
-                    frame_data['file'] = frame_file.replace("_LAYER", "").strip()
-                elif "_DETAIL" in frame_file:
-                    detail_value = frame_file.split('_DETAIL_')[1]
-                    frame_data['type'] = 'detail'
-                    frame_data['detail_value'] = float(detail_value)
-                    frame_data['file'] = frame_file.split('_DETAIL_')[0].strip()
-                elif "PAL.BMP" in frame_file:
-                    previous_file = current_frames[-1]['file'] if current_frames else ''
-                    if previous_file.split('.')[0] == frame_file.replace("PAL.BMP", "").strip():
-                        frame_data['type'] = 'palette_mask'
-                        frame_data['file'] = frame_file
-
-                        # Save the palette mask file name separately in the current texture
-                        current_texture['palette_mask_file'] = frame_file
-                elif "," in frame_file:
-                    num_values, file_name = frame_file.split(", ", 3)[-1], frame_file.split(", ", 3)[-1]
-                    numbers = frame_file.split(", ")[:3]
-                    frame_data['type'] = 'tiled'
-                    frame_data['color_index'] = int(numbers[0]) - 1
-                    frame_data['scale'] = int(numbers[1]) * 10
-                    frame_data['blend'] = int(numbers[2])
-                    frame_data['file'] = file_name.strip()
-                    tiled_frame_count += 1  # Increment tiled frame count
-                else:
-                    if sleep_time != "NULL" and sleep_time > 0 and animated_frame_regex.match(frame_file):
-                        animated_frame_count += 1
-                        frame_data['animation_frame'] = animated_frame_count
-
-                current_frames.append(frame_data)
-                current_texture['frame_files'].append(frame_data['file'])
-                current_texture['frames'].append(frame_data)
-#                print(f"Added frame for {current_texture['name']}: {frame_data}")
-
-        elif line.startswith("ENDSIMPLESPRITEDEF"):
-            if current_texture:
-                current_texture['number_frames'] = animated_frame_count
-                current_texture['num_tiled_frames'] = tiled_frame_count  # Save the count of tiled frames
-                textures[current_texture['name']] = current_texture
-#                print(f"Added texture to dictionary: {current_texture['name']}")
-                current_texture = None
-
-    # After all lines are processed, add any remaining texture
-    if current_texture:
-        current_texture['number_frames'] = animated_frame_count
-        current_texture['num_tiled_frames'] = tiled_frame_count  # Save the count of tiled frames
-        textures[current_texture['name']] = current_texture
-#        print(f"Added final texture to dictionary: {current_texture['name']}")
-
-#    print("Textures inside simplespritedef_parse function:")
-#    for key, value in textures.items():
-#        print(f"Texture Name: {key}")
-#        for k, v in value.items():
-#            print(f"  {k}: {v}")
-    
-    return textures
+    return texture
