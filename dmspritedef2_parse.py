@@ -148,7 +148,7 @@ def dmspritedef2_parse(r, parse_property):
 
     # Parse FPSCALE
     records = parse_property(r, "FPSCALE", 1)
-    mesh["fpscale"] = float(records[1])
+    mesh["fpscale"] = int(records[1])
 
     # Parse FLAGS
     records = parse_property(r, "HEXONEFLAG", 1)
