@@ -55,12 +55,11 @@ def parse_definitions(r: io.TextIOWrapper = None):
                 material_palettes[material_palette['name']] = material_palette['materials']
         elif line.startswith("DMSPRITEDEF2"):
             from dmspritedef2_parse import dmspritedef2_parse
-            dmsprite, inner_sections = dmspritedef2_parse(r, parse_property)
+            dmsprite = dmspritedef2_parse(r, parse_property)
             meshes.append(dmsprite)
         elif line.startswith("TRACKDEFINITION"):
-            track_definitions.append(trackdefinition_parse(r, parse_property))
-        elif line.startswith("TRACKINSTANCE"):
-            track_definitions.append(trackinstance_parse(r, parse_property))
+            track_data = track_parse(r, parse_property)
+            track_definitions.append(track_data)
         elif line.startswith("HIERARCHICALSPRITEDEF"):
             from hierarchicalspritedef_parse import hierarchicalspritedef_parse
             armature_data = hierarchicalspritedef_parse(r, parse_property)
