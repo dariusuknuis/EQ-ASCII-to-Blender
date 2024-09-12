@@ -124,7 +124,43 @@ if __name__ == '__main__':
     meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials = eq_ascii_parse(filepath)
 
     # If armature data exists, print it out (for extra clarity outside of the function)
+    # If armature data exists, print it out (for extra clarity outside of the function)
     if armature_data:
         print("\nFinal Collected Armature Data:")
         for key, value in armature_data.items():
             print(f"{key}: {value}")
+
+    if meshes:
+        print("\nFinal Collected Meshes:")
+        for mesh in meshes:  # Iterate directly over the list
+            print(f"{mesh}")
+
+    if track_definitions:
+        print("\nFinal Collected Track Definitions:")
+        for track_def in track_definitions:  # Iterate directly over the list
+            print(f"{track_def}")
+
+    if material_palettes:
+        print("\nFinal Collected Material Palettes:")
+        for key, value in material_palettes.items():
+            print(f"{key}: {value}")
+
+    if include_files:
+        print("\nFinal Collected Include Files:")
+        for include_file in include_files:  # Iterate directly over the list
+            print(f"{include_file}")
+
+    if polyhedrons:
+        print("\nFinal Collected Polyhedrons:")
+        for polyhedron in polyhedrons:  # Iterate directly over the list
+            print(f"{polyhedron}")
+
+    if textures:
+        print("\nFinal Collected Textures:")
+        for texture in textures:  # Iterate directly over the list
+            print(f"{texture}")
+
+    if materials:
+        print("\nFinal Collected Materials:")
+        for material in materials:  # Iterate directly over the list
+            print(f"{material}")
