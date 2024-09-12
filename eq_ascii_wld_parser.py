@@ -43,7 +43,7 @@ def parse_definitions(r: io.TextIOWrapper = None):
             meshes.extend(include_results[0])
             if include_results[1]:
             armature_data = include_results[1]
-            track_definitions.extend(include_results[2])
+            track_definitions.update(include_results[2])
             material_palettes.update(include_results[3])
             polyhedrons.extend(include_results[5])
             textures.update(include_results[6])
