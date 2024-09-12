@@ -1,12 +1,15 @@
 import bpy
 import bmesh
 import mathutils
+import shlex
 
-def dmspritedef2_parse(r, parse_property):
+def dmspritedef2_parse(r, parse_property, current_line):
     mesh = {}
 
-    # Parse the TAG property
-    records = parse_property(r, "DMSPRITEDEF2", 1)
+    # Parse DMSPRITEDEF2 from the current line
+    records = shlex.split(current_line)
+    if records[0] != "DMSPRITEDEF2":
+        raise Exception(f"Expected DMSPRITEDEF2, got {records[0]}")
     mesh['name'] = records[1]
 
     # Parse the CENTEROFFSET property

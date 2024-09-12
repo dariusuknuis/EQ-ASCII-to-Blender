@@ -1,10 +1,13 @@
 import re
+import shlex
 
-def simplespritedef_parse(r, parse_property):
+def simplespritedef_parse(r, parse_property, current_line):
     texture = {}
-
-    # Parse SIMPLESPRITEDEF
-    records = parse_property(r, "SIMPLESPRITEDEF", 1)
+    
+    # Parse SIMPLESPRITEDEF from the current line
+    records = shlex.split(current_line)
+    if records[0] != "SIMPLESPRITEDEF":
+        raise Exception(f"Expected SIMPLESPRITEDEF, got {records[0]}")
     texture['name'] = records[1]
     
     # Parse VARIATION

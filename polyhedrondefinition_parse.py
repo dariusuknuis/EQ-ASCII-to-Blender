@@ -1,6 +1,7 @@
 import mathutils
+import shlex
 
-def polyhedrondefinition_parse(r, parse_property):
+def polyhedrondefinition_parse(r, parse_property, current_line):
     polyhedron = {
         'name': '',
         'bounding_radius': 0.0,
@@ -9,9 +10,11 @@ def polyhedrondefinition_parse(r, parse_property):
         'faces': [],
         'hexoneflag': 0
     }
-
-    # Parse the TAG property
-    records = parse_property(r, "POLYHEDRONDEFINITION", 1)
+    
+    # Parse POLYHEDRONDEFINITION from the current line
+    records = shlex.split(current_line)
+    if records[0] != "POLYHEDRONDEFINITION":
+        raise Exception(f"Expected POLYHEDRONDEFINITION, got {records[0]}")
     polyhedron['name'] = records[1]
     
     # Parse BOUNDINGRADIUS

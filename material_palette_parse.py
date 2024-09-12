@@ -1,12 +1,16 @@
-def material_palette_parse(r, parse_property):
+import shlex
+
+def material_palette_parse(r, parse_property, current_line):
     palette = {
         'name': '',
         'num_materials': 0,
         'materials': []
     }
-
-    # Parse MATERIALPALETTE
-    records = parse_property(r, "MATERIALPALETTE", 1)
+    
+    # Parse MATERIALPALETTE from the current line
+    records = shlex.split(current_line)
+    if records[0] != "MATERIALPALETTE":
+        raise Exception(f"Expected MATERIALPALETTE, got {records[0]}")
     palette['name'] = records[1]
     
     # Parse NUMMATERIALS

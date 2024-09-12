@@ -1,6 +1,7 @@
 import bpy
 import re
 import mathutils
+import shlex
 
 # Define the list of animation prefixes
 animation_prefixes = [
@@ -26,7 +27,7 @@ def generate_unique_name(base_name, existing_names):
             return new_name
         suffix += 1
 
-def track_parse(r, parse_property, base_name):
+def track_parse(r, parse_property, base_name, current_line):
     track_definitions = {}
     animations = {}
     armature_tracks = {}
@@ -35,8 +36,11 @@ def track_parse(r, parse_property, base_name):
     existing_track_instances = set()
     track_def_suffixes = {}
 
-    # Parse TRACKDEFINITION
-    records = parse_property(r, "TRACKDEFINITION", 1)
+    # Parse TRACKDEFINITION from the current line
+    records = shlex.split(current_line)
+    if records[0] != "TRACKDEFINITION":
+        raise Exception(f"Expected TRACKDEFINITION, got {records[0]}")
+        
     track_def = {
         'name': records[1],
         'num_frames': 0,

@@ -1,4 +1,6 @@
-def hierarchicalspritedef_parse(r, parse_property):
+import shlex
+
+def hierarchicalspritedef_parse(r, parse_property, current_line):
     armature_data = {
         'name': '',
         'bones': [],
@@ -10,9 +12,11 @@ def hierarchicalspritedef_parse(r, parse_property):
     
     existing_bone_names = set()
     track_suffix_map = {}
-
-    # Parse HIERARCHICALSPRITEDEF
-    records = parse_property(r, "HIERARCHICALSPRITEDEF", 1)
+    
+    # Parse HIERARCHICALSPRITEDEF from the current line
+    records = shlex.split(current_line)
+    if records[0] != "HIERARCHICALSPRITEDEF":
+        raise Exception(f"Expected HIERARCHICALSPRITEDEF, got {records[0]}")
     armature_data['name'] = records[1]
 
     # Parse NUMDAGS
@@ -86,6 +90,7 @@ def hierarchicalspritedef_parse(r, parse_property):
     # Parse attached skins if any
     for i in range(num_attached_skins):
         attached_skin = {}
+        records = parse_property(r, "ATTACHEDSKIN", 0)
         records = parse_property(r, "DMSPRITE", 1)
         attached_skin['sprite'] = records[1]
 

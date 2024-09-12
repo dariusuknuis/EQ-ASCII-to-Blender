@@ -1,8 +1,12 @@
-def materialdefinition_parse(r, parse_property):
-    material = {}
+import shlex
 
-    # Parse MATERIALDEFINITION
-    records = parse_property(r, "MATERIALDEFINITION", 1)
+def materialdefinition_parse(r, parse_property, current_line):
+    material = {}
+    
+    # Parse MATERIALDEFINITION from the current line
+    records = shlex.split(current_line)
+    if records[0] != "MATERIALDEFINITION":
+        raise Exception(f"Expected MATERIALDEFINITION, got {records[0]}")
     material['name'] = records[1]
 
     # Parse VARIATION

@@ -8,15 +8,18 @@ def parse(filepath: str):
     with open(filepath, 'r') as file:
         data = file.read()
     r = io.StringIO(data)
+    file_dir = os.path.dirname(filepath)  # Get the directory
     try:
-        return parse_definitions(r)
+        return parse_definitions(r, file_dir, os.path.basename(filepath))
     except Exception as e:
         raise Exception(f"Error while parsing: {e}") from e
 
 # Main function to handle definition switching and return results
-def parse_definitions(r: io.TextIOWrapper = None):
+def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename: str = None):
     if r is None:
         raise Exception("reader is none")
+
+    base_name = os.path.splitext(filename)[0].upper()  # Define base_name from the file name
 
     material_palettes = {}
     meshes = []
@@ -32,49 +35,51 @@ def parse_definitions(r: io.TextIOWrapper = None):
         if not line or line.startswith("//"):
             continue
 
+        # Pass the current line to track_parse instead of just the stream
         if line.startswith("INCLUDE"):
             include = shlex.split(line)[1].strip('"')
             includes.append(include)
-            include_filepath = os.path.join(os.path.dirname(r.name), include)
+            include_filepath = os.path.join(file_dir, include)
             print(f"Processing INCLUDE file: {include_filepath}")
             # Parse the include file recursively
             include_results = parse(include_filepath)
             # Unpack the include file results and merge with the main results
             meshes.extend(include_results[0])
             if include_results[1]:
-            armature_data = include_results[1]
-            track_definitions.update(include_results[2])
-            material_palettes.update(include_results[3])
-            polyhedrons.extend(include_results[5])
-            textures.update(include_results[6])
-            materials.extend(include_results[7])
+                armature_data = include_results[1]
+                track_definitions.extend(include_results[2])
+                material_palettes.update(include_results[3])
+                polyhedrons.extend(include_results[5])
+                textures.update(include_results[6])
+                materials.extend(include_results[7])
         elif line.startswith("MATERIALPALETTE"):
             from material_palette_parse import material_palette_parse
-            material_palette = material_palette_parse(r, parse_property)
+            material_palette = material_palette_parse(r, parse_property, line)
             if material_palette['name']:
                 material_palettes[material_palette['name']] = material_palette['materials']
         elif line.startswith("DMSPRITEDEF2"):
             from dmspritedef2_parse import dmspritedef2_parse
-            dmsprite = dmspritedef2_parse(r, parse_property)
+            dmsprite = dmspritedef2_parse(r, parse_property, line)
             meshes.append(dmsprite)
         elif line.startswith("TRACKDEFINITION"):
-            track_data = track_parse(r, parse_property)
+            from track_parse import track_parse
+            track_data = track_parse(r, parse_property, base_name, line)  # Pass the current line to track_parse
             track_definitions.append(track_data)
         elif line.startswith("HIERARCHICALSPRITEDEF"):
             from hierarchicalspritedef_parse import hierarchicalspritedef_parse
-            armature_data = hierarchicalspritedef_parse(r, parse_property)
+            armature_data = hierarchicalspritedef_parse(r, parse_property, line)
         elif line.startswith("POLYHEDRONDEFINITION"):
             from polyhedrondefinition_parse import polyhedrondefinition_parse
-            polyhedron = polyhedrondefinition_parse(r, parse_property)
+            polyhedron = polyhedrondefinition_parse(r, parse_property, line)
             polyhedrons.append(polyhedron)
         elif line.startswith("SIMPLESPRITEDEF"):
             from simplespritedef_parse import simplespritedef_parse
-            sprite_textures = simplespritedef_parse(r, parse_property)
+            sprite_textures = simplespritedef_parse(r, parse_property, line)
             if sprite_textures:
                 textures.update(sprite_textures)
         elif line.startswith("MATERIALDEFINITION"):
             from materialdefinition_parse import materialdefinition_parse
-            material_defs = materialdefinition_parse(r, parse_property)
+            material_defs = materialdefinition_parse(r, parse_property, line)
             materials.append(material_defs)
 
     return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials
