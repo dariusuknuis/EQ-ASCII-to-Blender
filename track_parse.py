@@ -61,16 +61,24 @@ def track_parse(r, parse_property, base_name):
     frames = []
     if track_def['num_frames'] > 0:
         for _ in range(track_def['num_frames']):
+            # Parse each FRAME line with 8 values
             records = parse_property(r, "FRAME", 8)
+        
+            # Create a quaternion for the rotation
+            rot_scale = float(records[5])
+            rx = float(records[6])
+            ry = float(records[7])
+            rz = float(records[8])
+            rotation = mathutils.Quaternion((rot_scale, rx, ry, rz))
+            rotation.normalize()  # Normalize the quaternion
+
+            # Parse and process the translation values (XYZ) divided by 256
             frame_data = {
                 'xyz_scale': int(records[1]),
-                'tx': int(records[2]),
-                'ty': int(records[3]),
-                'tz': int(records[4]),
-                'rot_scale': int(records[5]),
-                'rx': int(records[6]),
-                'ry': int(records[7]),
-                'rz': int(records[8])
+                'tx': float(records[2]) / 256,
+                'ty': float(records[3]) / 256,
+                'tz': float(records[4]) / 256,
+                'rotation': rotation  # Store the quaternion rotation
             }
             frames.append(frame_data)
         track_def['frames'] = frames
@@ -83,14 +91,23 @@ def track_parse(r, parse_property, base_name):
     legacy_frames = []
     if track_def['num_legacy_frames'] > 0:
         for _ in range(track_def['num_legacy_frames']):
-            records = parse_property(r, "LEGACYFRAME", 7)
+            records = parse_property(r, "LEGACYFRAME", 8)
+
+            # Create a quaternion for the rotation
+            rot_scale = float(records[5])
+            rx = float(records[6])
+            ry = float(records[7])
+            rz = float(records[8])
+            rotation = mathutils.Quaternion((rot_scale, rx, ry, rz))
+            rotation.normalize()  # Normalize the quaternion
+
+            # Parse and process the translation values (XYZ) divided by 256
             legacy_frame_data = {
                 'xyz_scale': int(records[1]),
-                'tx': int(records[2]),
-                'ty': int(records[3]),
-                'tz': int(records[4]),
-                'rot_scale': float(records[5]),
-                'rotation': (float(records[6]), float(records[7]), float(records[8]))
+                'tx': int(records[2]) / 256,
+                'ty': int(records[3]) / 256,
+                'tz': int(records[4]) / 256,
+                'rotation': rotation
             }
             legacy_frames.append(legacy_frame_data)
         track_def['legacy_frames'] = legacy_frames
