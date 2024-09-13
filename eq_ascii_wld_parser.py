@@ -3,6 +3,12 @@ import os
 import shlex
 import sys
 
+# Manually set the directory containing your scripts
+script_dir = r'C:\Users\dariu\Documents\Quail\Importer'  # Replace with the actual path
+print(f"Script directory: {script_dir}")  # Check the path
+if script_dir not in sys.path:
+    sys.path.append(script_dir)
+
 # Function to open and initiate the parsing
 def parse(filepath: str):
     with open(filepath, 'r') as file:
@@ -27,7 +33,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
     polyhedrons = []
     textures = {}
     materials = []
-    track_definitions = []
+    track_definitions = {'animations': {}, 'armature_tracks': {}}  # Use dictionaries for track_definitions
     includes = []
 
     for line in r:
@@ -47,7 +53,9 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
             meshes.extend(include_results[0])
             if include_results[1]:
                 armature_data = include_results[1]
-                track_definitions.extend(include_results[2])
+                # Merge the track definitions for both animations and armature_tracks
+                track_definitions['animations'].update(include_results[2]['animations'])
+                track_definitions['armature_tracks'].update(include_results[2]['armature_tracks'])
                 material_palettes.update(include_results[3])
                 polyhedrons.extend(include_results[5])
                 textures.update(include_results[6])
@@ -64,7 +72,9 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
         elif line.startswith("TRACKDEFINITION"):
             from track_parse import track_parse
             track_data = track_parse(r, parse_property, base_name, line)  # Pass the current line to track_parse
-            track_definitions.append(track_data)
+            # Merge the track data for both animations and armature_tracks
+            track_definitions['animations'].update(track_data['animations'])
+            track_definitions['armature_tracks'].update(track_data['armature_tracks'])
         elif line.startswith("HIERARCHICALSPRITEDEF"):
             from hierarchicalspritedef_parse import hierarchicalspritedef_parse
             armature_data = hierarchicalspritedef_parse(r, parse_property, line)
@@ -76,7 +86,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
             from simplespritedef_parse import simplespritedef_parse
             sprite_textures = simplespritedef_parse(r, parse_property, line)
             if sprite_textures:
-                textures.update(sprite_textures)
+                textures[sprite_textures['name']] = sprite_textures
         elif line.startswith("MATERIALDEFINITION"):
             from materialdefinition_parse import materialdefinition_parse
             material_defs = materialdefinition_parse(r, parse_property, line)
@@ -120,10 +130,9 @@ def eq_ascii_parse(filepath):
     return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials
 
 if __name__ == '__main__':
-    filepath = r"C:\Users\dariu\Documents\Quail\crushbone.quail\r.mod"
+    filepath = r"C:\Users\dariu\Documents\Quail\chequip.new.quail\pre.wce"
     meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials = eq_ascii_parse(filepath)
 
-    # If armature data exists, print it out (for extra clarity outside of the function)
     # If armature data exists, print it out (for extra clarity outside of the function)
     if armature_data:
         print("\nFinal Collected Armature Data:")
@@ -137,8 +146,12 @@ if __name__ == '__main__':
 
     if track_definitions:
         print("\nFinal Collected Track Definitions:")
-        for track_def in track_definitions:  # Iterate directly over the list
-            print(f"{track_def}")
+        print("Animations:")
+        for track_name, animation in track_definitions['animations'].items():
+            print(f"{track_name}: {animation}")
+        print("Armature Tracks:")
+        for track_name, armature_track in track_definitions['armature_tracks'].items():
+            print(f"{track_name}: {armature_track}")
 
     if material_palettes:
         print("\nFinal Collected Material Palettes:")
@@ -157,8 +170,8 @@ if __name__ == '__main__':
 
     if textures:
         print("\nFinal Collected Textures:")
-        for texture in textures:  # Iterate directly over the list
-            print(f"{texture}")
+        for texture_name, texture_data in textures.items():  # This prints the full texture information
+            print(f"{texture_data}")
 
     if materials:
         print("\nFinal Collected Materials:")

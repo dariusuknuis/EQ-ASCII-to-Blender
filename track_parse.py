@@ -17,6 +17,9 @@ animation_prefixes = [
 animation_prefix_variants = animation_prefixes + [prefix + "A" for prefix in animation_prefixes] + [prefix + "B" for prefix in animation_prefixes]
 
 def generate_unique_name(base_name, existing_names):
+    """
+    Generate a unique name based on the base_name by adding a numerical suffix.
+    """
     if base_name not in existing_names:
         return base_name
     
@@ -34,7 +37,6 @@ def track_parse(r, parse_property, base_name, current_line):
 
     existing_track_definitions = set()
     existing_track_instances = set()
-    track_def_suffixes = {}
 
     # Parse TRACKDEFINITION from the current line
     records = shlex.split(current_line)
@@ -67,7 +69,7 @@ def track_parse(r, parse_property, base_name, current_line):
         for _ in range(track_def['num_frames']):
             # Parse each FRAME line with 8 values
             records = parse_property(r, "FRAME", 8)
-        
+
             # Create a quaternion for the rotation
             rot_scale = float(records[5])
             rx = float(records[6])
@@ -77,15 +79,25 @@ def track_parse(r, parse_property, base_name, current_line):
             rotation.normalize()  # Normalize the quaternion
 
             # Parse and process the translation values (XYZ) divided by 256
+            translation = (
+                float(records[2]) / 256,
+                float(records[3]) / 256,
+                float(records[4]) / 256
+            )
+
+            # Store the translation and rotation in the frame_data
             frame_data = {
-                'xyz_scale': int(records[1]),
-                'tx': float(records[2]) / 256,
-                'ty': float(records[3]) / 256,
-                'tz': float(records[4]) / 256,
+                'translation': translation,
                 'rotation': rotation  # Store the quaternion rotation
             }
+
             frames.append(frame_data)
+
+        # Store frames under track_def
         track_def['frames'] = frames
+
+    # Store xyz_scale separately
+    track_def['xyz_scale'] = int(records[1])
 
     # Parse NUMLEGACYFRAMES
     records = parse_property(r, "NUMLEGACYFRAMES", 1)
@@ -116,8 +128,10 @@ def track_parse(r, parse_property, base_name, current_line):
             legacy_frames.append(legacy_frame_data)
         track_def['legacy_frames'] = legacy_frames
 
-    # Add track definition to track_definitions
-    track_definitions[track_def['name']] = track_def
+    # Use generate_unique_name for track definition
+    track_def_name = generate_unique_name(track_def['name'], track_definitions.keys())
+    track_def['name'] = track_def_name
+    track_definitions[track_def_name] = track_def
 
     # Parse TRACKINSTANCE
     records = parse_property(r, "TRACKINSTANCE", 1)
@@ -165,7 +179,10 @@ def track_parse(r, parse_property, base_name, current_line):
 
             # Perform an exact match with the animation prefix variants
             if prefix_part in animation_prefix_variants:
-                animations[track_instance['name']] = {
+                # Use generate_unique_name for track instance
+                track_instance_name = generate_unique_name(track_instance['name'], animations.keys())
+                track_instance['name'] = track_instance_name
+                animations[track_instance_name] = {
                     'instance': track_instance,
                     'definition': track_def,
                     'animation_prefix': prefix_part  # Store the animation prefix
