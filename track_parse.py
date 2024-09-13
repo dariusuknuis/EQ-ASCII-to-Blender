@@ -1,6 +1,7 @@
 import bpy
 import re
 import mathutils
+import shlex
 
 # Define the list of animation prefixes
 animation_prefixes = [
@@ -16,6 +17,9 @@ animation_prefixes = [
 animation_prefix_variants = animation_prefixes + [prefix + "A" for prefix in animation_prefixes] + [prefix + "B" for prefix in animation_prefixes]
 
 def generate_unique_name(base_name, existing_names):
+    """
+    Generate a unique name based on the base_name by adding a numerical suffix.
+    """
     if base_name not in existing_names:
         return base_name
     
@@ -26,157 +30,168 @@ def generate_unique_name(base_name, existing_names):
             return new_name
         suffix += 1
 
-def process_track_definition(lines, existing_track_definitions):
-    track_def = {
-        'name': '',
-        'num_frames': 0,
-        'frame_transforms': [],
-        'xyz_scale': 256
-    }
-    
-    frame_transform = None
-
-    for line in lines:
-        if line.startswith("TAG") and not line.startswith("TAGINDEX"):
-            base_name = line.split('"')[1]
-            track_def['name'] = generate_unique_name(base_name, existing_track_definitions)
-            existing_track_definitions.add(track_def['name'])
-        elif line.startswith("NUMFRAMES"):
-            track_def['num_frames'] = int(line.split()[1])
-        elif line.startswith("FRAMETRANSFORM"):
-            frame_transform = {
-                'translation': None,
-                'rotation': None
-            }
-        elif line.startswith("XYZSCALE"):
-            xyz_scale = float(line.split()[1])
-            track_def['xyz_scale'] = xyz_scale
-        elif line.startswith("XYZ"):
-            parts = line.split()
-            tx = float(parts[1]) / 256
-            ty = float(parts[2]) / 256
-            tz = float(parts[3]) / 256
-            frame_transform['translation'] = (tx, ty, tz)
-        elif line.startswith("ROTSCALE?"):
-            rot_scale = float(line.split()[1])
-        elif line.startswith("ROTABC?"):
-            parts = line.split()
-            rx = float(parts[1])
-            ry = float(parts[2])
-            rz = float(parts[3])
-            rotation = mathutils.Quaternion((rot_scale, rx, ry, rz))
-            rotation.normalize()
-#            print(f"Quaternion: {rotation}")  # Print out the quaternion
-            frame_transform['rotation'] = rotation
-        elif line.startswith("ENDFRAMETRANSFORM"):
-            if frame_transform:
-                track_def['frame_transforms'].append(frame_transform)
-
-    return track_def
-
-def process_track_instance(lines, existing_track_instances, track_def_suffixes):
-    track_instance = {
-        'name': '',
-        'definition': '',
-        'interpolate': False,
-        'sleep': 0
-    }
-    
-    for line in lines:
-        if line.startswith("TAG") and not line.startswith("TAGINDEX"):
-            base_name = line.split('"')[1]
-            track_instance['name'] = generate_unique_name(base_name, existing_track_instances)
-            existing_track_instances.add(track_instance['name'])
-        elif line.startswith("DEFINITION") and not line.startswith("DEFINITIONINDEX"):
-            base_name = line.split('"')[1]
-            if base_name in track_def_suffixes:
-                suffix = track_def_suffixes[base_name]
-                new_definition_name = f"{base_name}.{suffix:03d}"
-                track_instance['definition'] = new_definition_name
-                track_def_suffixes[base_name] += 1
-            else:
-                track_instance['definition'] = base_name
-                track_def_suffixes[base_name] = 1
-        elif line.startswith("INTERPOLATE"):
-            track_instance['interpolate'] = bool(int(line.split()[1]))
-        elif line.startswith("SLEEP?"):
-            track_instance['sleep'] = int(line.split()[1]) if line.split()[1] != "NULL" else None
-
-    return track_instance
-
-def track_parse(sections, base_name):
+def track_parse(r, parse_property, base_name, current_line):
     track_definitions = {}
     animations = {}
     armature_tracks = {}
 
     existing_track_definitions = set()
     existing_track_instances = set()
-    track_def_suffixes = {}
 
-    for instance in sections.get('TRACKDEFINITION', []):
-        track_def = process_track_definition(instance, existing_track_definitions)
-        track_definitions[track_def['name']] = track_def
+    # Parse TRACKDEFINITION from the current line
+    records = shlex.split(current_line)
+    if records[0] != "TRACKDEFINITION":
+        raise Exception(f"Expected TRACKDEFINITION, got {records[0]}")
+        
+    track_def = {
+        'name': records[1],
+        'num_frames': 0,
+        'frames': [],
+        'legacy_frames': [],
+        'xyz_scale': 256
+    }
 
-    for instance in sections.get('TRACKINSTANCE', []):
-        track_instance = process_track_instance(instance, existing_track_instances, track_def_suffixes)
-        definition_name = track_instance['definition']
+    # Parse TAGINDEX
+    records = parse_property(r, "TAGINDEX", 1)
+    track_def['tag_index'] = int(records[1])
 
-        track_def = track_definitions.get(definition_name)
+    # Parse SPRITE
+    records = parse_property(r, "SPRITE", 1)
+    track_def['sprite'] = records[1]
 
-        if track_def:
-            # Extract the part before the base_name for comparison
-            if base_name in track_instance['name']:
-                prefix_part = track_instance['name'].split(base_name)[0]
+    # Parse NUMFRAMES
+    records = parse_property(r, "NUMFRAMES", 1)
+    track_def['num_frames'] = int(records[1])
 
-                # Perform an exact match with the animation prefix variants
-                if prefix_part in animation_prefix_variants:
-                    animations[track_instance['name']] = {
-                        'instance': track_instance,
-                        'definition': track_def,
-                        'animation_prefix': prefix_part  # Store the animation prefix
-                    }
-                    # Debugging: Ensure the prefix is stored correctly
-                    print(f"Stored animation prefix '{prefix_part}' for track '{track_instance['name']}'")
-                else:
-                    armature_tracks[track_instance['name']] = {
-                        'instance': track_instance,
-                        'definition': track_def
-                    }
+    # Parse FRAME lines if NUMFRAMES > 0
+    frames = []
+    if track_def['num_frames'] > 0:
+        for _ in range(track_def['num_frames']):
+            # Parse each FRAME line with 8 values
+            records = parse_property(r, "FRAME", 8)
+
+            # Create a quaternion for the rotation
+            rot_scale = float(records[5])
+            rx = float(records[6])
+            ry = float(records[7])
+            rz = float(records[8])
+            rotation = mathutils.Quaternion((rot_scale, rx, ry, rz))
+            rotation.normalize()  # Normalize the quaternion
+
+            # Parse and process the translation values (XYZ) divided by 256
+            translation = (
+                float(records[2]) / 256,
+                float(records[3]) / 256,
+                float(records[4]) / 256
+            )
+
+            # Store the translation and rotation in the frame_data
+            frame_data = {
+                'translation': translation,
+                'rotation': rotation  # Store the quaternion rotation
+            }
+
+            frames.append(frame_data)
+
+        # Store frames under track_def
+        track_def['frames'] = frames
+
+    # Store xyz_scale separately
+    track_def['xyz_scale'] = int(records[1])
+
+    # Parse NUMLEGACYFRAMES
+    records = parse_property(r, "NUMLEGACYFRAMES", 1)
+    track_def['num_legacy_frames'] = int(records[1])
+
+    # Parse LEGACYFRAME lines if NUMLEGACYFRAMES > 0
+    legacy_frames = []
+    if track_def['num_legacy_frames'] > 0:
+        for _ in range(track_def['num_legacy_frames']):
+            records = parse_property(r, "LEGACYFRAME", 8)
+
+            # Create a quaternion for the rotation
+            rot_scale = float(records[5])
+            rx = float(records[6])
+            ry = float(records[7])
+            rz = float(records[8])
+            rotation = mathutils.Quaternion((rot_scale, rx, ry, rz))
+            rotation.normalize()  # Normalize the quaternion
+
+            # Parse and process the translation values (XYZ) divided by 256
+            legacy_frame_data = {
+                'xyz_scale': int(records[1]),
+                'tx': int(records[2]) / 256,
+                'ty': int(records[3]) / 256,
+                'tz': int(records[4]) / 256,
+                'rotation': rotation
+            }
+            legacy_frames.append(legacy_frame_data)
+        track_def['legacy_frames'] = legacy_frames
+
+    # Use generate_unique_name for track definition
+    track_def_name = generate_unique_name(track_def['name'], track_definitions.keys())
+    track_def['name'] = track_def_name
+    track_definitions[track_def_name] = track_def
+
+    # Parse TRACKINSTANCE
+    records = parse_property(r, "TRACKINSTANCE", 1)
+    track_instance = {
+        'name': records[1],
+        'definition': '',
+        'interpolate': False,
+        'sleep': 0
+    }
+
+    # Parse TAGINDEX (inside TRACKINSTANCE)
+    records = parse_property(r, "TAGINDEX", 1)
+    track_instance['tag_index'] = int(records[1])
+
+    # Parse SPRITE (inside TRACKINSTANCE)
+    records = parse_property(r, "SPRITE", 1)
+    track_instance['sprite'] = records[1]
+
+    # Parse DEFINITION (inside TRACKINSTANCE)
+    records = parse_property(r, "DEFINITION", 1)
+    track_instance['definition'] = records[1]
+
+    # Parse DEFINITIONINDEX
+    records = parse_property(r, "DEFINITIONINDEX", 1)
+    track_instance['definition_index'] = int(records[1])
+
+    # Parse INTERPOLATE
+    records = parse_property(r, "INTERPOLATE", 1)
+    track_instance['interpolate'] = bool(int(records[1]))
+
+    # Parse REVERSE
+    records = parse_property(r, "REVERSE", 1)
+    track_instance['reverse'] = bool(int(records[1]))
+
+    # Parse SLEEP?
+    records = parse_property(r, "SLEEP?", 1)
+    track_instance['sleep'] = int(records[1]) if records[1] != "NULL" else None
+
+    # Determine whether the track is an animation or an armature track
+    track_def = track_definitions.get(track_instance['definition'])
+
+    if track_def:
+        if base_name in track_instance['name']:
+            prefix_part = track_instance['name'].split(base_name)[0]
+
+            # Perform an exact match with the animation prefix variants
+            if prefix_part in animation_prefix_variants:
+                # Use generate_unique_name for track instance
+                track_instance_name = generate_unique_name(track_instance['name'], animations.keys())
+                track_instance['name'] = track_instance_name
+                animations[track_instance_name] = {
+                    'instance': track_instance,
+                    'definition': track_def,
+                    'animation_prefix': prefix_part  # Store the animation prefix
+                }
+                print(f"Stored animation prefix '{prefix_part}' for track '{track_instance['name']}'")
+            else:
+                armature_tracks[track_instance['name']] = {
+                    'instance': track_instance,
+                    'definition': track_def
+                }
 
     return {'animations': animations, 'armature_tracks': armature_tracks}
-
-def build_animation(armature_obj, animations, frame_rate=30):
-    for anim_name, anim_data in animations.items():
-        track_instance = anim_data['instance']
-        track_definition = anim_data['definition']
-        animation_prefix = anim_data.get('animation_prefix', 'Unknown')
-        num_frames = track_definition['num_frames']
-
-        # Debugging: Print the animation prefix
-        print(f"Building animation '{anim_name}' with prefix '{animation_prefix}'")
-
-        # Create a new action for the animation
-        action = bpy.data.actions.new(name=anim_name)
-        armature_obj.animation_data_create()
-        armature_obj.animation_data.action = action
-
-        # Build the animation
-        current_frame = 0
-        for i, frame_transform in enumerate(track_definition['frame_transforms']):
-            current_frame += (track_instance['sleep'] or 100) / 1000.0 * frame_rate
-            frame = round(current_frame)
-
-            for bone_name, bone in armature_obj.pose.bones.items():
-                if bone_name in track_instance['name']:
-                    bone.location = frame_transform['translation']
-                    bone.rotation_quaternion = frame_transform['rotation']
-                    bone.keyframe_insert(data_path="location", frame=frame)
-                    bone.keyframe_insert(data_path="rotation_quaternion", frame=frame)
-                    break
-
-        print(f"Animation '{anim_name}' created with {num_frames} frames.")
-
-# Example usage after parsing the sections:
-# base_name = "FRO"  # Replace with the actual base name from your model
-# track_data = track_parse(sections, base_name)
-# build_animation(armature_obj, track_data['animations'], frame_rate=30)

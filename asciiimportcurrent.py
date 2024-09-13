@@ -18,7 +18,7 @@ from create_polyhedron import create_polyhedron
 from material_creator import create_materials  # Import the material creation function
 
 # Path to the text file
-file_path = r"C:\Users\dariu\Documents\Quail\globalelf_chr.old.quail\elf.mod"
+file_path = r"C:\Users\dariu\Documents\Quail\chequip.new.quail\pre.wce"
 
 # Get the base name for the main object
 base_name = os.path.splitext(os.path.basename(file_path))[0]
@@ -320,7 +320,7 @@ def create_animation(armature_obj, track_definitions, armature_data, model_prefi
                     for i in range(4):
                         fcurves[bone_name]['rotation_quaternion'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].rotation_quaternion', index=i))
 
-                for frame_index, frame in enumerate(track['frame_transforms']):
+                for frame_index, frame in enumerate(track['frames']):
                     location = frame.get('translation', [0, 0, 0])
                     frame_rotation = mathutils.Quaternion(frame.get('rotation', [1, 0, 0, 0]))
                     xyz_scale = track.get('xyz_scale', 256)
@@ -380,7 +380,7 @@ def create_default_pose(armature_obj, track_definitions, armature_data, cumulati
         if corresponding_bone:
             track_name = corresponding_bone['track']
             track_def = track_definitions['armature_tracks'][track_name]['definition']
-            initial_transform = track_def['frame_transforms'][0]
+            initial_transform = track_def['frames'][0]
 
             armature_translation = initial_transform.get('translation', [0, 0, 0])
             armature_rotation = initial_transform.get('rotation', Quaternion((1, 0, 0, 0)))
