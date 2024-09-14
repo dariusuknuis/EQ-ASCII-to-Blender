@@ -38,17 +38,17 @@ def create_passable_geometry_node_group():
     named_attribute = node_group.nodes.new('GeometryNodeInputNamedAttribute')
     named_attribute.data_type = 'INT'
     named_attribute.inputs[0].default_value = "PASSABLE"
-    named_attribute.location = (-100, -100)
+    named_attribute.location = (-300, -100)
     
     equal_node = node_group.nodes.new('FunctionNodeCompare')
     equal_node.data_type = 'INT'  # Change the data type to FLOAT to avoid the issue
     equal_node.operation = 'EQUAL'
     equal_node.inputs[3].default_value = 1
-    equal_node.location = (100, -100)
+    equal_node.location = (-100, -100)
     
     # Add the Set Material node
     set_material = node_group.nodes.new('GeometryNodeSetMaterial')
-    set_material.location = (300, 0)
+    set_material.location = (100, 0)
     passable_material = bpy.data.materials.get("PASSABLE")
     set_material.inputs['Material'].default_value = passable_material
     

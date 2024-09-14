@@ -20,7 +20,7 @@ from passable_flag_editor import register_passable_editor
 from apply_passable_to_all_meshes import apply_passable_to_all_meshes
 
 # Path to the text file
-file_path = r"C:\Users\dariu\Documents\Quail\chequip.new.quail\fis.wce"
+file_path = r"C:\Users\dariu\Documents\Quail\qeynos2.quail\r.wce"
 
 # Get the base name for the main object
 base_name = os.path.splitext(os.path.basename(file_path))[0]

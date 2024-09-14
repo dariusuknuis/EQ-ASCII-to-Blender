@@ -61,14 +61,19 @@ class MESH_OT_set_passable_flag(bpy.types.Operator):
 
 # Register the classes
 def register_passable_editor():
-    bpy.utils.register_class(MESH_PT_passable_flag)
-    bpy.utils.register_class(MESH_OT_set_passable_flag)
-
+    if not hasattr(bpy.types, "MESH_PT_passable_flag"):
+        bpy.utils.register_class(MESH_PT_passable_flag)
+    
+    if not hasattr(bpy.types, "MESH_OT_set_passable_flag"):
+        bpy.utils.register_class(MESH_OT_set_passable_flag)
 
 def unregister_passable_editor():
-    bpy.utils.unregister_class(MESH_PT_passable_flag)
-    bpy.utils.unregister_class(MESH_OT_set_passable_flag)
+    if hasattr(bpy.types, "MESH_PT_passable_flag"):
+        bpy.utils.unregister_class(MESH_PT_passable_flag)
+    
+    if hasattr(bpy.types, "MESH_OT_set_passable_flag"):
+        bpy.utils.unregister_class(MESH_OT_set_passable_flag)
 
 
 if __name__ == "__main__":
-    register()
+    register_passable_editor()

@@ -7,6 +7,7 @@ from texture5ambientgouraud1 import create_node_group_t5ag1, create_material_wit
 from transparent import create_node_group_transparent, create_material_with_node_group_transparent
 from userdefined_02 import create_node_group_ud02, create_material_with_node_group_ud02
 from userdefined_06 import create_node_group_ud06, create_material_with_node_group_ud06
+from userdefined_08 import create_node_group_ud08, create_material_with_node_group_ud08
 from userdefined_10 import create_node_group_ud10, create_material_with_node_group_ud10
 from userdefined_12 import create_node_group_ud12, create_material_with_node_group_ud12
 from userdefined_20 import create_node_group_ud20, create_material_with_node_group_ud20
@@ -74,6 +75,9 @@ def create_materials(materials, textures, file_path, node_group_cache):
             elif rendermethod == 'USERDEFINED_6':
                 node_group = get_or_create_node_group('USERDEFINED_6', create_node_group_ud06, node_group_cache)
                 mat = create_material_with_node_group_ud06(mat_name, texture_full_path, node_group)
+            elif rendermethod == 'USERDEFINED_8':
+                node_group = get_or_create_node_group('USERDEFINED_8', create_node_group_ud08, node_group_cache, texture_full_path)
+                mat = create_material_with_node_group_ud08(mat_name, texture_full_path, node_group)
             elif rendermethod == 'USERDEFINED_10':
                 node_group = get_or_create_node_group('USERDEFINED_10', create_node_group_ud10, node_group_cache)
                 mat = create_material_with_node_group_ud10(mat_name, texture_full_path, node_group)
