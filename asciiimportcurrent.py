@@ -17,6 +17,7 @@ from calculations import euler_to_quaternion
 from create_polyhedron import create_polyhedron
 from material_creator import create_materials  # Import the material creation function
 from passable_flag_editor import register_passable_editor
+from apply_passable_to_all_meshes import apply_passable_to_all_meshes
 
 # Path to the text file
 file_path = r"C:\Users\dariu\Documents\Quail\chequip.new.quail\fis.wce"
@@ -488,6 +489,9 @@ for polyhedron_name, polyhedron_obj in polyhedron_objects.items():
                 break  # Stop searching once the correct parent is found
             
 register_passable_editor()
+
+# Apply PASSABLE geometry node and material to all meshes after they're created
+apply_passable_to_all_meshes()
 
 print("Created object '{}' with {} meshes and armature '{}'".format(base_name, len(meshes), armature_data['name'] if armature_data else "None"))
 print("Included files:", include_files)  # Print the list of include files for reference

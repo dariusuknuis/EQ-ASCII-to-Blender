@@ -35,7 +35,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
     if r is None:
         raise Exception("reader is none")
 
-    print(f"Parsing file: {filename}")
+#    print(f"Parsing file: {filename}")
     base_name = os.path.splitext(filename)[0].upper()  # Define base_name from the file name
     if base_name.endswith("_ANI"):  # Check if the base_name ends with '_ANI'
         base_name = base_name[:-4]  # Remove the last 4 characters ('_ANI')
@@ -154,7 +154,7 @@ def parse_property(r, property: str, num_args: int = -1):
 
     for line in r:
         # Debugging: Print out the line being parsed
-        print(f"Parsing line for property '{property}': {line.strip()}")
+#        print(f"Parsing line for property '{property}': {line.strip()}")
         
         if "//" in line:
             line = line.split("//")[0]
@@ -162,7 +162,7 @@ def parse_property(r, property: str, num_args: int = -1):
         if not line:
             continue
         records = shlex.split(line)
-        print(f"Parsed records for '{property}': {records}")
+#        print(f"Parsed records for '{property}': {records}")
         
         if len(records) == 0:
             raise Exception(f"{property}: empty records ({line})")
@@ -185,46 +185,46 @@ if __name__ == '__main__':
     meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials = eq_ascii_parse(filepath)
 
     # If armature data exists, print it out (for extra clarity outside of the function)
-    if armature_data:
-        print("\nFinal Collected Armature Data:")
-        for key, value in armature_data.items():
-            print(f"{key}: {value}")
+#    if armature_data:
+#        print("\nFinal Collected Armature Data:")
+#        for key, value in armature_data.items():
+#            print(f"{key}: {value}")
 
-    if meshes:
-        print("\nFinal Collected Meshes:")
-        for mesh in meshes:  # Iterate directly over the list
-            print(f"{mesh}")
+#    if meshes:
+#        print("\nFinal Collected Meshes:")
+#        for mesh in meshes:  # Iterate directly over the list
+#            print(f"{mesh}")
 
-    if track_definitions:
-        print("\nFinal Collected Track Definitions:")
-        print("Animations:")
-        for track_name, animation in track_definitions['animations'].items():
-            print(f"{track_name}: {animation}")
-        print("Armature Tracks:")
-        for track_name, armature_track in track_definitions['armature_tracks'].items():
-            print(f"{track_name}: {armature_track}")
+#    if track_definitions:
+#        print("\nFinal Collected Track Definitions:")
+#        print("Animations:")
+#        for track_name, animation in track_definitions['animations'].items():
+#            print(f"{track_name}: {animation}")
+#        print("Armature Tracks:")
+#        for track_name, armature_track in track_definitions['armature_tracks'].items():
+#            print(f"{track_name}: {armature_track}")
 
-    if material_palettes:
-        print("\nFinal Collected Material Palettes:")
-        for key, value in material_palettes.items():
-            print(f"{key}: {value}")
+#    if material_palettes:
+#        print("\nFinal Collected Material Palettes:")
+#        for key, value in material_palettes.items():
+#            print(f"{key}: {value}")
 
-    if include_files:
-        print("\nFinal Collected Include Files:")
-        for include_file in include_files:  # Iterate directly over the list
-            print(f"{include_file}")
+#    if include_files:
+#        print("\nFinal Collected Include Files:")
+#        for include_file in include_files:  # Iterate directly over the list
+#            print(f"{include_file}")
 
-    if polyhedrons:
-        print("\nFinal Collected Polyhedrons:")
-        for polyhedron in polyhedrons:  # Iterate directly over the list
-            print(f"{polyhedron}")
+#    if polyhedrons:
+#        print("\nFinal Collected Polyhedrons:")
+#        for polyhedron in polyhedrons:  # Iterate directly over the list
+#            print(f"{polyhedron}")
 
-    if textures:
-        print("\nFinal Collected Textures:")
-        for texture_name, texture_data in textures.items():  # This prints the full texture information
-            print(f"{texture_data}")
+#    if textures:
+#        print("\nFinal Collected Textures:")
+#        for texture_name, texture_data in textures.items():  # This prints the full texture information
+#            print(f"{texture_data}")
 
-    if materials:
-        print("\nFinal Collected Materials:")
-        for material in materials:  # Iterate directly over the list
-            print(f"{material}")
+#    if materials:
+#        print("\nFinal Collected Materials:")
+#        for material in materials:  # Iterate directly over the list
+#            print(f"{material}")

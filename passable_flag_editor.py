@@ -15,14 +15,14 @@ class MESH_PT_passable_flag(bpy.types.Panel):
 
         # Ensure the object is a mesh
         if obj and obj.type == 'MESH':
-            layout.operator("mesh.set_passable_flag", text="Set Passable Flag").flag_value = 1
-            layout.operator("mesh.set_passable_flag", text="Set Non-Passable Flag").flag_value = 0
+            layout.operator("mesh.set_passable_flag", text="Set Passable").flag_value = 1
+            layout.operator("mesh.set_passable_flag", text="Remove Passable").flag_value = 0
 
 
 class MESH_OT_set_passable_flag(bpy.types.Operator):
     """Set PASSABLE flag for selected faces"""
     bl_idname = "mesh.set_passable_flag"
-    bl_label = "Set Passable Flag"
+    bl_label = "Set Passable"
     
     flag_value: bpy.props.IntProperty()
 
