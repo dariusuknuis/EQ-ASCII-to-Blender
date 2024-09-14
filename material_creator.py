@@ -3,6 +3,7 @@ import os
 import shutil
 import struct
 from material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes, apply_detail_mapping, apply_tiled_mapping
+from solidfillambientgouraud1 import create_node_group_sfag1, create_material_with_node_group_sfag1
 from texture5ambientgouraud1 import create_node_group_t5ag1, create_material_with_node_group_t5ag1
 from transparent import create_node_group_transparent, create_material_with_node_group_transparent
 from userdefined_02 import create_node_group_ud02, create_material_with_node_group_ud02
@@ -63,7 +64,10 @@ def create_materials(materials, textures, file_path, node_group_cache):
             texture_full_path = os.path.join(os.path.dirname(file_path), texture_file)
 
             rendermethod = mat_data['rendermethod']
-            if rendermethod == 'TEXTURE5AMBIENTGOURAUD1':
+            if rendermethod == 'SOLIDFILLAMBIENTGOURAUD1':
+                node_group = get_or_create_node_group('SOLIDFILLAMBIENTGOURAUD1', create_node_group_sfag1, node_group_cache)
+                mat = create_material_with_node_group_sfag1(mat_name, mat_data, node_group)
+            elif rendermethod == 'TEXTURE5AMBIENTGOURAUD1':
                 node_group = get_or_create_node_group('TEXTURE5AMBIENTGOURAUD1', create_node_group_t5ag1, node_group_cache)
                 mat = create_material_with_node_group_t5ag1(mat_name, texture_full_path, node_group)
             elif rendermethod == 'TRANSPARENT':
