@@ -16,9 +16,10 @@ from eq_ascii_wld_parser import eq_ascii_parse
 from calculations import euler_to_quaternion
 from create_polyhedron import create_polyhedron
 from material_creator import create_materials  # Import the material creation function
+from passable_flag_editor import register_passable_editor
 
 # Path to the text file
-file_path = r"C:\Users\dariu\Documents\Quail\chequip.new.quail\pre.wce"
+file_path = r"C:\Users\dariu\Documents\Quail\chequip.new.quail\fis.wce"
 
 # Get the base name for the main object
 base_name = os.path.splitext(os.path.basename(file_path))[0]
@@ -65,7 +66,7 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None):
     center_offset = mathutils.Vector(mesh_data.get('center_offset', [0.0, 0.0, 0.0]))
     obj.location = center_offset
 
-    # Extract only the first three vertices for each face
+    # Extract only the first three vertices for each face (without passable value)
     faces_for_creation = [face[:3] for face in mesh_data['faces']]
 
     mesh.from_pydata(mesh_data['vertices'], [], faces_for_creation)
@@ -90,7 +91,7 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None):
             bone_name = armature_data['bones'][bone_index]['name']
             group = obj.vertex_groups.new(name=bone_name)
             group.add(range(vg_start, vg_end), 1.0, 'ADD')
-        
+
     # Create materials only if face materials exist
     if 'face_materials' in mesh_data and mesh_data['face_materials']:
         palette_name = mesh_data.get('material_palette', None)
@@ -126,9 +127,21 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None):
                         obj.data.polygons[face_index].material_index = material_list_index
                         face_index += 1
 
-                #print(f"Material index: {material_list_index}, Material name: {material_name}")
-            else:
-                print(f"Material index: {material_index}, Material name: Unknown")
+    # == Apply the "PASSABLE" attribute as a custom face property ==
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+
+    # Create a custom layer for the "PASSABLE" value
+    passable_layer = bm.faces.layers.int.new("PASSABLE")
+
+    # Assign the "PASSABLE" value to each face based on the parsed data
+    for i, face in enumerate(bm.faces):
+        passable_value = mesh_data['faces'][i][3]  # The fourth element in the face tuple is the PASSABLE flag
+        face[passable_layer] = passable_value
+
+    # Write the bmesh data back to the original mesh
+    bm.to_mesh(mesh)
+    bm.free()
 
     return obj
 
@@ -473,6 +486,8 @@ for polyhedron_name, polyhedron_obj in polyhedron_objects.items():
                 print(f"Matching mesh found: {mesh_obj.name} for polyhedron: {actual_polyhedron_name}")
                 polyhedron_obj.parent = mesh_obj
                 break  # Stop searching once the correct parent is found
+            
+register_passable_editor()
 
 print("Created object '{}' with {} meshes and armature '{}'".format(base_name, len(meshes), armature_data['name'] if armature_data else "None"))
 print("Included files:", include_files)  # Print the list of include files for reference

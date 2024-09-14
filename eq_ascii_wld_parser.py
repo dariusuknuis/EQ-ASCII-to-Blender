@@ -146,25 +146,31 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
     return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials
 
 # Shared utility function to parse a single property and validate it
-def parse_property(r: io.TextIOWrapper = None, property: str = "", num_args: int = -1) -> list[str]:
+def parse_property(r, property: str, num_args: int = -1):
     if r is None:
         raise Exception("reader is none")
     if property == "":
         raise Exception("empty property")
 
     for line in r:
+        # Debugging: Print out the line being parsed
+        print(f"Parsing line for property '{property}': {line.strip()}")
+        
         if "//" in line:
             line = line.split("//")[0]
         line = line.strip()
         if not line:
             continue
         records = shlex.split(line)
+        print(f"Parsed records for '{property}': {records}")
+        
         if len(records) == 0:
             raise Exception(f"{property}: empty records ({line})")
         if records[0] != property:
             raise Exception(f"{property}: expected {property} got {records[0]}")
         if num_args != -1 and len(records) - 1 != num_args:
             raise Exception(f"{property}: expected {num_args} arguments, got {len(records) - 1}")
+        
         return records
 
 # Main function to start parsing from the main file
@@ -175,50 +181,50 @@ def eq_ascii_parse(filepath):
     return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials
 
 if __name__ == '__main__':
-    filepath = r"C:\Users\dariu\Documents\Quail\globalelf_chr.new.quail\elf.wce"
+    filepath = r"C:\Users\dariu\Documents\Quail\crushbone.quail\r.wce"
     meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials = eq_ascii_parse(filepath)
 
     # If armature data exists, print it out (for extra clarity outside of the function)
-#    if armature_data:
-#        print("\nFinal Collected Armature Data:")
-#        for key, value in armature_data.items():
-#            print(f"{key}: {value}")
+    if armature_data:
+        print("\nFinal Collected Armature Data:")
+        for key, value in armature_data.items():
+            print(f"{key}: {value}")
 
-#    if meshes:
-#        print("\nFinal Collected Meshes:")
-#        for mesh in meshes:  # Iterate directly over the list
-#            print(f"{mesh}")
+    if meshes:
+        print("\nFinal Collected Meshes:")
+        for mesh in meshes:  # Iterate directly over the list
+            print(f"{mesh}")
 
-#    if track_definitions:
-#        print("\nFinal Collected Track Definitions:")
-#        print("Animations:")
-#        for track_name, animation in track_definitions['animations'].items():
-#            print(f"{track_name}: {animation}")
-#        print("Armature Tracks:")
-#        for track_name, armature_track in track_definitions['armature_tracks'].items():
-#            print(f"{track_name}: {armature_track}")
+    if track_definitions:
+        print("\nFinal Collected Track Definitions:")
+        print("Animations:")
+        for track_name, animation in track_definitions['animations'].items():
+            print(f"{track_name}: {animation}")
+        print("Armature Tracks:")
+        for track_name, armature_track in track_definitions['armature_tracks'].items():
+            print(f"{track_name}: {armature_track}")
 
-#    if material_palettes:
-#        print("\nFinal Collected Material Palettes:")
-#        for key, value in material_palettes.items():
-#            print(f"{key}: {value}")
+    if material_palettes:
+        print("\nFinal Collected Material Palettes:")
+        for key, value in material_palettes.items():
+            print(f"{key}: {value}")
 
-#    if include_files:
-#        print("\nFinal Collected Include Files:")
-#        for include_file in include_files:  # Iterate directly over the list
-#            print(f"{include_file}")
+    if include_files:
+        print("\nFinal Collected Include Files:")
+        for include_file in include_files:  # Iterate directly over the list
+            print(f"{include_file}")
 
-#    if polyhedrons:
-#        print("\nFinal Collected Polyhedrons:")
-#        for polyhedron in polyhedrons:  # Iterate directly over the list
-#            print(f"{polyhedron}")
+    if polyhedrons:
+        print("\nFinal Collected Polyhedrons:")
+        for polyhedron in polyhedrons:  # Iterate directly over the list
+            print(f"{polyhedron}")
 
-#    if textures:
-#        print("\nFinal Collected Textures:")
-#        for texture_name, texture_data in textures.items():  # This prints the full texture information
-#            print(f"{texture_data}")
+    if textures:
+        print("\nFinal Collected Textures:")
+        for texture_name, texture_data in textures.items():  # This prints the full texture information
+            print(f"{texture_data}")
 
-#    if materials:
-#        print("\nFinal Collected Materials:")
-#        for material in materials:  # Iterate directly over the list
-#            print(f"{material}")
+    if materials:
+        print("\nFinal Collected Materials:")
+        for material in materials:  # Iterate directly over the list
+            print(f"{material}")

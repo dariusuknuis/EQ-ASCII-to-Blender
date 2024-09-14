@@ -49,11 +49,12 @@ def dmspritedef2_parse(r, parse_property, current_line):
     colors = []
     for i in range(num_colors):
         records = parse_property(r, "RGBA", 4)
-        r = int(records[1]) / 255.0
-        g = int(records[2]) / 255.0
-        b = int(records[3]) / 255.0
-        a = int(records[4]) / 255.0
-        colors.append((r, g, b, a))
+#        r = int(records[1]) / 255
+#        g = int(records[2]) / 255
+#        b = int(records[3]) / 255
+#        a = int(records[4]) / 255
+#        colors.append((r, g, b, a))
+        colors.append(tuple(map(float, records[1:])))
     mesh['colors'] = colors
 
     # Parse SKINASSIGNMENTGROUPS

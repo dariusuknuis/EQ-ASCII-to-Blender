@@ -220,7 +220,7 @@ def add_animated_texture_nodes(material, texture_info, base_path=None):
     # Set up the driver for the offset
     offset_driver = image_texture_node.image_user.driver_add("frame_offset").driver
     offset_driver.type = 'SCRIPTED'
-    offset_driver.expression = "int((frame / (fps * sleep)) % num_frames) - (num_frames - 1)"
+    offset_driver.expression = "int((frame / (fps * (sleep / 1000))) % num_frames) - (num_frames - 1)"
 
     # Add input variables for the driver
     var_frame = offset_driver.variables.new()
