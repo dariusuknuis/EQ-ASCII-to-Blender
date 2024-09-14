@@ -79,19 +79,27 @@ class MESH_OT_toggle_passable_viewport(bpy.types.Operator):
                         mod.show_viewport = not mod.show_viewport
                         self.report({'INFO'}, f"Toggled PASSABLE viewport display for {obj.name}")
         return {'FINISHED'}
-
-# Register the classes
+    
+# Register the classes    
 def register_passable_editor():
-    bpy.utils.register_class(MESH_PT_passable_flag)
-    bpy.utils.register_class(MESH_OT_set_passable_flag)
-    bpy.utils.register_class(MESH_OT_toggle_passable_viewport)
-
+    if not hasattr(bpy.types, "MESH_PT_passable_flag"):
+        bpy.utils.register_class(MESH_PT_passable_flag)
+    
+    if not hasattr(bpy.types, "MESH_OT_set_passable_flag"):
+        bpy.utils.register_class(MESH_OT_set_passable_flag)
+    
+    if not hasattr(bpy.types, "MESH_OT_toggle_passable_viewport"):
+        bpy.utils.register_class(MESH_OT_toggle_passable_viewport)
 
 def unregister_passable_editor():
-    bpy.utils.unregister_class(MESH_PT_passable_flag)
-    bpy.utils.unregister_class(MESH_OT_set_passable_flag)
-    bpy.utils.unregister_class(MESH_OT_toggle_passable_viewport)
-
+    if hasattr(bpy.types, "MESH_PT_passable_flag"):
+        bpy.utils.unregister_class(MESH_PT_passable_flag)
+    
+    if hasattr(bpy.types, "MESH_OT_set_passable_flag"):
+        bpy.utils.unregister_class(MESH_OT_set_passable_flag)
+    
+    if hasattr(bpy.types, "MESH_OT_toggle_passable_viewport"):
+        bpy.utils.unregister_class(MESH_OT_toggle_passable_viewport)
 
 if __name__ == "__main__":
     register_passable_editor()

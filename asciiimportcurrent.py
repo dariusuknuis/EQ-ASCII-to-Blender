@@ -20,7 +20,7 @@ from passable_flag_editor import register_passable_editor
 from apply_passable_to_all_meshes import apply_passable_to_all_meshes, apply_passable_to_mesh, create_passable_geometry_node_group, create_passable_material
 
 # Path to the text file
-file_path = r"C:\Users\dariu\Documents\Quail\qeynos2.quail\r.wce"
+file_path = r"C:\Users\dariu\Documents\Quail\arena.quail\r.wce"
 
 # Get the base name for the main object
 base_name = os.path.splitext(os.path.basename(file_path))[0]
@@ -56,8 +56,6 @@ main_obj = bpy.data.objects.new(base_name, None)
 bpy.context.collection.objects.link(main_obj)
 
 def create_mesh(mesh_data, parent_obj, armature_obj=None):
-    #print(f"Creating mesh '{mesh_data['name']}'")
-
     mesh = bpy.data.meshes.new(mesh_data['name'])
     obj = bpy.data.objects.new(mesh_data['name'], mesh)
     bpy.context.collection.objects.link(obj)
@@ -69,7 +67,6 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None):
 
     # Extract only the first three vertices for each face (without passable value)
     faces_for_creation = [face[:3] for face in mesh_data['faces']]
-
     mesh.from_pydata(mesh_data['vertices'], [], faces_for_creation)
     mesh.update()
 
@@ -85,6 +82,32 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None):
     if 'normals' in mesh_data and len(mesh_data['normals']) == len(mesh_data['vertices']):
         mesh.use_auto_smooth = True  # Enable auto smooth for custom normals
         mesh.normals_split_custom_set_from_vertices(mesh_data['normals'])
+
+    # == Color Attribute (Vertex Colors per Vertex) ==
+    if 'colors' in mesh_data and len(mesh_data['colors']) == len(mesh_data['vertices']):
+        # Remove existing color attributes, if any
+        color_attribute_name = "Color"  # Set the name for the color attribute
+        if color_attribute_name in mesh.color_attributes:
+            mesh.color_attributes.remove(mesh.color_attributes[color_attribute_name])
+
+        # Create a new color attribute in the 'POINT' domain (per vertex)
+        color_attribute = mesh.color_attributes.new(name=color_attribute_name, domain='POINT', type='FLOAT_COLOR')
+
+        # Debugging: Print the number of vertices and colors
+        print(f"Mesh '{mesh_data['name']}' has {len(mesh_data['vertices'])} vertices.")
+        print(f"Vertex color data provided for {len(mesh_data['colors'])} vertices.")
+
+        # Write vertex color data per vertex
+        for v_index, vertex_color in enumerate(mesh_data['colors']):
+            r, g, b, a = vertex_color  # Extract RGBA values
+            # Convert the color from 0-255 range to 0-1 range
+            color_attribute.data[v_index].color = (r / 255.0, g / 255.0, b / 255.0, a / 255.0)
+
+            # Debugging: Log the color being applied
+            print(f"Vertex {v_index}: Applied color {(r / 255.0, g / 255.0, b / 255.0, a / 255.0)}")
+
+    else:
+        print(f"No vertex color data found for mesh '{mesh_data['name']}'.")
 
     # Create vertex groups if armature data is available
     if armature_obj and 'vertex_groups' in mesh_data and mesh_data['vertex_groups']:
