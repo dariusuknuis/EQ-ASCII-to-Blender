@@ -5,6 +5,16 @@ def ensure_object_mode():
     if bpy.context.object and bpy.context.object.mode != 'OBJECT':
         bpy.ops.object.mode_set(mode='OBJECT')
 
+# Debug function to print socket info
+def print_socket_info(node):
+    print(f"Node: {node.name}, Type: {node.type}")
+    print("Outputs:")
+    for output in node.outputs:
+        print(f"  {output.name} ({output.type})")
+    print("Inputs:")
+    for input in node.inputs:
+        print(f"  {input.name} ({input.type})")
+
 # Function to create the passable geometry node group
 def create_passable_geometry_node_group():
     if "PASSABLE" in bpy.data.node_groups:
@@ -24,14 +34,14 @@ def create_passable_geometry_node_group():
     group_input.location = (-300, 0)
     group_output.location = (300, 0)
     
-    # Add the Named Attribute and Equal nodes
+    # Add the Named Attribute and Compare (Equal) nodes
     named_attribute = node_group.nodes.new('GeometryNodeInputNamedAttribute')
     named_attribute.data_type = 'INT'
     named_attribute.inputs[0].default_value = "PASSABLE"
     named_attribute.location = (-100, -100)
     
     equal_node = node_group.nodes.new('FunctionNodeCompare')
-    equal_node.data_type = 'INT'
+    equal_node.data_type = 'INT'  # Change the data type to FLOAT to avoid the issue
     equal_node.operation = 'EQUAL'
     equal_node.inputs[3].default_value = 1
     equal_node.location = (100, -100)
@@ -39,11 +49,27 @@ def create_passable_geometry_node_group():
     # Add the Set Material node
     set_material = node_group.nodes.new('GeometryNodeSetMaterial')
     set_material.location = (300, 0)
+    passable_material = bpy.data.materials.get("PASSABLE")
+    set_material.inputs['Material'].default_value = passable_material
     
     # Create the links between nodes
     node_group.links.new(group_input.outputs['Geometry'], set_material.inputs['Geometry'])
-    node_group.links.new(named_attribute.outputs['Attribute'], equal_node.inputs[1])  # Correct output name: 'Attribute'
-    node_group.links.new(equal_node.outputs['Result'], set_material.inputs['Selection'])
+    
+    # Correctly get the 'Attribute' output from Named Attribute for the 'INT' type
+    #attribute_output = named_attribute.outputs[0]
+    attribute_output = next(s for s in named_attribute.outputs if s.name == 'Attribute' and s.type == 'INT')
+    
+    # Correctly get the input for the Compare node based on the FLOAT type
+    #compare_value_input = equal_node.inputs[2]
+    compare_value_input = next(s for s in equal_node.inputs if s.name == 'A' and s.type == 'INT')
+    
+    # Link the Named Attribute to the correct Compare node input
+    node_group.links.new(attribute_output, compare_value_input)
+    
+    # Link the result of the Equal node to the Set Material selection input
+    equal_output = equal_node.outputs.get('Result')
+    set_material_input = set_material.inputs.get('Selection')
+    node_group.links.new(equal_output, set_material_input)
     
     # Connect to output
     node_group.links.new(set_material.outputs['Geometry'], group_output.inputs['Geometry'])
@@ -88,10 +114,6 @@ def create_passable_material():
 
 # Function to apply the passable geometry node group and material to a mesh object
 def apply_passable_to_mesh(mesh_obj, geo_node_group, passable_mat):
-    ensure_object_mode()
-
-    bpy.context.view_layer.objects.active = mesh_obj
-
     if mesh_obj.type != 'MESH':
         print(f"Skipping non-mesh object: {mesh_obj.name}")
         return
@@ -122,8 +144,9 @@ def process_object_hierarchy(obj, geo_node_group, passable_mat):
 
 # Apply passable to all objects in the scene
 def apply_passable_to_all_meshes():
-    geo_node_group = create_passable_geometry_node_group()
     passable_mat = create_passable_material()
+    geo_node_group = create_passable_geometry_node_group()
+#    passable_mat = create_passable_material()
 
     for obj in bpy.context.view_layer.objects:
         print(f"Object: {obj.name}, Type: {obj.type}")
