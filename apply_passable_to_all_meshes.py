@@ -41,7 +41,7 @@ def create_passable_geometry_node_group():
     named_attribute.location = (-300, -100)
     
     equal_node = node_group.nodes.new('FunctionNodeCompare')
-    equal_node.data_type = 'INT'  # Change the data type to FLOAT to avoid the issue
+    equal_node.data_type = 'INT'  # Change the data type to FLOAT to avoid issues
     equal_node.operation = 'EQUAL'
     equal_node.inputs[3].default_value = 1
     equal_node.location = (-100, -100)
@@ -56,11 +56,9 @@ def create_passable_geometry_node_group():
     node_group.links.new(group_input.outputs['Geometry'], set_material.inputs['Geometry'])
     
     # Correctly get the 'Attribute' output from Named Attribute for the 'INT' type
-    #attribute_output = named_attribute.outputs[0]
     attribute_output = next(s for s in named_attribute.outputs if s.name == 'Attribute' and s.type == 'INT')
     
     # Correctly get the input for the Compare node based on the FLOAT type
-    #compare_value_input = equal_node.inputs[2]
     compare_value_input = next(s for s in equal_node.inputs if s.name == 'A' and s.type == 'INT')
     
     # Link the Named Attribute to the correct Compare node input
@@ -131,25 +129,17 @@ def apply_passable_to_mesh(mesh_obj, geo_node_group, passable_mat):
         mesh_obj.data.materials.append(passable_mat)
         print(f"Added PASSABLE material to {mesh_obj.name}")
 
-# Function to recursively process all objects in the hierarchy
-def process_object_hierarchy(obj, geo_node_group, passable_mat):
-    if obj.type == 'MESH':
-        print(f"Processing mesh: {obj.name}")
-        apply_passable_to_mesh(obj, geo_node_group, passable_mat)
-    else:
-        print(f"Skipping non-mesh object: {obj.name}")
-    
-    for child in obj.children:
-        process_object_hierarchy(child, geo_node_group, passable_mat)
-
-# Apply passable to all objects in the scene
+# Function to apply passable nodes to all meshes in the scene
 def apply_passable_to_all_meshes():
     passable_mat = create_passable_material()
     geo_node_group = create_passable_geometry_node_group()
-#    passable_mat = create_passable_material()
 
+    # Iterate over all objects in the scene and apply to all mesh objects
     for obj in bpy.context.view_layer.objects:
-        print(f"Object: {obj.name}, Type: {obj.type}")
-        process_object_hierarchy(obj, geo_node_group, passable_mat)
+        if obj.type == 'MESH':  # Ensure we are only applying to meshes
+            print(f"Applying to mesh: {obj.name}")
+            apply_passable_to_mesh(obj, geo_node_group, passable_mat)
+        else:
+            print(f"Skipping non-mesh object: {obj.name}")
 
 apply_passable_to_all_meshes()

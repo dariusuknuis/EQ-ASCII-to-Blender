@@ -17,7 +17,7 @@ from calculations import euler_to_quaternion
 from create_polyhedron import create_polyhedron
 from material_creator import create_materials  # Import the material creation function
 from passable_flag_editor import register_passable_editor
-from apply_passable_to_all_meshes import apply_passable_to_all_meshes
+from apply_passable_to_all_meshes import apply_passable_to_all_meshes, apply_passable_to_mesh, create_passable_geometry_node_group, create_passable_material
 
 # Path to the text file
 file_path = r"C:\Users\dariu\Documents\Quail\qeynos2.quail\r.wce"
@@ -469,6 +469,11 @@ else:
     # If no armature data, just create meshes
     for mesh_data in meshes:
         mesh_obj = create_mesh(mesh_data, main_obj)
+        
+        # Apply PASSABLE geometry node and material immediately after mesh creation
+        geo_node_group = create_passable_geometry_node_group()  # Get or create the geometry node group
+        passable_mat = create_passable_material()  # Get or create the passable material
+        apply_passable_to_mesh(mesh_obj, geo_node_group, passable_mat)
 
 # Parent polyhedron to matching DMSPRITEDEF mesh
 for polyhedron_name, polyhedron_obj in polyhedron_objects.items():
