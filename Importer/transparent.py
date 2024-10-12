@@ -1,7 +1,11 @@
 import bpy
 
 def create_node_group_transparent():
-    # Create the node group
+    # Check if the node group already exists, and return it if it does
+    if "TRANSPARENT" in bpy.data.node_groups:
+        return bpy.data.node_groups["TRANSPARENT"]
+    
+    # Create the node group if it doesn't already exist
     node_group = bpy.data.node_groups.new(name="TRANSPARENT", type='ShaderNodeTree')
     
     # Add Group Output node to the node group
@@ -25,7 +29,14 @@ def create_node_group_transparent():
 
     return node_group
 
-def create_material_with_node_group_transparent(material_name, node_group):
+def create_material_with_node_group_transparent(material_name):
+    # Check if the material already exists, and return it if it does
+    if material_name in bpy.data.materials:
+        return bpy.data.materials[material_name]
+    
+    # Ensure the node group is created or retrieved
+    node_group = create_node_group_transparent()
+
     # Create a new material
     material = bpy.data.materials.new(name=material_name)
     material.use_nodes = True
@@ -51,10 +62,3 @@ def create_material_with_node_group_transparent(material_name, node_group):
     links.new(group_node.outputs['Shader'], material_output_node.inputs['Surface'])
 
     return material
-
-# Example usage
-node_group = create_node_group_transparent()
-
-# Assuming you have a material name you want to create:
-material_name = "TransparentMaterial"
-mat = create_material_with_node_group_transparent(material_name, node_group)

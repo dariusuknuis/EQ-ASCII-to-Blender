@@ -5,23 +5,12 @@ def ensure_object_mode():
     if bpy.context.object and bpy.context.object.mode != 'OBJECT':
         bpy.ops.object.mode_set(mode='OBJECT')
 
-# Debug function to print socket info
-#def print_socket_info(node):
-#    print(f"Node: {node.name}, Type: {node.type}")
-#    print("Outputs:")
-#    for output in node.outputs:
-#        print(f"  {output.name} ({output.type})")
-#    print("Inputs:")
-#    for input in node.inputs:
-#        print(f"  {input.name} ({input.type})")
-
 # Function to create the passable geometry node group
 def create_passable_geometry_node_group():
     if "PASSABLE" in bpy.data.node_groups:
         print("Using existing 'PASSABLE' geometry node group.")
         return bpy.data.node_groups["PASSABLE"]
     
-#    print("Creating 'PASSABLE' geometry node group.")
     node_group = bpy.data.node_groups.new(name="PASSABLE", type="GeometryNodeTree")
     
     # Create the input and output nodes
@@ -41,7 +30,7 @@ def create_passable_geometry_node_group():
     named_attribute.location = (-300, -100)
     
     equal_node = node_group.nodes.new('FunctionNodeCompare')
-    equal_node.data_type = 'INT'  # Change the data type to FLOAT to avoid issues
+    equal_node.data_type = 'INT'
     equal_node.operation = 'EQUAL'
     equal_node.inputs[3].default_value = 1
     equal_node.location = (-100, -100)
@@ -58,7 +47,7 @@ def create_passable_geometry_node_group():
     # Correctly get the 'Attribute' output from Named Attribute for the 'INT' type
     attribute_output = next(s for s in named_attribute.outputs if s.name == 'Attribute' and s.type == 'INT')
     
-    # Correctly get the input for the Compare node based on the FLOAT type
+    # Correctly get the input for the Compare node based on the INT type
     compare_value_input = next(s for s in equal_node.inputs if s.name == 'A' and s.type == 'INT')
     
     # Link the Named Attribute to the correct Compare node input
@@ -72,7 +61,6 @@ def create_passable_geometry_node_group():
     # Connect to output
     node_group.links.new(set_material.outputs['Geometry'], group_output.inputs['Geometry'])
     
-#    print("Created 'PASSABLE' geometry node group.")
     return node_group
 
 # Function to create a passable material
@@ -103,8 +91,6 @@ def create_passable_material():
         passable_mat.node_tree.links.new(mix_shader.outputs['Shader'], material_output.inputs['Surface'])
 
         emission_shader.inputs['Color'].default_value = (0.0, 1.0, 0.0, 1.0)  # Green color
-
-#        print("'PASSABLE' material created.")
     else:
         print("'PASSABLE' material already exists.")
     
@@ -123,31 +109,19 @@ def apply_passable_to_mesh(mesh_obj, geo_node_group, passable_mat):
         modifier = mesh_obj.modifiers.new(name="PASSABLE", type='NODES')
         modifier.node_group = geo_node_group
         modifier.show_viewport = False
-#        print(f"Geometry node modifier applied to {mesh_obj.name}")
     
-    # Ensure the "Set Material" node inside the geometry node group has the correct material
     for node in modifier.node_group.nodes:
-        if node.type == 'SET_MATERIAL':
-            # Check if the material is already set correctly
-            if node.inputs['Material'].default_value != passable_mat:
-                node.inputs['Material'].default_value = passable_mat  # Re-assign the material
-                print(f"Set Material node updated with PASSABLE material for {mesh_obj.name}")
+        if node.type == 'SET_MATERIAL' and node.inputs['Material'].default_value != passable_mat:
+            node.inputs['Material'].default_value = passable_mat
     
     if passable_mat.name not in [mat.name for mat in mesh_obj.data.materials]:
         mesh_obj.data.materials.append(passable_mat)
-#        print(f"Added PASSABLE material to {mesh_obj.name}")
 
 # Function to apply passable nodes to all meshes in the scene
 def apply_passable_to_all_meshes():
     passable_mat = create_passable_material()
     geo_node_group = create_passable_geometry_node_group()
 
-    # Iterate over all objects in the scene and apply to all mesh objects
     for obj in bpy.context.view_layer.objects:
-        if obj.type == 'MESH':  # Ensure we are only applying to meshes
-#            print(f"Applying to mesh: {obj.name}")
+        if obj.type == 'MESH':
             apply_passable_to_mesh(obj, geo_node_group, passable_mat)
-        else:
-            print(f"Skipping non-mesh object: {obj.name}")
-
-apply_passable_to_all_meshes()
