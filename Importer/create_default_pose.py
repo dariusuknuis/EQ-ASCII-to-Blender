@@ -26,17 +26,24 @@ def create_default_pose(armature_obj, track_definitions, armature_data, cumulati
 
     # Loop through the bones in the armature and create default pose keyframes
     for bone_name, bone in armature_obj.pose.bones.items():
-        stripped_bone_name = bone_name.replace('_DAG', '').split('.')[0]  # Strip _DAG and .001 or similar
-        corresponding_bone = next((b for b in armature_data['bones'] if b['name'] == stripped_bone_name), None)
+        # Strip the _DAG suffix and handle duplicate bones with .001, .002 suffixes
+        stripped_bone_name = bone_name.replace('_DAG', '').split('.')[0]
+
+        # Check for matching bone in the armature data
+        corresponding_bone = next((b for b in armature_data['bones'] if b['name'].startswith(stripped_bone_name)), None)
 
         if corresponding_bone:
+            # Match the corresponding track by checking the name
             track_name = corresponding_bone['track']
-            # If track_name doesn't exist, check for original bone name without the .001 suffix
+
+            # If track_name doesn't exist, check for duplicate names without .001 suffix
             if track_name not in track_definitions['armature_tracks']:
-                track_name = track_name.split('.')[0]
+                track_name = track_name.split('.')[0]  # Use original bone name without suffix
 
             if track_name in track_definitions['armature_tracks']:
                 track_def = track_definitions['armature_tracks'][track_name]['definition']
+                track_instance = track_definitions['armature_tracks'][track_name]['instance']  # Access the track instance
+
                 initial_transform = track_def['frames'][0]
 
                 armature_translation = initial_transform.get('translation', [0, 0, 0])
@@ -90,5 +97,12 @@ def create_default_pose(armature_obj, track_definitions, armature_data, cumulati
                     fcurve = fcurves[bone_name]['scale'][i]
                     kf = fcurve.keyframe_points.insert(1, value)
                     kf.interpolation = 'LINEAR'
+
+                # Add custom properties to the Action using track_instance
+                action["TAGINDEX"] = track_instance.get('tag_index', 0)
+                action["SPRITE"] = track_instance.get('sprite', "")
+                action["DEFINITIONINDEX"] = track_instance.get('definition_index', 0)
+                action["INTERPOLATE"] = track_instance.get('interpolate', False)
+                action["REVERSE"] = track_instance.get('reverse', False)
 
     print(f"Created default pose action '{action_name}'")

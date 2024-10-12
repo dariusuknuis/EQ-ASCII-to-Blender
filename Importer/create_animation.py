@@ -133,9 +133,16 @@ def create_animation(armature_obj, track_definitions, armature_data, model_prefi
 
                     for i, value in enumerate(scale):
                         fcurve = fcurves[bone_name]['scale'][i]
-                        kf = fcurve.keyframe_points.insert(current_frame, value)
                         kf.interpolation = 'LINEAR'
 
                     current_frame += frames_per_sleep
 
+        # Add custom properties to the NLA strip
+        action["TAGINDEX"] = track_instance.get('tag_index', 0)
+        action["SPRITE"] = track_instance.get('sprite', "")
+        action["DEFINITIONINDEX"] = track_instance.get('definition_index', 0)
+        action["INTERPOLATE"] = track_instance.get('interpolate', False)
+        action["REVERSE"] = track_instance.get('reverse', False)
+
     print("Animation creation complete")
+
