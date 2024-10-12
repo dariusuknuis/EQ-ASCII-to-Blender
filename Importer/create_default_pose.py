@@ -26,64 +26,69 @@ def create_default_pose(armature_obj, track_definitions, armature_data, cumulati
 
     # Loop through the bones in the armature and create default pose keyframes
     for bone_name, bone in armature_obj.pose.bones.items():
-        stripped_bone_name = bone_name.replace('_DAG', '')
-        corresponding_bone = next((b for b in armature_data['bones'] if b['name'] == bone_name), None)
+        stripped_bone_name = bone_name.replace('_DAG', '').split('.')[0]  # Strip _DAG and .001 or similar
+        corresponding_bone = next((b for b in armature_data['bones'] if b['name'] == stripped_bone_name), None)
 
         if corresponding_bone:
             track_name = corresponding_bone['track']
-            track_def = track_definitions['armature_tracks'][track_name]['definition']
-            initial_transform = track_def['frames'][0]
+            # If track_name doesn't exist, check for original bone name without the .001 suffix
+            if track_name not in track_definitions['armature_tracks']:
+                track_name = track_name.split('.')[0]
 
-            armature_translation = initial_transform.get('translation', [0, 0, 0])
-            armature_rotation = initial_transform.get('rotation', Quaternion((1, 0, 0, 0)))
-            xyz_scale = track_def.get('xyz_scale', 256)
-            scale_factor = xyz_scale / 256.0
+            if track_name in track_definitions['armature_tracks']:
+                track_def = track_definitions['armature_tracks'][track_name]['definition']
+                initial_transform = track_def['frames'][0]
 
-            # Create a matrix that applies the cumulative matrix, translation, rotation, and scale
-            scale_matrix = mathutils.Matrix.Scale(scale_factor, 4)
-            rotation_matrix = armature_rotation.to_matrix().to_4x4()
-            translation_matrix = mathutils.Matrix.Translation(armature_translation)
+                armature_translation = initial_transform.get('translation', [0, 0, 0])
+                armature_rotation = initial_transform.get('rotation', Quaternion((1, 0, 0, 0)))
+                xyz_scale = track_def.get('xyz_scale', 256)
+                scale_factor = xyz_scale / 256.0
 
-            # Combine the matrices in the correct order: Translation * Rotation * Scale * Cumulative Matrix
-            bone_matrix = translation_matrix @ rotation_matrix @ scale_matrix @ cumulative_matrices.get(bone_name, mathutils.Matrix.Identity(4))
+                # Create a matrix that applies the cumulative matrix, translation, rotation, and scale
+                scale_matrix = mathutils.Matrix.Scale(scale_factor, 4)
+                rotation_matrix = armature_rotation.to_matrix().to_4x4()
+                translation_matrix = mathutils.Matrix.Translation(armature_translation)
 
-            # Initialize fcurves for location, rotation, and scale
-            if bone_name not in fcurves:
-                fcurves[bone_name] = {
-                    'location': [],
-                    'rotation_quaternion': [],
-                    'scale': []
-                }
+                # Combine the matrices in the correct order: Translation * Rotation * Scale * Cumulative Matrix
+                bone_matrix = translation_matrix @ rotation_matrix @ scale_matrix @ cumulative_matrices.get(bone_name, mathutils.Matrix.Identity(4))
 
-                # Create fcurves for location, rotation, and scale
-                for i in range(3):  # Location and Scale have 3 components: X, Y, Z
-                    fcurves[bone_name]['location'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].location', index=i))
-                    fcurves[bone_name]['scale'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].scale', index=i))
+                # Initialize fcurves for location, rotation, and scale
+                if bone_name not in fcurves:
+                    fcurves[bone_name] = {
+                        'location': [],
+                        'rotation_quaternion': [],
+                        'scale': []
+                    }
 
-                for i in range(4):  # Rotation quaternion has 4 components: W, X, Y, Z
-                    fcurves[bone_name]['rotation_quaternion'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].rotation_quaternion', index=i))
+                    # Create fcurves for location, rotation, and scale
+                    for i in range(3):  # Location and Scale have 3 components: X, Y, Z
+                        fcurves[bone_name]['location'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].location', index=i))
+                        fcurves[bone_name]['scale'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].scale', index=i))
 
-            # Extract translation, rotation, and scale from the bone matrix
-            translation = bone_matrix.to_translation()
-            rotation = bone_matrix.to_quaternion()
-            scale = [scale_factor] * 3  # Apply the scaling factor uniformly on all axes
+                    for i in range(4):  # Rotation quaternion has 4 components: W, X, Y, Z
+                        fcurves[bone_name]['rotation_quaternion'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].rotation_quaternion', index=i))
 
-            # Insert location keyframes
-            for i, value in enumerate(translation):
-                fcurve = fcurves[bone_name]['location'][i]
-                kf = fcurve.keyframe_points.insert(1, value)
-                kf.interpolation = 'LINEAR'
+                # Extract translation, rotation, and scale from the bone matrix
+                translation = bone_matrix.to_translation()
+                rotation = bone_matrix.to_quaternion()
+                scale = [scale_factor] * 3  # Apply the scaling factor uniformly on all axes
 
-            # Insert rotation keyframes
-            for i, value in enumerate(rotation):
-                fcurve = fcurves[bone_name]['rotation_quaternion'][i]
-                kf = fcurve.keyframe_points.insert(1, value)
-                kf.interpolation = 'LINEAR'
+                # Insert location keyframes
+                for i, value in enumerate(translation):
+                    fcurve = fcurves[bone_name]['location'][i]
+                    kf = fcurve.keyframe_points.insert(1, value)
+                    kf.interpolation = 'LINEAR'
 
-            # Insert scale keyframes
-            for i, value in enumerate(scale):
-                fcurve = fcurves[bone_name]['scale'][i]
-                kf = fcurve.keyframe_points.insert(1, value)
-                kf.interpolation = 'LINEAR'
+                # Insert rotation keyframes
+                for i, value in enumerate(rotation):
+                    fcurve = fcurves[bone_name]['rotation_quaternion'][i]
+                    kf = fcurve.keyframe_points.insert(1, value)
+                    kf.interpolation = 'LINEAR'
+
+                # Insert scale keyframes
+                for i, value in enumerate(scale):
+                    fcurve = fcurves[bone_name]['scale'][i]
+                    kf = fcurve.keyframe_points.insert(1, value)
+                    kf.interpolation = 'LINEAR'
 
     print(f"Created default pose action '{action_name}'")

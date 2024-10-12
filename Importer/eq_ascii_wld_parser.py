@@ -181,7 +181,7 @@ def eq_ascii_parse(filepath):
     return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials
 
 if __name__ == '__main__':
-    filepath = r"C:\Users\dariu\Documents\Quail\crushbone.quail\r.wce"
+    filepath = r"C:\Users\dariu\Documents\Quail\global_chr.quail\_root.wce"
     meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials = eq_ascii_parse(filepath)
 
     # If armature data exists, print it out (for extra clarity outside of the function)
@@ -190,10 +190,10 @@ if __name__ == '__main__':
 #        for key, value in armature_data.items():
 #            print(f"{key}: {value}")
 
-#    if meshes:
-#        print("\nFinal Collected Meshes:")
-#        for mesh in meshes:  # Iterate directly over the list
-#            print(f"{mesh}")
+    if meshes:
+        print("\nFinal Collected Meshes:")
+        for mesh in meshes:  # Iterate directly over the list
+            print(f"{mesh}")
 
 #    if track_definitions:
 #        print("\nFinal Collected Track Definitions:")
@@ -204,10 +204,10 @@ if __name__ == '__main__':
 #        for track_name, armature_track in track_definitions['armature_tracks'].items():
 #            print(f"{track_name}: {armature_track}")
 
-#    if material_palettes:
-#        print("\nFinal Collected Material Palettes:")
-#        for key, value in material_palettes.items():
-#            print(f"{key}: {value}")
+    if material_palettes:
+        print("\nFinal Collected Material Palettes:")
+        for key, value in material_palettes.items():
+            print(f"{key}: {value}")
 
 #    if include_files:
 #        print("\nFinal Collected Include Files:")
