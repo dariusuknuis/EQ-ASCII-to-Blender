@@ -161,10 +161,10 @@ def dmspritedef2_parse(r, parse_property, current_line):
     records = parse_property(r, "HEXTWOFLAG", 1)
     mesh["hextwoflag"] = int(records[1])
 
-    records = parse_property(r, "HEXFOURTOUSANDFLAG", 1)
+    records = parse_property(r, "HEXFOURTHOUSANDFLAG", 1)
     mesh["hexfourthousandflag"] = int(records[1])
 
-    records = parse_property(r, "HEXEIGHTTOUSANDFLAG", 1)
+    records = parse_property(r, "HEXEIGHTTHOUSANDFLAG", 1)
     mesh["hexeightthousandflag"] = int(records[1])
 
     records = parse_property(r, "HEXTENTHOUSANDFLAG", 1)
