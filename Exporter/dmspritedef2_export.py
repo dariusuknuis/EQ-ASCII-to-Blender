@@ -300,8 +300,8 @@ def write_dmspritedef(mesh, file):
     file.write(f'\n\tFPSCALE {mesh.get("FPSCALE", 0)}\n')
     file.write(f'\tHEXONEFLAG {mesh.get("HEXONEFLAG", 0)}\n')
     file.write(f'\tHEXTWOFLAG {mesh.get("HEXTWOFLAG", 0)}\n')
-    file.write(f'\tHEXFOURTOUSANDFLAG {mesh.get("HEXFOURTOUSANDFLAG", 0)}\n')
-    file.write(f'\tHEXEIGHTTOUSANDFLAG {mesh.get("HEXEIGHTTOUSANDFLAG", 0)}\n')
+    file.write(f'\tHEXFOURTHOUSANDFLAG {mesh.get("HEXFOURTHOUSANDFLAG", 0)}\n')
+    file.write(f'\tHEXEIGHTTHOUSANDFLAG {mesh.get("HEXEIGHTTHOUSANDFLAG", 0)}\n')
     file.write(f'\tHEXTENTHOUSANDFLAG {mesh.get("HEXTENTHOUSANDFLAG", 0)}\n')
     file.write(f'\tHEXTWENTYTHOUSANDFLAG {mesh.get("HEXTWENTYTHOUSANDFLAG", 0)}\n\n')
 
