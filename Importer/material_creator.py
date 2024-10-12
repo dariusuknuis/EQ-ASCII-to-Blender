@@ -45,6 +45,9 @@ def get_or_create_node_group(group_name, create_function, node_group_cache, text
 
 def create_materials(materials, textures, file_path, node_group_cache):
     created_materials = {}
+    
+    # Get the directory of the file_path for texture resolution
+    base_path = file_path
 
     for mat_data in materials:
         mat_name = mat_data['name']
@@ -61,7 +64,8 @@ def create_materials(materials, textures, file_path, node_group_cache):
             else:
                 texture_file = texture_info
 
-            texture_full_path = os.path.join(os.path.dirname(file_path), texture_file)
+            # Correct the full texture path formation by combining with base_path
+            texture_full_path = os.path.join(base_path, texture_file)
 
             rendermethod = mat_data['rendermethod']
             if rendermethod == 'SOLIDFILLAMBIENTGOURAUD1':
