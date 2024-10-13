@@ -102,17 +102,17 @@ def create_materials(materials, textures, file_path, node_group_cache):
 
         # Handle animated textures, layered textures, and special frame types
         if texture_info.get('animated', False):
-            add_animated_texture_nodes(mat, texture_info, base_path=os.path.dirname(file_path))
+            add_animated_texture_nodes(mat, texture_info, file_path)
         for frame_data in texture_info.get('frames', []):
             frame_type = frame_data.get('type', '').lower()
             if frame_type == 'layer':
-                add_layered_texture_nodes(mat, texture_info, node_group_cache, base_path=os.path.dirname(file_path))
+                add_layered_texture_nodes(mat, texture_info, node_group_cache, file_path)
             elif frame_type == 'detail':
-                add_detail_texture_nodes(mat, texture_info, node_group_cache, base_path=os.path.dirname(file_path))
+                add_detail_texture_nodes(mat, texture_info, node_group_cache, file_path)
             elif frame_type == 'palette_mask':
-                add_palette_mask_texture_nodes(mat, texture_info, node_group_cache, base_path=os.path.dirname(file_path))
+                add_palette_mask_texture_nodes(mat, texture_info, node_group_cache, file_path)
             elif frame_type == 'tiled':
-                add_tiled_texture_nodes(mat, frame_data, texture_info, node_group_cache, base_path=os.path.dirname(file_path))
+                add_tiled_texture_nodes(mat, frame_data, texture_info, node_group_cache, file_path)
 
         created_materials[mat_name] = mat
 
