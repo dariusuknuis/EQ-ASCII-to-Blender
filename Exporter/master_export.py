@@ -2,35 +2,33 @@ import bpy
 import os
 import sys
 
+# Add the path where everquestize_mesh.py is located
 sys.path.append(r'C:\Users\dariu\Documents\Quail\Exporter')
 
 from dmspritedef2_export import write_dmspritedef
 from track_export import export_animation_data
+from everquestize_mesh import split_vertices_by_uv, reindex_vertices_by_vertex_group
 
 def get_armature(obj):
     """Finds and returns the armature associated with the given object."""
-    # Check if the object itself has an armature modifier
     if obj.type == 'MESH' and obj.modifiers:
         for modifier in obj.modifiers:
             if modifier.type == 'ARMATURE' and modifier.object:
                 return modifier.object
-    
-    # Check if the object has a parent that is an armature
+
     if obj.parent and obj.parent.type == 'ARMATURE':
         return obj.parent
 
-    # Recursively check parent objects for an armature
     parent_obj = obj.parent
     while parent_obj:
         if parent_obj.type == 'ARMATURE':
             return parent_obj
         parent_obj = parent_obj.parent
 
-    # Search for armature in the hierarchy (siblings or children)
     for sibling in obj.parent.children if obj.parent else bpy.data.objects:
         if sibling.type == 'ARMATURE':
             return sibling
-    
+
     return None
 
 # Call the mesh export and POS animation
@@ -69,7 +67,11 @@ def export_dmspritedef(obj, file):
         bpy.ops.object.mode_set(mode='OBJECT')
 
     meshes = find_all_child_meshes(obj)
+    
+    # Run everquestize_mesh.py functions on all meshes before export
     for mesh in meshes:
+        split_vertices_by_uv(mesh)
+        reindex_vertices_by_vertex_group(mesh)
         write_dmspritedef(mesh, file)
 
 
@@ -108,4 +110,4 @@ def export_model(obj_name):
 
 
 # Example usage:
-export_model('AVI')  # Replace 'AVI' with the name of the object you want to export
+export_model('ELF') #empty object containing models and armature here
