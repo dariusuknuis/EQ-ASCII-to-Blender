@@ -2,7 +2,7 @@ bl_info = {
     "name": "WCE Importer",
     "description": "A tool to import EQ WCE files.",
     "author": "Darius",
-    "version": (1, 5),
+    "version": (1, 6),
     "blender": (3, 6, 2),
     "location": "View3D > Tool Shelf > WCE Importer",
     "category": "Import-Export",

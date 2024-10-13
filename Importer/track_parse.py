@@ -1,5 +1,3 @@
-import bpy
-import re
 import mathutils
 import shlex
 

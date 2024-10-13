@@ -41,7 +41,7 @@ def create_animation(armature_obj, track_definitions, armature_data, model_prefi
         fcurves = {}
 
         # Go through each track in the animation data
-        for track_data in tracks:
+        for track_index, track_data in enumerate(tracks):
             track = track_data['definition']
             track_instance = track_data['instance']
             track_instance_name = track_instance['name']
@@ -59,17 +59,23 @@ def create_animation(armature_obj, track_definitions, armature_data, model_prefi
 
             # Identify which bone this track belongs to
             bone_name = None
-            for bone in armature_obj.pose.bones:
-                stripped_bone_name = bone.name.replace('_DAG', '')
 
-                if stripped_bone_name == stripped_track_instance_name:
-                    bone_name = bone.name
-                    break
-                elif bone.name.replace('_ANIDAG', '') == stripped_track_instance_name:
-                    bone_name = bone.name
-                    break
+            # Force matching the first track to the first bone in the armature
+            if track_index == 0:
+                first_bone = armature_obj.pose.bones[0]
+                bone_name = first_bone.name
+            else:
+                for bone in armature_obj.pose.bones:
+                    stripped_bone_name = bone.name.replace('_DAG', '')
 
-            if not bone_name:
+                    if stripped_bone_name == stripped_track_instance_name:
+                        bone_name = bone.name
+                        break
+                    elif bone.name.replace('_ANIDAG', '') == stripped_track_instance_name:
+                        bone_name = bone.name
+                        break
+
+            if not bone_name and track_index != 0:  # Only create new bone if it's not the first track
                 # Create new animation-only bone with "_ANIDAG"
                 bpy.ops.object.mode_set(mode='EDIT')
                 parent_bone_name = stripped_track_instance_name[:-1] + '_DAG'
@@ -145,4 +151,3 @@ def create_animation(armature_obj, track_definitions, armature_data, model_prefi
         action["REVERSE"] = track_instance.get('reverse', False)
 
     print("Animation creation complete")
-
