@@ -28,7 +28,11 @@ def get_or_create_node_group(group_name, create_function, node_group_cache, text
     if group_name in bpy.data.node_groups:
         node_group = bpy.data.node_groups[group_name]
     else:
-        node_group = create_function(texture_path) if texture_path else create_function()
+        if texture_path is not None:
+            node_group = create_function(texture_path)
+        else:
+            # If the function doesn't require texture_path, you can call it without arguments
+            node_group = create_function()  
     
     node_group_cache[group_name] = node_group
     return node_group
@@ -69,7 +73,7 @@ def create_materials(materials, textures, file_path, node_group_cache):
             node_group = get_or_create_node_group('USERDEFINED_6', create_node_group_ud06, node_group_cache)
             mat = create_material_with_node_group_ud06(mat_name, texture_full_path, node_group)
         elif rendermethod == 'USERDEFINED_8':
-            node_group = get_or_create_node_group('USERDEFINED_8', create_node_group_ud08, node_group_cache)
+            node_group = get_or_create_node_group('USERDEFINED_8', create_node_group_ud08, node_group_cache, texture_full_path)
             mat = create_material_with_node_group_ud08(mat_name, texture_full_path, node_group)
         elif rendermethod == 'USERDEFINED_10':
             node_group = get_or_create_node_group('USERDEFINED_10', create_node_group_ud10, node_group_cache)
@@ -78,7 +82,7 @@ def create_materials(materials, textures, file_path, node_group_cache):
             node_group = get_or_create_node_group('USERDEFINED_12', create_node_group_ud12, node_group_cache)
             mat = create_material_with_node_group_ud12(mat_name, texture_full_path, node_group)
         elif rendermethod == 'USERDEFINED_20':
-            node_group = get_or_create_node_group('USERDEFINED_20', create_node_group_ud20, node_group_cache)
+            node_group = get_or_create_node_group('USERDEFINED_20', create_node_group_ud20, node_group_cache, texture_full_path)
             mat = create_material_with_node_group_ud20(mat_name, texture_full_path, node_group)
         elif rendermethod == 'USERDEFINED_21':
             node_group = get_or_create_node_group('USERDEFINED_21', create_node_group_ud21, node_group_cache)
