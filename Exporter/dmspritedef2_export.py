@@ -237,7 +237,6 @@ def write_dmspritedef(mesh, file):
     else:
         file.write(f'\n\tFACEMATERIALGROUPS 0\n')
 
-
     # Write VERTEXMATERIALGROUPS
     if "Vertex_Material_Index" in mesh.data.attributes:
         vertex_material_index = mesh.data.attributes["Vertex_Material_Index"].data
@@ -323,20 +322,20 @@ def find_all_child_meshes(parent_obj):
     return meshes
 
 # Main script execution
-output_file = r"C:\Users\dariu\Documents\Quail\Exporter\haf.export.wce"  # Replace with desired path
-with open(output_file, 'w') as file:
-    empty_obj = bpy.data.objects.get('haf')  # Replace with your empty object name
-    if not empty_obj:
-        print("Empty object not found!")
-        file.write("Empty object not found!\n")
-    else:
-        print(f"Empty object found: {empty_obj.name}")
-        meshes = find_all_child_meshes(empty_obj)
-        if not meshes:
-            file.write("No meshes found!\n")
-        else:
-            for mesh in meshes:
-                print(f"Processing mesh: {mesh.name}")
-                write_dmspritedef(mesh, file)
+#output_file = r"C:\Users\dariu\Documents\Quail\Exporter\haf.export.wce"  # Replace with desired path
+#with open(output_file, 'w') as file:
+#    empty_obj = bpy.data.objects.get('haf')  # Replace with your empty object name
+#    if not empty_obj:
+#        print("Empty object not found!")
+#        file.write("Empty object not found!\n")
+#    else:
+#        print(f"Empty object found: {empty_obj.name}")
+#        meshes = find_all_child_meshes(empty_obj)
+#        if not meshes:
+#            file.write("No meshes found!\n")
+#        else:
+#            for mesh in meshes:
+#                print(f"Processing mesh: {mesh.name}")
+#                write_dmspritedef(mesh, file)
 
-print(f"ASCII data exported to {output_file}")
+#print(f"ASCII data exported to {output_file}")

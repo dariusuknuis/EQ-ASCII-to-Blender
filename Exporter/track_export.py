@@ -1,21 +1,32 @@
 import bpy
 import mathutils
 
-def export_animation_data(armature_obj, file, frame_rate=30):
-    # Get the armature object and its associated animation data
+def export_animation_data(armature_obj, file, include_pos=False):
     actions = bpy.data.actions
+
+    # Debug: Print armature object being used
+    print(f"Exporting animations for armature: {armature_obj.name}")
 
     for action in actions:
         if action.users == 0:
             continue  # Skip if action is not assigned to any object
         
-        # Ensure the armature object has animation data
-        if armature_obj.animation_data is None:
-            armature_obj.animation_data_create()
-        
+        # Debug: Print the action being processed
+        print(f"Processing action: {action.name}")
+
+        # Filter actions based on POS inclusion
+        if include_pos and not action.name.startswith("POS"):
+            continue
+        elif not include_pos and action.name.startswith("POS"):
+            continue
+
+        # Debug: Print which actions are being processed
+        print(f"Writing animation: {action.name} (POS included: {include_pos})")
+
         # Write TRACKDEFINITION and TRACKINSTANCE for each bone in the armature
         for bone in armature_obj.pose.bones:
             bone_name = bone.name
+            print(f"Processing bone: {bone_name}")
 
             # Strip off any .001, .002 suffixes and remove _DAG or _ANIDAG
             stripped_bone_name = bone_name.replace('_DAG', '').replace('_ANIDAG', '').split('.')[0]
@@ -23,7 +34,7 @@ def export_animation_data(armature_obj, file, frame_rate=30):
             # Filter the fcurves for the current action and this bone
             location_fcurves = [fcurve for fcurve in action.fcurves if f'pose.bones["{bone_name}"].location' in fcurve.data_path]
             rotation_fcurves = [fcurve for fcurve in action.fcurves if f'pose.bones["{bone_name}"].rotation_quaternion' in fcurve.data_path]
-            
+
             if not location_fcurves and not rotation_fcurves:
                 continue  # Skip if no animation data exists for this bone
 
@@ -40,7 +51,9 @@ def export_animation_data(armature_obj, file, frame_rate=30):
             track_def_name = f"{action_prefix}{stripped_bone_name}_TRACKDEF"
             track_instance_name = f"{action_prefix}{stripped_bone_name}_TRACK"
 
-            # Add newlines before TRACKDEFINITION and TRACKINSTANCE
+            # Debug: Print track definition being written
+            print(f"Writing TRACKDEFINITION: {track_def_name}")
+
             file.write(f'\nTRACKDEFINITION "{track_def_name}"\n')
 
             # Write action custom properties if they exist
@@ -92,19 +105,9 @@ def export_animation_data(armature_obj, file, frame_rate=30):
 
             # Calculate SLEEP time between keyframes
             if num_frames > 1:
-                sleep_time = round((action.frame_range[1] - 1) / (num_frames - 1) * 1000 / frame_rate)  # milliseconds
+                sleep_time = round((action.frame_range[1] - 1) / (num_frames - 1) * 1000 / bpy.context.scene.render.fps)  # milliseconds
             else:
                 sleep_time = "NULL"
             file.write(f'\tSLEEP? {sleep_time}\n')
 
     print("Animation export complete")
-
-
-# Example call to export animation data
-output_file = r"C:\Users\dariu\Documents\Quail\Exporter\fro_ani.export.wce"
-armature = bpy.context.object  # Assume the armature is the active object
-
-with open(output_file, 'w') as file:
-    export_animation_data(armature, file, frame_rate=bpy.context.scene.render.fps)
-
-print(f"Animation data exported to {output_file}")
