@@ -97,9 +97,8 @@ def write_dmspritedef(mesh, file):
         file.write('\n\tNUMVERTEXCOLORS 0\n')
 
     # Write SKINASSIGNMENTGROUPS
-    if len(mesh.vertex_groups) > 0 and mesh.parent and mesh.parent.type == 'ARMATURE':
-        # Assuming the armature is the parent of the mesh
-        armature = mesh.parent
+    armature = find_armature_for_mesh(mesh)
+    if armature and mesh.vertex_groups:
 
         # Create a bone index mapping, excluding bones that end in "_ANIDAG"
         bone_name_to_index = {}
@@ -294,7 +293,6 @@ def write_dmspritedef(mesh, file):
     else:
         file.write(f'\tBOUNDINGRADIUS 0.00000000e+00\n')
 
-
     # Write custom properties
     file.write(f'\n\tFPSCALE {mesh.get("FPSCALE", 0)}\n')
     file.write(f'\tHEXONEFLAG {mesh.get("HEXONEFLAG", 0)}\n')
@@ -303,6 +301,15 @@ def write_dmspritedef(mesh, file):
     file.write(f'\tHEXEIGHTTHOUSANDFLAG {mesh.get("HEXEIGHTTHOUSANDFLAG", 0)}\n')
     file.write(f'\tHEXTENTHOUSANDFLAG {mesh.get("HEXTENTHOUSANDFLAG", 0)}\n')
     file.write(f'\tHEXTWENTYTHOUSANDFLAG {mesh.get("HEXTWENTYTHOUSANDFLAG", 0)}\n\n')
+
+# Helper function to find the armature associated with a mesh
+def find_armature_for_mesh(mesh):
+    for modifier in mesh.modifiers:
+        if modifier.type == 'ARMATURE' and modifier.object:
+            return modifier.object
+    if mesh.parent and mesh.parent.type == 'ARMATURE':
+        return mesh.parent
+    return None
 
 # Function to find child meshes by suffix
 def find_child_mesh(parent_obj, suffix):

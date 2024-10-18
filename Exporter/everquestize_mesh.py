@@ -76,6 +76,10 @@ def split_vertices_by_uv(mesh_obj):
 
 
 def reindex_vertices_by_vertex_group(mesh_obj, armature_obj=None):
+    # Check if the mesh has any vertex groups; skip if not
+    if not mesh_obj.vertex_groups:
+        print(f"Skipping reindexing: No vertex groups found for {mesh_obj.name}")
+        return
     mesh = mesh_obj.data
     bm = bmesh.new()
     bm.from_mesh(mesh)
