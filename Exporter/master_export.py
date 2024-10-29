@@ -2,7 +2,7 @@ import bpy
 import os
 import sys
 
-# Add the path where everquestize_mesh.py is located
+# Add the path where export scripts are located
 sys.path.append(r'C:\Users\dariu\Documents\Quail\Exporter')
 
 from dmspritedef2_export import write_dmspritedef
