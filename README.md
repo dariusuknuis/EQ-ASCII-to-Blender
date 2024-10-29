@@ -11,6 +11,7 @@ Import
 4) Run quail.exe from command line. The command to convert a file from .s3d to Quail WCE format is:
             quail.exe convert filename.s3d filename.quail
 5) Within the .quail folder there is a file called _root.wce with contents like this:
+   
             // wcemu v0.0.1
             // This file was created by quail v1.4
             // Original file: chequip.wld
@@ -22,6 +23,7 @@ Import
             INCLUDE "AVI/_ROOT.WCE"
 
    The lines after INCLUDE "WORLD.WCE" are the models that will load. Comment out any models you don't want to load like this:
+   
             // wcemu v0.0.1
             // This file was created by quail v1.4
             // Original file: chequip.wld
@@ -31,6 +33,7 @@ Import
             //INCLUDE "ALL/_ROOT.WCE"
             //INCLUDE "ARM/_ROOT.WCE"
             //INCLUDE "AVI/_ROOT.WCE"
+   
 6) In Blender press N to bring up the Sidebar and find the WCE Importer tab. Press "Import WCE File".
 7) Find and select the _root.wce file in the main filename.quail folder that you created with quail.exe.
 8) It will load each model that was uncommented as a separate empty object. Under each empty object are the meshes and armatures for that model.
