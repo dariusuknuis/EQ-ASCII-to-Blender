@@ -9,7 +9,9 @@ Import
 2) Download the matching quail.exe version from https://github.com/xackery/quail/releases.
 3) Place quail.exe and the EverQuest .s3d file you want to edit in the same folder.
 4) Run quail.exe from command line. The command to convert a file from .s3d to Quail WCE format is:
+
             quail.exe convert filename.s3d filename.quail
+   
 5) Within the .quail folder there is a file called _root.wce with contents like this:
    
             // wcemu v0.0.1
@@ -42,11 +44,16 @@ Export
 
 1) Download the Exporter folder and files from Github and unzip wherever you want.
 2) Change the below line in master_export.py to the location you placed your exporter scripts folder at:
+   
             # Add the path where export scripts are located
-            **sys.path.append(r'C:\Users\dariu\Documents\Quail\Exporter')**
+            sys.path.append(r'C:\Users\dariu\Documents\Quail\Exporter')
+   
 3) Open the Blender Scripting workspace and click the folder icon and open the master_export.py.
 4) Set the location for the output on this line near the bottom of the script:
-            **output_path = r"C:\Users\dariu\Documents\Quail\Exporter"  # Update the path to your preferred location**
+   
+            output_path = r"C:\Users\dariu\Documents\Quail\Exporter"  # Update the path to your preferred location
+   
    and the name of the empty object for the model you want to export at the bottom of the script:
-            **export_model('ELF') #empty object containing models and armature here**
+   
+            export_model('ELF') #empty object containing models and armature here
 
