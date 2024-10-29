@@ -3,6 +3,9 @@ import mathutils
 from mathutils import Quaternion
 
 def create_default_pose(armature_obj, track_definitions, armature_data, cumulative_matrices, prefix):
+    # Get the scene's frame rate
+    frame_rate = bpy.context.scene.render.fps
+
     # Create a default pose action
     action_name = f"POS_{prefix}"
     action = bpy.data.actions.new(name=action_name)
@@ -16,48 +19,46 @@ def create_default_pose(armature_obj, track_definitions, armature_data, cumulati
     nla_track = nla_tracks.new()
     nla_track.name = action_name
 
-    # Set a start frame for the NLA strip (default pose should typically start at frame 1)
-    start_frame = 1  # Set this as appropriate for your needs
+    # Set a start frame for the NLA strip
+    start_frame = 1  # Adjust as needed
     nla_strip = nla_track.strips.new(action_name, start=start_frame, action=action)
     nla_strip.action = action
     nla_strip.name = action_name
 
     fcurves = {}  # Initialize the fcurves dictionary
 
-    # Loop through the bones in the armature and create default pose keyframes
+    #Iterate over the bones in the armature in order
     for bone_name, bone in armature_obj.pose.bones.items():
-        # Strip the _DAG suffix and handle duplicate bones with .001, .002 suffixes
-        stripped_bone_name = bone_name.replace('_DAG', '').split('.')[0]
+        # Check if the bone has a 'track' value
+        track_name = bone.get('track', None)
 
-        # Check for matching bone in the armature data
-        corresponding_bone = next((b for b in armature_data['bones'] if b['name'].startswith(stripped_bone_name)), None)
+        if track_name and track_name in track_definitions['armature_tracks']:
+            # Retrieve the corresponding track definition and instance
+            track_def = track_definitions['armature_tracks'][track_name]['definition']
+            track_instance = track_definitions['armature_tracks'][track_name]['instance']
 
-        if corresponding_bone:
-            # Match the corresponding track by checking the name
-            track_name = corresponding_bone['track']
+            # Get the sleep value for frame timing
+            sleep = track_instance.get('sleep', None)
+            frames_per_sleep = (sleep / 1000) * frame_rate if sleep else 1
 
-            # If track_name doesn't exist, check for duplicate names without .001 suffix
-            if track_name not in track_definitions['armature_tracks']:
-                track_name = track_name.split('.')[0]  # Use original bone name without suffix
+            current_frame = start_frame
 
-            if track_name in track_definitions['armature_tracks']:
-                track_def = track_definitions['armature_tracks'][track_name]['definition']
-                track_instance = track_definitions['armature_tracks'][track_name]['instance']  # Access the track instance
-
-                initial_transform = track_def['frames'][0]
-
-                armature_translation = initial_transform.get('translation', [0, 0, 0])
-                armature_rotation = initial_transform.get('rotation', Quaternion((1, 0, 0, 0)))
+            # Iterate over all frames to create keyframes
+            for frame_index, frame_data in enumerate(track_def['frames']):
+                armature_translation = frame_data.get('translation', [0, 0, 0])
+                armature_rotation = frame_data.get('rotation', Quaternion((1, 0, 0, 0)))
                 xyz_scale = track_def.get('xyz_scale', 256)
                 scale_factor = xyz_scale / 256.0
 
-                # Create a matrix that applies the cumulative matrix, translation, rotation, and scale
+                # Create the transformation matrix
                 scale_matrix = mathutils.Matrix.Scale(scale_factor, 4)
                 rotation_matrix = armature_rotation.to_matrix().to_4x4()
                 translation_matrix = mathutils.Matrix.Translation(armature_translation)
 
-                # Combine the matrices in the correct order: Translation * Rotation * Scale * Cumulative Matrix
-                bone_matrix = translation_matrix @ rotation_matrix @ scale_matrix @ cumulative_matrices.get(bone_name, mathutils.Matrix.Identity(4))
+                bone_matrix = (
+                    translation_matrix @ rotation_matrix @ scale_matrix @
+                    cumulative_matrices.get(bone_name, mathutils.Matrix.Identity(4))
+                )
 
                 # Initialize fcurves for location, rotation, and scale
                 if bone_name not in fcurves:
@@ -67,42 +68,42 @@ def create_default_pose(armature_obj, track_definitions, armature_data, cumulati
                         'scale': []
                     }
 
-                    # Create fcurves for location, rotation, and scale
-                    for i in range(3):  # Location and Scale have 3 components: X, Y, Z
+                    for i in range(3):  # Location and Scale
                         fcurves[bone_name]['location'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].location', index=i))
                         fcurves[bone_name]['scale'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].scale', index=i))
 
-                    for i in range(4):  # Rotation quaternion has 4 components: W, X, Y, Z
+                    for i in range(4):  # Rotation quaternion
                         fcurves[bone_name]['rotation_quaternion'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].rotation_quaternion', index=i))
 
-                # Extract translation, rotation, and scale from the bone matrix
+                # Extract translation, rotation, and scale
                 translation = bone_matrix.to_translation()
                 rotation = bone_matrix.to_quaternion()
-                scale = [scale_factor] * 3  # Apply the scaling factor uniformly on all axes
+                scale = [scale_factor] * 3
 
-                # Insert location keyframes
+                # Insert keyframes for location, rotation, and scale
                 for i, value in enumerate(translation):
                     fcurve = fcurves[bone_name]['location'][i]
-                    kf = fcurve.keyframe_points.insert(1, value)
+                    kf = fcurve.keyframe_points.insert(current_frame, value)
                     kf.interpolation = 'LINEAR'
 
-                # Insert rotation keyframes
                 for i, value in enumerate(rotation):
                     fcurve = fcurves[bone_name]['rotation_quaternion'][i]
-                    kf = fcurve.keyframe_points.insert(1, value)
+                    kf = fcurve.keyframe_points.insert(current_frame, value)
                     kf.interpolation = 'LINEAR'
 
-                # Insert scale keyframes
                 for i, value in enumerate(scale):
                     fcurve = fcurves[bone_name]['scale'][i]
-                    kf = fcurve.keyframe_points.insert(1, value)
+                    kf = fcurve.keyframe_points.insert(current_frame, value)
                     kf.interpolation = 'LINEAR'
 
-                # Add custom properties to the Action using track_instance
-                action["TAGINDEX"] = track_instance.get('tag_index', 0)
-                action["SPRITE"] = track_instance.get('sprite', "")
-                action["DEFINITIONINDEX"] = track_instance.get('definition_index', 0)
-                action["INTERPOLATE"] = track_instance.get('interpolate', False)
-                action["REVERSE"] = track_instance.get('reverse', False)
+                # Advance the current frame
+                current_frame += frames_per_sleep
 
-    print(f"Created default pose action '{action_name}'")
+            # Add custom properties to the action
+            action["TAGINDEX"] = track_instance.get('tag_index', 0)
+            action["SPRITE"] = track_instance.get('sprite', "")
+            action["DEFINITIONINDEX"] = track_instance.get('definition_index', 0)
+            action["INTERPOLATE"] = track_instance.get('interpolate', False)
+            action["REVERSE"] = track_instance.get('reverse', False)
+
+    #print(f"Created default pose action '{action_name}' with multiple keyframes")

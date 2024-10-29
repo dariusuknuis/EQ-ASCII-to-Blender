@@ -14,13 +14,13 @@ clear_console()
 
 # Manually set the directory containing your scripts
 script_dir = r'C:\Users\dariu\Documents\Quail\Importer'  # Replace with the actual path
-print(f"Script directory: {script_dir}")  # Check the path
+#print(f"Script directory: {script_dir}")  # Check the path
 if script_dir not in sys.path:
     sys.path.append(script_dir)
 
 # Function to open and initiate the parsing
 def parse(filepath: str):
-    print(f"Opening file: {filepath}")
+    #print(f"Opening file: {filepath}")
     with open(filepath, 'r') as file:
         data = file.read()
     r = io.StringIO(data)
@@ -68,7 +68,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
             # Debugging: print what was returned from the INCLUDE file
 #            print(f"INCLUDE file {include_filepath} parsed results:")
 #            print(f"Meshes: {include_results[0]}")
-#            print(f"Armature Data: {include_results[1]}")
+            # print(f"Armature Data: {include_results[1]}")
 #            print(f"Track Definitions: {include_results[2]}")
 #            print(f"Material Palettes: {include_results[3]}")
 #            print(f"Polyhedrons: {include_results[5]}")
@@ -102,7 +102,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
 
         elif line.startswith("TRACKDEFINITION"):
             from track_parse import track_parse
-            print(f"Parsing TRACKDEFINITION in {filename}")
+            #print(f"Parsing TRACKDEFINITION in {filename}")
             track_data = track_parse(r, parse_property, base_name, line)  # Pass the current line to track_parse
             # Merge the track data for both animations and armature_tracks
             track_definitions['animations'].update(track_data['animations'])
@@ -112,7 +112,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
         elif line.startswith("HIERARCHICALSPRITEDEF"):
             from hierarchicalspritedef_parse import hierarchicalspritedef_parse
             armature_data = hierarchicalspritedef_parse(r, parse_property, line)
-#            print(f"Parsed HIERARCHICALSPRITEDEF: {armature_data}")
+            # print(f"Parsed HIERARCHICALSPRITEDEF: {armature_data}")
 
         elif line.startswith("POLYHEDRONDEFINITION"):
             from polyhedrondefinition_parse import polyhedrondefinition_parse
@@ -136,7 +136,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
     # Debug print to track final merged data from this file
 #    print(f"Final parsed results for {filename}:")
 #    print(f"Meshes: {meshes}")
-#    print(f"Armature Data: {armature_data}")
+    #  print(f"Armature Data: {armature_data}")
 #    print(f"Track Definitions: {track_definitions}")
 #    print(f"Material Palettes: {material_palettes}")
 #    print(f"Polyhedrons: {polyhedrons}")
@@ -185,15 +185,15 @@ if __name__ == '__main__':
     meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials = eq_ascii_parse(filepath)
 
     # If armature data exists, print it out (for extra clarity outside of the function)
-#    if armature_data:
-#        print("\nFinal Collected Armature Data:")
-#        for key, value in armature_data.items():
-#            print(f"{key}: {value}")
+    # if armature_data:
+    #     print("\nFinal Collected Armature Data:")
+    #     for key, value in armature_data.items():
+    #         print(f"{key}: {value}")
 
-    if meshes:
-        print("\nFinal Collected Meshes:")
-        for mesh in meshes:  # Iterate directly over the list
-            print(f"{mesh}")
+    # if meshes:
+    #     print("\nFinal Collected Meshes:")
+    #     for mesh in meshes:  # Iterate directly over the list
+    #         print(f"{mesh}")
 
 #    if track_definitions:
 #        print("\nFinal Collected Track Definitions:")
@@ -204,10 +204,10 @@ if __name__ == '__main__':
 #        for track_name, armature_track in track_definitions['armature_tracks'].items():
 #            print(f"{track_name}: {armature_track}")
 
-    if material_palettes:
-        print("\nFinal Collected Material Palettes:")
-        for key, value in material_palettes.items():
-            print(f"{key}: {value}")
+    # if material_palettes:
+    #     print("\nFinal Collected Material Palettes:")
+    #     for key, value in material_palettes.items():
+    #         print(f"{key}: {value}")
 
 #    if include_files:
 #        print("\nFinal Collected Include Files:")

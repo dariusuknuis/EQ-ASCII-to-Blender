@@ -51,12 +51,22 @@ def create_armature(armature_data, armature_tracks, parent_obj):
 
     bpy.ops.object.mode_set(mode='OBJECT')
 
+    # Assign the 'track' property to each pose bone
+    for bone in armature_data['bones']:
+        bone_name = bone['name']
+        bone_track = bone.get('track', None)
+
+        if bone_track:
+            pose_bone = armature_obj.pose.bones.get(bone_name)
+            if pose_bone:
+                pose_bone["track"] = bone_track  # Assign track as custom property
+
     # Adjust origin by the center_offset value only if it exists and is not NULL
     center_offset_data = armature_data.get('center_offset')
     if center_offset_data:
         center_offset = mathutils.Vector(center_offset_data)
         armature_obj.location = center_offset
-        print(f"Applied center_offset: {center_offset}")
+        #print(f"Applied center_offset: {center_offset}")
     else:
         print("No valid center_offset found, using default location.")
 

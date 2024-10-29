@@ -14,10 +14,12 @@ animation_prefixes = [
 # Create a new list that includes the variants with "A" and "B"
 animation_prefix_variants = animation_prefixes + [prefix + "A" for prefix in animation_prefixes] + [prefix + "B" for prefix in animation_prefixes]
 
+def format_tag_index(tag_index):
+    """Format the tag index as .xxx where xxx = tag_index / 1000."""
+    return f".{tag_index:03d}"
+
 def generate_unique_name(base_name, existing_names):
-    """
-    Generate a unique name based on the base_name by adding a numerical suffix.
-    """
+    """Generate a unique name by adding a numerical suffix if needed."""
     if base_name not in existing_names:
         return base_name
     
@@ -32,9 +34,6 @@ def track_parse(r, parse_property, base_name, current_line):
     track_definitions = {}
     animations = {}
     armature_tracks = {}
-
-    existing_track_definitions = set()
-    existing_track_instances = set()
 
     # Parse TRACKDEFINITION from the current line
     records = shlex.split(current_line)
@@ -51,7 +50,12 @@ def track_parse(r, parse_property, base_name, current_line):
 
     # Parse TAGINDEX
     records = parse_property(r, "TAGINDEX", 1)
-    track_def['tag_index'] = int(records[1])
+    tag_index = int(records[1])
+    track_def['tag_index'] = tag_index
+
+    # Append .xxx to track_def name if TAGINDEX > 0
+    if tag_index > 0:
+        track_def['name'] += format_tag_index(tag_index)
 
     # Parse SPRITE
     records = parse_property(r, "SPRITE", 1)
@@ -126,10 +130,8 @@ def track_parse(r, parse_property, base_name, current_line):
             legacy_frames.append(legacy_frame_data)
         track_def['legacy_frames'] = legacy_frames
 
-    # Use generate_unique_name for track definition
-    track_def_name = generate_unique_name(track_def['name'], track_definitions.keys())
-    track_def['name'] = track_def_name
-    track_definitions[track_def_name] = track_def
+    # Store the track definition
+    track_definitions[track_def['name']] = track_def
 
     # Parse TRACKINSTANCE
     records = parse_property(r, "TRACKINSTANCE", 1)
@@ -142,7 +144,10 @@ def track_parse(r, parse_property, base_name, current_line):
 
     # Parse TAGINDEX (inside TRACKINSTANCE)
     records = parse_property(r, "TAGINDEX", 1)
-    track_instance['tag_index'] = int(records[1])
+    instance_tag_index = int(records[1])
+    track_instance['tag_index'] = instance_tag_index
+    if instance_tag_index > 0:
+        track_instance['name'] += format_tag_index(instance_tag_index)
 
     # Parse SPRITE (inside TRACKINSTANCE)
     records = parse_property(r, "SPRITE", 1)
@@ -151,6 +156,8 @@ def track_parse(r, parse_property, base_name, current_line):
     # Parse DEFINITION (inside TRACKINSTANCE)
     records = parse_property(r, "DEFINITION", 1)
     track_instance['definition'] = records[1]
+    if instance_tag_index > 0:
+        track_instance['definition'] += format_tag_index(instance_tag_index)
 
     # Parse DEFINITIONINDEX
     records = parse_property(r, "DEFINITIONINDEX", 1)
@@ -169,27 +176,20 @@ def track_parse(r, parse_property, base_name, current_line):
     track_instance['sleep'] = int(records[1]) if records[1] != "NULL" else None
 
     # Determine whether the track is an animation or an armature track
-    track_def = track_definitions.get(track_instance['definition'])
+    track_instance_name = track_instance['name']
+    prefix = track_instance['name'].split(base_name)[0]
 
-    if track_def:
-        if base_name in track_instance['name']:
-            prefix_part = track_instance['name'].split(base_name)[0]
-
-            # Perform an exact match with the animation prefix variants
-            if prefix_part in animation_prefix_variants:
-                # Use generate_unique_name for track instance
-                track_instance_name = generate_unique_name(track_instance['name'], animations.keys())
-                track_instance['name'] = track_instance_name
-                animations[track_instance_name] = {
-                    'instance': track_instance,
-                    'definition': track_def,
-                    'animation_prefix': prefix_part  # Store the animation prefix
-                }
-                print(f"Stored animation prefix '{prefix_part}' for track '{track_instance['name']}'")
-            else:
-                armature_tracks[track_instance['name']] = {
-                    'instance': track_instance,
-                    'definition': track_def
-                }
+    if any(prefix.startswith(anim_prefix) for anim_prefix in animation_prefixes):
+        animations[track_instance_name] = {
+            'instance': track_instance,
+            'definition': track_def,
+            'animation_prefix': prefix  # Store the animation prefix
+        }
+        #print(f"Stored animation prefix '{prefix}' for track '{track_instance['name']}'")
+    else:
+        armature_tracks[track_instance['name']] = {
+            'instance': track_instance,
+            'definition': track_def
+        }
 
     return {'animations': animations, 'armature_tracks': armature_tracks}

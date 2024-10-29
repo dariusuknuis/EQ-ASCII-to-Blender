@@ -34,8 +34,8 @@ def check_and_fix_dds(texture_path):
                 # Write the modified flags back to the file
                 f.seek(DDS_OFFSET_FLAGS)
                 f.write(struct.pack('<I', flags))
-            else:
-                print(f"No changes needed for {texture_path}.")
+            # else:
+            #     print(f"No changes needed for {texture_path}.")
     except IOError as e:
         print(f"Failed to process {texture_path}: {e}")
 

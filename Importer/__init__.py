@@ -2,7 +2,8 @@ bl_info = {
     "name": "WCE Importer",
     "description": "A tool to import EQ WCE files.",
     "author": "Darius",
-    "version": (1, 6),
+    "version": (1, 7),
+    "Quail": (1, 4, 221),
     "blender": (3, 6, 2),
     "location": "View3D > Tool Shelf > WCE Importer",
     "category": "Import-Export",
@@ -15,10 +16,26 @@ import sys
 # Automatically set the directory containing your scripts relative to the add-on location
 script_dir = os.path.dirname(os.path.realpath(__file__))  # Dynamically get the directory of the add-on
 
-print(f"Script directory: {script_dir}")  # Debugging: check if the path is correct
+#print(f"Script directory: {script_dir}")  # Debugging: check if the path is correct
 
 if script_dir not in sys.path:
     sys.path.append(script_dir)
+
+# Preferences panel to display version information
+class WCEImporterPreferences(bpy.types.AddonPreferences):
+    bl_idname = __name__
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column()
+        
+        # Display the add-on version
+        blender_version = ".".join(map(str, bl_info["blender"]))
+        col.label(text=f"Blender Version: {blender_version}")
+
+        # Display the compatible Quail version
+        quail_version = ".".join(map(str, bl_info["Quail"]))
+        col.label(text=f"Compatible Quail Version: {quail_version}")
 
 # Function that loads external modules only during execution
 def load_modules():
@@ -104,7 +121,7 @@ def process_root_file(file_path):
         process_include_file(include_line, file_dir, file_path, node_group_cache)
 
     # Apply passable nodes to all meshes in the scene after everything is loaded
-    apply_passable_to_all_meshes()
+    #apply_passable_to_all_meshes()
 
 # Operator for file selection
 class ImportWCEFileOperator(bpy.types.Operator):
@@ -145,11 +162,13 @@ def register_passable_flag_editor():
 
 # Register and unregister classes
 def register():
+    bpy.utils.register_class(WCEImporterPreferences)
     bpy.utils.register_class(ImportWCEFileOperator)
     bpy.utils.register_class(ImportWCEPanel)
     register_passable_flag_editor()  # Register the Passable Flag Editor
 
 def unregister():
+    bpy.utils.unregister_class(WCEImporterPreferences)
     bpy.utils.unregister_class(ImportWCEFileOperator)
     bpy.utils.unregister_class(ImportWCEPanel)
     unregister_passable_editor()  # Unregister the Passable Flag Editor

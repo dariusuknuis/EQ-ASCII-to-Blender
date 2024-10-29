@@ -75,6 +75,11 @@ def dmspritedef2_parse(r, parse_property, current_line):
     records = parse_property(r, "MATERIALPALETTE", 1)
     mesh["material_palette"] = records[1]
 
+    # Parse DMTRACKINST and its DEFINITION
+    records = parse_property(r, "DMTRACKINST", 1)
+    dmtrack_data = records[1]
+    mesh['dmtrack'] = dmtrack_data
+
     # Parse POLYHEDRON and its DEFINITION
     records = parse_property(r, "POLYHEDRON", 0)
     records = parse_property(r, "DEFINITION", 1)
@@ -131,12 +136,6 @@ def dmspritedef2_parse(r, parse_property, current_line):
         vertex_material_groups.append((vertex_start, vertex_end, material_index))
         vertex_start = vertex_end
     mesh['vertex_materials'] = vertex_material_groups
-
-    # Parse DMTRACK and its DEFINITION
-    # records = parse_property(r, "DMTRACK", 0)
-    # records = parse_property(r, "DEFINITION", 1)
-    # dmtrack_data = records[1]
-    # mesh['dmtrack'] = dmtrack_data
 
     # Parse BOUNDINGBOX
     bounding_box_data = []

@@ -29,7 +29,7 @@ def create_node_group_transparent():
 
     return node_group
 
-def create_material_with_node_group_transparent(material_name):
+def create_material_with_node_group_transparent(material_name, node_group):
     # Check if the material already exists, and return it if it does
     if material_name in bpy.data.materials:
         return bpy.data.materials[material_name]

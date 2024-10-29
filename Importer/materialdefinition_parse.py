@@ -50,8 +50,8 @@ def materialdefinition_parse(r, parse_property, current_line):
     if records[1] != "NULL":
         material['pairs'] = (int(records[1]), float(records[2]))
 
-    # Parse HEXONEFLAG
-    records = parse_property(r, "HEXONEFLAG", 1)
-    material['hexoneflag'] = int(records[1])
+    # Parse DOUBLESIDED
+    records = parse_property(r, "DOUBLESIDED", 1)
+    material['doublesided'] = int(records[1])
 
     return material
