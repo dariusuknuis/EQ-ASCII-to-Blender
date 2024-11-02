@@ -2,8 +2,8 @@ bl_info = {
     "name": "WCE Importer",
     "description": "A tool to import EQ WCE files.",
     "author": "Darius",
-    "version": (1, 7),
-    "Quail": (1, 4, 221),
+    "version": (1, 8),
+    "Quail": (1, 4, 224),
     "blender": (3, 6, 2),
     "location": "View3D > Tool Shelf > WCE Importer",
     "category": "Import-Export",
@@ -61,7 +61,7 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
     folder_name = include_line.split('/')[0].upper()
     include_filepath = os.path.join(file_dir, include_line.strip('"'))
     root_file_dir = os.path.dirname(root_file_path)
-    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials = eq_ascii_parse(include_filepath)
+    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations = eq_ascii_parse(include_filepath)
     created_materials = create_materials(materials, textures, root_file_dir, node_group_cache)
     main_obj = bpy.data.objects.new(folder_name, None)
     bpy.context.collection.objects.link(main_obj)
@@ -70,13 +70,16 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         armature_tracks = track_definitions['armature_tracks']
         armature_obj, bone_map, cumulative_matrices = create_armature(armature_data, armature_tracks, main_obj)
         for mesh_data in meshes:
-            mesh_obj = create_mesh(mesh_data, main_obj, armature_obj, armature_data, material_palettes, created_materials)
+            mesh_obj = create_mesh(mesh_data, main_obj, armature_obj, armature_data, material_palettes, created_materials, vertex_animations)
+            geo_node_group = create_passable_geometry_node_group()
+            passable_mat = create_passable_material()
+            apply_passable_to_mesh(mesh_obj, geo_node_group, passable_mat)
             assign_mesh_to_armature(mesh_obj, armature_obj, armature_data, cumulative_matrices)
         create_default_pose(armature_obj, track_definitions, armature_data, cumulative_matrices, folder_name)
         create_animation(armature_obj, track_definitions, armature_data, model_prefix=folder_name)
     else:
         for mesh_data in meshes:
-            mesh_obj = create_mesh(mesh_data, main_obj, None, None, material_palettes, created_materials)
+            mesh_obj = create_mesh(mesh_data, main_obj, None, None, material_palettes, created_materials, vertex_animations)
             geo_node_group = create_passable_geometry_node_group()
             passable_mat = create_passable_material()
             apply_passable_to_mesh(mesh_obj, geo_node_group, passable_mat)
@@ -111,7 +114,7 @@ def process_root_file(file_path):
     file_dir = os.path.dirname(file_path)
     
     # Parse the root file
-    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials = eq_ascii_parse(file_path)
+    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations = eq_ascii_parse(file_path)
 
     # Cache for node groups
     node_group_cache = {}

@@ -18,7 +18,7 @@ def create_node_group_ud20(image_texture_file):
     :param texture_path: Path to the texture file.
     :return: The node group created.
     """
-    if is_dxt5_dds(image_texture_file):
+    if has_dds_header(image_texture_file):
         node_group_name = "USERDEFINED_20(DXT5DDS)"
     else:
         node_group_name = "USERDEFINED_20(NDXCLRBMP)"
@@ -29,7 +29,7 @@ def create_node_group_ud20(image_texture_file):
         return bpy.data.node_groups[node_group_name]
 
     # Create the node group based on the texture type
-    if is_dxt5_dds(image_texture_file):
+    if has_dds_header(image_texture_file):
         # Create the node group for DXT5 DDS
         node_group = bpy.data.node_groups.new(name=node_group_name, type='ShaderNodeTree')
 
@@ -155,7 +155,7 @@ def create_node_group_ud20(image_texture_file):
 
 def create_material_with_node_group_ud20(material_name, image_texture_file, node_group):
     # Determine the texture type
-    if is_dxt5_dds(image_texture_file):
+    if has_dds_header(image_texture_file):
         # Create a new material for DXT5 DDS
         material = bpy.data.materials.new(name=material_name)
         material.use_nodes = True

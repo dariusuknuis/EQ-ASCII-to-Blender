@@ -1,8 +1,9 @@
 import bpy
 import bmesh
 import mathutils
+from create_vertex_animation import create_vertex_animation
 
-def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, material_palettes=None, created_materials=None):
+def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, material_palettes=None, created_materials=None, vertex_animations=None):
     mesh = bpy.data.meshes.new(mesh_data['name'])
     obj = bpy.data.objects.new(mesh_data['name'], mesh)
     bpy.context.collection.objects.link(obj)
@@ -142,5 +143,9 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
 
         # Link the text block to the mesh (optional if you want to reference it later)
         obj["MESHOPS_TEXT"] = text_block_name
+
+    if 'dmtrack' in mesh_data and mesh_data['dmtrack']:
+        dmtrack_name = mesh_data['dmtrack']
+        create_vertex_animation(obj, dmtrack_name, vertex_animations)
 
     return obj

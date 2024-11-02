@@ -48,6 +48,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
     textures = {}
     materials = []
     track_definitions = {'animations': {}, 'armature_tracks': {}}  # Use dictionaries for track_definitions
+    vertex_animations = []
     includes = []
 
     for line in r:
@@ -74,6 +75,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
 #            print(f"Polyhedrons: {include_results[5]}")
 #            print(f"Textures: {include_results[6]}")
 #            print(f"Materials: {include_results[7]}")
+#            print(f"Vertex Animations: {include_results[8]}")
 
             # Unpack the INCLUDE file results and merge with the main results
             meshes.extend(include_results[0])
@@ -86,6 +88,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
             polyhedrons.extend(include_results[5])
             textures.update(include_results[6])
             materials.extend(include_results[7])
+            vertex_animations.extend(include_results[8])
 
         elif line.startswith("MATERIALPALETTE"):
             from material_palette_parse import material_palette_parse
@@ -133,6 +136,12 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
             materials.append(material_defs)
 #            print(f"Parsed MATERIALDEFINITION: {material_defs}")
 
+        elif line.startswith("DMTRACKDEF2"):
+            from dmtrackdef2_parse import dmtrackdef2_parse
+            dmtrack = dmtrackdef2_parse(r, parse_property, line)
+            vertex_animations.append(dmtrack)
+#            print(f"Parsed DMTRACKDEF2: {dmtrack}")
+
     # Debug print to track final merged data from this file
 #    print(f"Final parsed results for {filename}:")
 #    print(f"Meshes: {meshes}")
@@ -143,7 +152,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
 #    print(f"Textures: {textures}")
 #    print(f"Materials: {materials}")
 
-    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials
+    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations
 
 # Shared utility function to parse a single property and validate it
 def parse_property(r, property: str, num_args: int = -1):
@@ -176,13 +185,13 @@ def parse_property(r, property: str, num_args: int = -1):
 # Main function to start parsing from the main file
 def eq_ascii_parse(filepath):
     # Start parsing the main file
-    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials = parse(filepath)
+    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations = parse(filepath)
 
-    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials
+    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations
 
 if __name__ == '__main__':
     filepath = r"C:\Users\dariu\Documents\Quail\global_chr.quail\_root.wce"
-    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials = eq_ascii_parse(filepath)
+    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations = eq_ascii_parse(filepath)
 
     # If armature data exists, print it out (for extra clarity outside of the function)
     # if armature_data:
@@ -228,3 +237,8 @@ if __name__ == '__main__':
 #        print("\nFinal Collected Materials:")
 #        for material in materials:  # Iterate directly over the list
 #            print(f"{material}")
+
+#    if vertex_animations:
+#        print("\nFinal Collected Vertex Animations:")
+#        for vertex_animation in vertex_animations:  # Iterate directly over the list
+#            print(f"{vertex_animation}")
