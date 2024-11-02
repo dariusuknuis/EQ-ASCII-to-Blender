@@ -165,6 +165,17 @@ def write_dmspritedef(mesh, file):
     # Write material palette (MATERIALPALETTE)
     if "MATERIALPALETTE" in mesh.keys():
         file.write(f'\tMATERIALPALETTE "{mesh["MATERIALPALETTE"]}"\n')
+
+    # Check for shape keys for vertex animation
+    if mesh.data.shape_keys and len(mesh.data.shape_keys.key_blocks) > 1:  # Ensure there is a shape key other than Basis
+        # Get the name of the first shape key after "Basis"
+        first_shape_key_name = mesh.data.shape_keys.key_blocks[1].name
+        # Remove any trailing numerical suffix from the shape key name
+        dmtrack_name = first_shape_key_name.rsplit('_', 1)[0]
+        file.write(f'\tDMTRACKINST "{dmtrack_name}"\n')
+    else:
+        # No shape keys other than "Basis," so print empty DMTRACKINST
+        file.write('\tDMTRACKINST ""\n')
         
     # Write POLYHEDRON
     polyhedron_mesh = find_child_mesh(mesh, '_POLYHDEF')

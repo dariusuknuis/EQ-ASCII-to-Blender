@@ -2,10 +2,11 @@ import bpy
 import os
 import sys
 
-# Add the path where export scripts are located
+# Add the path where everquestize_mesh.py is located
 sys.path.append(r'C:\Users\dariu\Documents\Quail\Exporter')
 
 from dmspritedef2_export import write_dmspritedef
+from dmtrackdef2_export import write_dmtrackdef2
 from track_export import export_animation_data
 from everquestize_mesh import split_vertices_by_uv, reindex_vertices_by_vertex_group
 
@@ -58,8 +59,13 @@ def export_animation(obj, output_path):
         else:
             print("No armature found for the mesh object!")
 
-    print(f"Remaining animation data exported to {ani_output_file}")
+        # Call the DMTRACKDEF2 export for each DMSPRITEDEF mesh with shape keys
+        meshes = find_all_child_meshes(obj)
+        for mesh in meshes:
+            if mesh.data.shape_keys and len(mesh.data.shape_keys.key_blocks) > 1:
+                write_dmtrackdef2(mesh, file)
 
+    print(f"Remaining animation data exported to {ani_output_file}")
 
 def export_dmspritedef(obj, file):
     print("Running mesh export...")
