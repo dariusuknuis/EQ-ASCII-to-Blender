@@ -1,0 +1,198 @@
+import bpy
+import os
+import sys
+import re
+
+# Add the path where everquestize_mesh.py is located
+sys.path.append(r'C:\Users\dariu\Documents\Quail\Exporter')
+
+from dmspritedef2_export import write_dmspritedef
+from dmtrackdef2_export import write_dmtrackdef2
+from hierarchicalspritedef_export import write_hierarchicalspritedef
+from track_export import export_animation_data
+from actordef_export import write_actordef
+from material_export import write_materials_and_sprites
+from variation_material_export import write_variation_sprites_and_materials
+from everquestize_mesh import split_vertices_by_uv, reindex_vertices_by_vertex_group
+
+def get_armature(obj):
+    """Finds and returns the armature associated with the given object."""
+    if obj.type == 'EMPTY':
+        # Check children for armatures
+        for child in obj.children:
+            if child.type == 'ARMATURE':
+                return child
+
+    if obj.type == 'MESH' and obj.modifiers:
+        for modifier in obj.modifiers:
+            if modifier.type == 'ARMATURE' and modifier.object:
+                return modifier.object
+
+    if obj.parent and obj.parent.type == 'ARMATURE':
+        return obj.parent
+
+    parent_obj = obj.parent
+    while parent_obj:
+        if parent_obj.type == 'ARMATURE':
+            return parent_obj
+        parent_obj = parent_obj.parent
+
+    for sibling in obj.parent.children if obj.parent else bpy.data.objects:
+        if sibling.type == 'ARMATURE':
+            return sibling
+
+    return None
+
+def sanitize_name(name):
+    """Removes '_ACTORDEF' suffix from the object name if present."""
+    return name.replace("_ACTORDEF", "").lower()
+
+# Call the mesh export and POS animation
+def export_mesh_and_pos_animation(obj, output_path):
+    mesh_output_file = os.path.join(output_path, f"{sanitize_name(obj.name)}.wce")
+    with open(mesh_output_file, 'w') as file:
+
+        # Assuming `empty_obj` is the main object
+        export_materials(obj, file)
+
+        # Call the mesh export function
+        export_dmspritedef(obj, file)
+        
+        # Try to find the armature for POS action export
+        armature = get_armature(obj)
+        if armature:
+            export_pos_animation(armature, file)
+            write_hierarchicalspritedef(armature, file)
+        else:
+            print("No armature found for the mesh object!")
+
+        # Call the ACTORDEF export if the object has "_ACTORDEF" in its name
+        if obj.name.endswith("_ACTORDEF"):
+            write_actordef(obj, file)
+
+    print(f"Mesh and POS animation data exported to {mesh_output_file}")
+
+
+# Call the rest of the animation export
+def export_animation(obj, output_path):
+    ani_output_file = os.path.join(output_path, f"{sanitize_name(obj.name)}_ani.wce")
+    with open(ani_output_file, 'w') as file:
+        armature = get_armature(obj)
+        if armature:
+            print(f"Exporting animations for armature: {armature.name}")
+            export_track_animation(armature, file)
+        else:
+            print(f"No armature found for object {obj.name}. Skipping animation export.")
+
+        # Call the DMTRACKDEF2 export for each DMSPRITEDEF mesh with shape keys
+        meshes = find_all_child_meshes(obj)
+        for mesh in meshes:
+            if mesh.data.shape_keys and len(mesh.data.shape_keys.key_blocks) > 1:
+                write_dmtrackdef2(mesh, file)
+
+    print(f"Remaining animation data exported to {ani_output_file}")
+
+def export_materials(obj, file):
+    print("Running material export...")
+    if bpy.context.object.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Create fresh tracking sets
+    written_sprites = set()
+    written_materials = set()
+    written_palettes = set()
+
+    meshes = find_all_child_meshes(obj)
+    for mesh in meshes:
+        # Pass fresh sets to avoid retained data between runs
+        write_materials_and_sprites(mesh, file, written_sprites, written_materials, written_palettes)
+
+    # Print the materials that were written out
+    print("Written materials:", written_materials)
+
+    # After writing the materials, identify and write out variation materials
+    write_variation_materials(file, written_materials, written_sprites)
+
+
+def write_variation_materials(file, written_materials, written_sprites):
+    # Function to create a regex pattern for each base material
+    def create_pattern(base_name):
+        return re.compile(rf"^{base_name[:5]}\w*_MDF$")
+
+    # Set to hold the names of all written variation materials to avoid duplicates
+    written_variation_materials = set()
+
+    print("\nSearching for variation materials:")
+    found_matches = False
+
+    for base_name in written_materials:
+        pattern = create_pattern(base_name)  # Generate pattern based on current written material
+        print(f"\nLooking for variations of: {base_name}")
+
+        for mat in bpy.data.materials:
+            mat_name = mat.name
+            match = pattern.match(mat_name)
+
+            if match and mat_name != base_name and mat_name not in written_variation_materials:
+                print(f"Matched variation material: {mat_name}")
+                found_matches = True
+                written_variation_materials.add(mat_name)
+
+                # Write SIMPLESPRITEDEF and MATERIALDEFINITION for this variation material
+                write_variation_sprites_and_materials(mat, file, written_sprites, written_materials)
+
+    if not found_matches:
+        print("No variation materials matched the pattern.")
+
+def export_dmspritedef(obj, file):
+    print("Running mesh export...")
+    if bpy.context.object.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+    meshes = find_all_child_meshes(obj)
+    
+    # Run everquestize_mesh.py functions on all meshes before export
+    for mesh in meshes:
+        split_vertices_by_uv(mesh)
+        reindex_vertices_by_vertex_group(mesh)
+        write_dmspritedef(mesh, file)
+
+
+def export_pos_animation(armature, file):
+    print("Running POS action export...")
+    export_animation_data(armature, file, include_pos=True)
+
+
+def export_track_animation(armature, file):
+    print("Running track action export...")
+    export_animation_data(armature, file, include_pos=False)
+
+
+def find_all_child_meshes(parent_obj):
+    meshes = []
+    for child in parent_obj.children:
+        if child.type == 'MESH' and child.name.endswith("_DMSPRITEDEF"):
+            meshes.append(child)
+        meshes.extend(find_all_child_meshes(child))  # Recursive search
+    return meshes
+
+def export_model(obj_name, output_path):
+    obj = bpy.data.objects.get(obj_name)
+    if obj is None:
+        print(f"[DEBUG] Object '{obj_name}' not found!")
+        return
+
+    print(f"[DEBUG] Starting export for object: {obj_name}")
+    print(f"[DEBUG] Output path: {output_path}")
+
+    try:
+        export_mesh_and_pos_animation(obj, output_path)
+        export_animation(obj, output_path)
+        print(f"[DEBUG] Successfully exported: {obj_name}")
+    except Exception as e:
+        print(f"[DEBUG] Failed to export {obj_name}: {e}")
+
+
+
+# Example usage:
+# export_model('ELF_ACTORDEF') #empty object containing models and armature here
