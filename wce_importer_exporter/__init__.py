@@ -79,13 +79,13 @@ class WCEImportDialogOperator(bpy.types.Operator):
             item.selected = False
             item.include_line = include_line  # Store the full INCLUDE line
 
-        return context.window_manager.invoke_props_dialog(self, width=500)
+        return context.window_manager.invoke_props_dialog(self, width=800)
 
     def draw(self, context):
         layout = self.layout
         layout.label(text="Select assets to import:")
 
-        column_count = 6
+        column_count = 20
         row = layout.row()
         
         for i, item in enumerate(context.scene.wce_model_list):
@@ -167,12 +167,12 @@ class WCEExporterDialogOperator(bpy.types.Operator):
                 item.name = obj.name
                 item.selected = False
 
-        return context.window_manager.invoke_props_dialog(self, width=500)
+        return context.window_manager.invoke_props_dialog(self, width=800)
 
     def draw(self, context):
         layout = self.layout
         layout.label(text="Select assets to export:")
-        column_count = 6
+        column_count = 20
         row = layout.row()
         for i, item in enumerate(context.scene.wce_export_list):
             if i % column_count == 0:

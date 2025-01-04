@@ -1,6 +1,3 @@
-import bpy
-import bmesh
-import mathutils
 import shlex
 
 def dmspritedef2_parse(r, parse_property, current_line):

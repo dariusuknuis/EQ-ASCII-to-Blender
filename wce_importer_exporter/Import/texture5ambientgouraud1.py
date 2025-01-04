@@ -5,7 +5,8 @@
     #"texture_style": "Texture5"
 
 import bpy
-from material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes
+import os
+from material_utils import add_texture_coordinate_and_mapping_nodes
 
 def create_node_group_t5ag1():
     # Create the node group
@@ -52,6 +53,8 @@ def create_material_with_node_group_t5ag1(material_name, texture_path, node_grou
     image_texture_node.image = bpy.data.images.load(texture_path)
     image_texture_node.interpolation = 'Linear'
     image_texture_node.image.colorspace_settings.name = 'sRGB'
+    image_texture_node.name = f"{os.path.basename(texture_path)}"
+    image_texture_node.label = f"{os.path.basename(texture_path)}"
 
     # Add nodes to flip dds files
     add_texture_coordinate_and_mapping_nodes(nodes, links, image_texture_node, texture_path)

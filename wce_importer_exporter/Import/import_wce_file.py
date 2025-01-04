@@ -9,7 +9,7 @@ modules_loaded = False
 def load_modules():
     global eq_ascii_parse, create_materials, register_passable_editor, unregister_passable_editor
     global apply_passable_to_all_meshes, apply_passable_to_mesh, create_passable_geometry_node_group, create_passable_material
-    global create_mesh, create_armature, assign_mesh_to_armature, create_animation, add_actordef_to_object
+    global create_mesh, create_armature, assign_mesh_to_armature, create_animation, add_actordef_to_object, create_worldtree
     global create_default_pose, create_polyhedron, create_bounding_sphere, create_bounding_box, parent_polyhedron
     global modules_loaded
 
@@ -23,6 +23,7 @@ def load_modules():
         from create_animation import create_animation
         from create_default_pose import create_default_pose
         from create_polyhedron import create_polyhedron
+        from create_worldtree import create_worldtree
         from create_mesh_and_bounding_shapes import create_bounding_sphere, create_bounding_box
         from add_actordef_to_object import add_actordef_to_object
         from parent_polyhedron import parent_polyhedron
@@ -31,7 +32,6 @@ def load_modules():
         modules_loaded = True
 
 # Process INCLUDE files
-# Process INCLUDE files
 def process_include_file(include_line, file_dir, root_file_path, node_group_cache):
     load_modules()  # Ensure modules are loaded before use
 
@@ -39,7 +39,7 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
     include_filepath = os.path.normpath(os.path.join(file_dir, include_line))
 
     # Call eq_ascii_parse after ensuring modules are loaded
-    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data = eq_ascii_parse(include_filepath)
+    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data = eq_ascii_parse(include_filepath)
     
     print(f"actordef_data in process_include_file: {actordef_data}")
 
@@ -67,8 +67,16 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
 
     print(f"Model prefix: {model_prefix}")
 
+    # Process WorldTree if data is present
+    if worldtree_data:
+        worldtree_root = create_worldtree(worldtree_data)
+        if worldtree_root:
+            print(f"WorldTree created with root: {worldtree_root.name}")
+
     # Create materials
     created_materials = create_materials(materials, textures, file_dir, node_group_cache)
+
+    armature_obj = None
 
     if armature_data and track_definitions:
         armature_tracks = track_definitions['armature_tracks']
@@ -117,7 +125,7 @@ def process_root_file(file_path):
     load_modules()  # Ensure modules are loaded before use
 
     file_dir = os.path.dirname(file_path)
-    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data = eq_ascii_parse(file_path)
+    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data = eq_ascii_parse(file_path)
 
     print(f"actordef in process_root_file: {actordef_data}")
     

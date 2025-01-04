@@ -1,5 +1,42 @@
-import bpy
 import bmesh
+
+def update_vertex_material_indices(mesh_obj):
+    """
+    Updates the Vertex_Material_Index attribute for each vertex based on the materials
+    of the faces it is part of. Loose vertices retain their existing values.
+    """
+    mesh = mesh_obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+
+    # Ensure lookup tables are available
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+
+    # Create or get the material index attribute for vertices
+    material_layer = bm.verts.layers.int.get("Vertex_Material_Index")
+    if not material_layer:
+        material_layer = bm.verts.layers.int.new("Vertex_Material_Index")
+
+    # Iterate through all vertices
+    for vertex in bm.verts:
+        # Check if vertex is part of any face
+        connected_faces = vertex.link_faces
+
+        if connected_faces:
+            # Get the material index of the first connected face
+            material_index = connected_faces[0].material_index
+            vertex[material_layer] = material_index  # Update material index
+        else:
+            # For loose vertices, retain existing value by skipping update
+            try:
+                _ = vertex[material_layer]  # Access attribute to ensure it exists
+            except KeyError:
+                continue  # Skip loose vertices without an existing value
+
+    # Write the updated bmesh data back to the mesh
+    bm.to_mesh(mesh)
+    bm.free()
 
 def print_uvs_per_vertex(bm, uv_layer):
     # Create an empty UV map with a list for each vertex
