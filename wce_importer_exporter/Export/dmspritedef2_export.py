@@ -10,9 +10,14 @@ def write_dmspritedef(mesh, file):
         
     print(f"Writing data for mesh: {mesh.name}")
     
-    # Get the object location (CENTEROFFSET)
+    
     center_offset = mesh.location
     file.write(f'\nDMSPRITEDEF2 "{mesh.name}"\n')
+
+    tag_index = mesh.get("TAGINDEX", 0)
+    file.write(f'\tTAGINDEX {tag_index}\n')
+
+    # Get the object location (CENTEROFFSET)    
     file.write(f'\tCENTEROFFSET {center_offset.x:.8e} {center_offset.y:.8e} {center_offset.z:.8e}\n\n')
 
     # Write vertices (NUMVERTICES, XYZ)

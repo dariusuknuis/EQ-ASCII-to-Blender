@@ -63,13 +63,11 @@ def export_animation_data(armature_obj, file, include_pos=False):
 
             # Write action custom properties if they exist
             tag_index = action.get("TAGINDEX", 0)
-            sprite = action.get("SPRITE", "")
             definition_index = action.get("DEFINITIONINDEX", 0)
             interpolate = 1 if action.get("INTERPOLATE", True) else 0
             reverse = 1 if action.get("REVERSE", False) else 0
 
             file.write(f'\tTAGINDEX {tag_index}\n')
-            file.write(f'\tSPRITE "{sprite}"\n')
             file.write(f'\tNUMFRAMES {num_frames}\n')
 
             # Extract keyframe data for the bone
@@ -102,7 +100,6 @@ def export_animation_data(armature_obj, file, include_pos=False):
             # Write TRACKINSTANCE for this bone
             file.write(f'\nTRACKINSTANCE "{track_instance_name}"\n')
             file.write(f'\tTAGINDEX {tag_index}\n')
-            file.write(f'\tSPRITE "{sprite}"\n')
             file.write(f'\tDEFINITION "{track_def_name}"\n')
             file.write(f'\tDEFINITIONINDEX {definition_index}\n')
             file.write(f'\tINTERPOLATE {interpolate}\n')

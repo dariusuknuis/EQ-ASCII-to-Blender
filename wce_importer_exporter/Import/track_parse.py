@@ -57,10 +57,6 @@ def track_parse(r, parse_property, model_prefix, current_line):
     if tag_index > 0:
         track_def['name'] += format_tag_index(tag_index)
 
-    # Parse SPRITE
-    records = parse_property(r, "SPRITE", 1)
-    track_def['sprite'] = records[1]
-
     # Parse NUMFRAMES
     records = parse_property(r, "NUMFRAMES", 1)
     track_def['num_frames'] = int(records[1])
@@ -148,10 +144,6 @@ def track_parse(r, parse_property, model_prefix, current_line):
     track_instance['tag_index'] = instance_tag_index
     if instance_tag_index > 0:
         track_instance['name'] += format_tag_index(instance_tag_index)
-
-    # Parse SPRITE (inside TRACKINSTANCE)
-    records = parse_property(r, "SPRITE", 1)
-    track_instance['sprite'] = records[1]
 
     # Parse DEFINITION (inside TRACKINSTANCE)
     records = parse_property(r, "DEFINITION", 1)

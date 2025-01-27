@@ -50,9 +50,11 @@ def write_hierarchicalspritedef(armature, file):
     file.write(f'\n\tNUMATTACHEDSKINS {len(attached_skins)}\n')
     
     for skin in attached_skins:
+        sprite_index = skin.get("DMSPRITEINDEX", 0)
         link_dag_index = skin.get("LINKSKINUPDATESTODAGINDEX", 0)
         file.write(f'\t\tATTACHEDSKIN\n')
         file.write(f'\t\t\tDMSPRITE "{skin.name}"\n')
+        file.write(f'\t\t\tDMSPRITEINDEX {sprite_index}\n')
         file.write(f'\t\t\tLINKSKINUPDATESTODAGINDEX {link_dag_index}\n')
     
     # Determine the POLYHEDRON definition from the armature's custom property

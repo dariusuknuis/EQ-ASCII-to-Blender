@@ -94,6 +94,9 @@ def hierarchicalspritedef_parse(r, parse_property, current_line):
         records = parse_property(r, "DMSPRITE", 1)
         attached_skin['sprite'] = records[1]
 
+        records = parse_property(r, "DMSPRITEINDEX", 1)
+        attached_skin['sprite_index'] = records[1]
+
         records = parse_property(r, "LINKSKINUPDATESTODAGINDEX", 1)
         attached_skin['link_skin_updates_to_dag_index'] = int(records[1])
 

@@ -9,6 +9,11 @@ def dmspritedef2_parse(r, parse_property, current_line):
         raise Exception(f"Expected DMSPRITEDEF2, got {records[0]}")
     mesh['name'] = records[1]
 
+    # Parse TAGINDEX
+    records = parse_property(r, "TAGINDEX", 1)
+    tag_index = int(records[1])
+    mesh['tag_index'] = tag_index
+
     # Parse the CENTEROFFSET property
     records = parse_property(r, "CENTEROFFSET", 3)
     mesh['center_offset'] = tuple(map(float, records[1:]))

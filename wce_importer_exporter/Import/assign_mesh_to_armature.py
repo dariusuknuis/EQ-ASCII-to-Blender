@@ -12,6 +12,7 @@ def assign_mesh_to_armature(mesh_obj, armature_obj, armature_data, cumulative_ma
             armature_mod.object = armature_obj
             armature_mod.show_on_cage = True  # Enable "On Cage"
             armature_mod.show_in_editmode = True  # Enable "Edit Mode"
+            mesh_obj["DMSPRITEINDEX"] = skin_data['sprite_index']
             mesh_obj["LINKSKINUPDATESTODAGINDEX"] = skin_data['link_skin_updates_to_dag_index']
             print(f"Mesh '{mesh_name}' parented to armature and assigned LINKSKINUPDATESTODAGINDEX: {skin_data['link_skin_updates_to_dag_index']}")
             assigned = True

@@ -58,6 +58,7 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
 
     # == Save custom properties ==
     material_palette = mesh_data.get('material_palette', "")
+    obj["TAGINDEX"] = mesh_data.get("tag_index", 0)
     obj["MATERIALPALETTE"] = material_palette
     obj["FPSCALE"] = mesh_data.get("fpscale", 1)
     obj["HEXONEFLAG"] = bool(mesh_data.get("hexoneflag", 0))
