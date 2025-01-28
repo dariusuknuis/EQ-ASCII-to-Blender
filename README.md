@@ -1,4 +1,7 @@
 # EQ-ASCII-to-Blender (WCE Importer)
+
+Blender version: 3.6.2
+
 Blender add-on to parse EverQuest ASCII game data and create Blender assets
 
 To use:
