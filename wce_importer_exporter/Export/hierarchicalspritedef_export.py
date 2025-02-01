@@ -26,8 +26,10 @@ def write_hierarchicalspritedef(armature, file):
         for child in armature.children:
             if child.parent_bone == bone.name:
                 sprite_name = child.name
+                sprite_index = child.get("SPRITEINDEX", 0)
                 break
         file.write(f'\t\t\tSPRITE "{sprite_name}"\n')
+        file.write(f'\t\t\tSPRITEINDEX "{sprite_index}"\n')
         
         # TRACK field - Replace "_DAG" with "_TRACK" in the bone's name
         track_name = bone.name.replace("_DAG", "_TRACK")

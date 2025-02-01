@@ -9,6 +9,9 @@ def materialdefinition_parse(r, parse_property, current_line):
         raise Exception(f"Expected MATERIALDEFINITION, got {records[0]}")
     material['name'] = records[1]
 
+    records = parse_property(r, "TAGINDEX", 1)
+    material['tag_index'] = int(records[1])
+
     # Parse VARIATION
     records = parse_property(r, "VARIATION", 1)
     material['variation'] = int(records[1])

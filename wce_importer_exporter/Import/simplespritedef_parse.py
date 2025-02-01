@@ -1,4 +1,3 @@
-import re
 import shlex
 
 def simplespritedef_parse(r, parse_property, current_line):
@@ -9,6 +8,9 @@ def simplespritedef_parse(r, parse_property, current_line):
     if records[0] != "SIMPLESPRITEDEF":
         raise Exception(f"Expected SIMPLESPRITEDEF, got {records[0]}")
     texture['name'] = records[1]
+
+    records = parse_property(r, "TAGINDEX", 1)
+    texture['tag_index'] = int(records[1])
     
     # Parse VARIATION
     records = parse_property(r, "VARIATION", 1)
@@ -44,58 +46,78 @@ def simplespritedef_parse(r, parse_property, current_line):
     num_frames = int(records[1])
     texture['num_frames'] = num_frames
 
-    # Initialize variables to hold frame details
-    frame_files = []
     frames = []
-    animated_frame_count = 0
-    tiled_frame_count = 0
-    animated_frame_regex = re.compile(r'.*\d(?=\.[a-zA-Z]+$)')
 
-    # Parse FRAME lines for the given number of frames
-    for i in range(num_frames):
-        records = parse_property(r, "FRAME", 2)
-        frame_file = records[1].strip()
-        frame_data = {'file': frame_file}
-
-        # Determine the frame type based on the file name
-        if "_LAYER" in frame_file:
-            frame_data['type'] = 'layer'
-            frame_data['file'] = frame_file.replace("_LAYER", "").strip()
-        elif "_DETAIL" in frame_file:
-            detail_value = frame_file.split('_DETAIL_')[1]
-            frame_data['type'] = 'detail'
-            frame_data['detail_value'] = float(detail_value)
-            frame_data['file'] = frame_file.split('_DETAIL_')[0].strip()
-        elif "PAL.BMP" in frame_file:
-            previous_file = frames[-1]['file'] if frames else ''
-            if previous_file.split('.')[0] == frame_file.replace("PAL.BMP", "").strip():
-                frame_data['type'] = 'palette_mask'
-                frame_data['file'] = frame_file
-                texture['palette_mask_file'] = frame_file  # Store palette mask file separately
-        elif "," in frame_file:
-            # Handle tiled frames
-            num_values, file_name = frame_file.split(", ", 3)[-1], frame_file.split(", ", 3)[-1]
-            numbers = frame_file.split(", ")[:3]
-            frame_data['type'] = 'tiled'
-            frame_data['color_index'] = int(numbers[0]) - 1
-            frame_data['scale'] = int(numbers[1]) * 10
-            frame_data['blend'] = int(numbers[2])
-            frame_data['file'] = file_name.strip()
-            tiled_frame_count += 1
-        else:
-            # Check if this is an animated frame
-            if texture['animated'] and animated_frame_regex.match(frame_file):
-                animated_frame_count += 1
-                frame_data['animation_frame'] = animated_frame_count
-
-        # Save frame data and file names
-        frames.append(frame_data)
-        frame_files.append(frame_data['file'])
-
-    # Store the frames and frame file names in the texture
+    # Process each frame.
+    for _ in range(num_frames):
+        # Parse the FRAME line.
+        records = parse_property(r, "FRAME", 1)
+        frame_tag = records[1].strip('"')
+        frame = {
+            'tag': frame_tag,
+            'frame_files': []  # List of file entries for this frame.
+        }
+        
+        # Parse the NUMFILES line for this frame.
+        records = parse_property(r, "NUMFILES", 1)
+        num_files = int(records[1])
+        
+        # Process each FILE line in this frame.
+        for file_index in range(num_files):
+            records = parse_property(r, "FILE", 1)
+            file_name = records[1].strip('"')
+            file_entry = {'file': file_name}
+            
+            # If there are more than 2 files, assume a fixed order:
+            #   File 0: base file
+            #   File 1: palette mask
+            #   Files 2+: tiled files (with comma-separated parameters)
+            if num_files > 2:
+                if file_index == 1:
+                    file_entry['type'] = 'palette_mask'
+                elif file_index >= 2:
+                    file_entry['type'] = 'tiled'
+                    parts = file_name.split(", ")
+                    if len(parts) >= 4:
+                        try:
+                            file_entry['color_index'] = int(parts[0]) - 1
+                            file_entry['scale'] = int(parts[1]) * 10
+                            file_entry['blend'] = int(parts[2])
+                            # Use the fourth part as the actual file name.
+                            file_entry['file'] = parts[3].strip()
+                        except Exception:
+                            # If parsing fails, leave the file_entry as is.
+                            pass
+            else:
+                # For textures with one or two files, check for detail or layer markers.
+                if "_LAYER" in file_name:
+                    file_entry['type'] = 'layer'
+                    file_entry['file'] = file_name.replace("_LAYER", "").strip()
+                elif "_DETAIL" in file_name:
+                    file_entry['type'] = 'detail'
+                    if "_DETAIL_" in file_name:
+                        parts = file_name.split("_DETAIL_")
+                        if len(parts) > 1:
+                            try:
+                                file_entry['detail_value'] = float(parts[1])
+                            except Exception:
+                                pass
+            
+            frame['frame_files'].append(file_entry)
+        
+        frames.append(frame)
+    
     texture['frames'] = frames
-    texture['frame_files'] = frame_files
-    texture['number_frames'] = animated_frame_count  # Calculated from animated frames
-    texture['num_tiled_frames'] = tiled_frame_count  # Calculated from tiled frames
+
+    # For a single-frame texture that uses filed textures,
+    # set the num_filed_textures property as num_files - 2.
+    if num_frames == 1:
+        single_frame_files = frames[0]['frame_files']
+        if len(single_frame_files) > 2:
+            texture['num_tiled_textures'] = len(single_frame_files) - 2
+        else:
+            texture['num_tiled_textures'] = 0
+    else:
+        texture['num_tiled_textures'] = 0
 
     return texture

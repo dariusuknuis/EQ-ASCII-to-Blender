@@ -61,6 +61,7 @@ def write_materials_and_sprites(mesh, file, written_sprites=set(), written_mater
 
             # SIMPLESPRITEDEF section
             primary_node, layer_node, detail_node, palette_mask_node, palette_nodes = identify_nodes(material)
+            tag_index = material.get("TAGINDEX", 0)
             variation = material.get("VARIATION", 0)
             skipframes = 1 if material.get("SKIPFRAMES", False) else "NULL"
             animated = 1 if material.get("ANIMATED", False) else "NULL"
@@ -80,6 +81,7 @@ def write_materials_and_sprites(mesh, file, written_sprites=set(), written_mater
                 
                 # Write SIMPLESPRITEDEF header
                 file.write(f'\nSIMPLESPRITEDEF "{sprite_tag}"\n')
+                file.write(f'\tTAGINDEX {tag_index}\n')
                 file.write(f'\tVARIATION {variation}\n')
                 file.write(f'\tSKIPFRAMES? {skipframes}\n')
                 file.write(f'\tANIMATED? {animated}\n')
@@ -128,6 +130,7 @@ def write_materials_and_sprites(mesh, file, written_sprites=set(), written_mater
 
             # MATERIALDEFINITION section
             file.write(f'\nMATERIALDEFINITION "{material.name}"\n')
+            file.write(f'\tTAGINDEX {tag_index}\n')
             file.write(f'\tVARIATION {variation}\n')
             
             # Find the primary node group (ignoring "PaletteMask" and "Blur" groups)

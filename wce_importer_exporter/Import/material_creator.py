@@ -55,7 +55,14 @@ def create_materials(materials, textures, file_path, node_group_cache):
 
         texture_name = mat_data.get('texture_tag', '')
         texture_info = textures.get(texture_name, {})
-        texture_file = texture_info.get('frames', [{}])[0].get('file', '') if isinstance(texture_info, dict) else texture_info
+        if isinstance(texture_info, dict) and texture_info.get('frames'):
+            first_frame = texture_info['frames'][0]
+            if first_frame.get('frame_files') and len(first_frame['frame_files']) > 0:
+                texture_file = first_frame['frame_files'][0].get('file', '')
+            else:
+                texture_file = ''
+        else:
+            texture_file = ''
         texture_full_path = os.path.join(base_path, texture_file)
 
         rendermethod = mat_data['rendermethod']
@@ -108,6 +115,8 @@ def create_materials(materials, textures, file_path, node_group_cache):
         mat.use_backface_culling = not bool(mat_data.get('doublesided', 0))
 
         # Add custom properties from materialdefinition_parse
+        mat["TAGINDEX"] = mat_data.get('tag_index', 0)
+        mat["VARIATION"] = mat_data.get('variation', 0)
         mat["RGBPEN"] = mat_data.get('rgbpen', (0.698, 0.698, 0.698, 0.0))
         mat["BRIGHTNESS"] = mat_data.get('brightness', 0.0)
         mat["SCALEDAMBIENT"] = mat_data.get('scaledambient', 0.75)
@@ -115,7 +124,6 @@ def create_materials(materials, textures, file_path, node_group_cache):
         mat["PAIRS"] = mat_data.get('pairs', (0.0, 0.0))
 
         # Add custom properties from simplespritedef_parse
-        mat["VARIATION"] = texture_info.get('variation', 0)
         mat["SKIPFRAMES"] = bool(texture_info.get('skipframes', 0))
         mat["ANIMATED"] = bool(texture_info.get('animated_flag', 0))
         mat["CURRENTFRAME"] = texture_info.get('current_frame', 0)
@@ -123,16 +131,17 @@ def create_materials(materials, textures, file_path, node_group_cache):
         # Handle animated textures, layered textures, and special frame types
         if texture_info.get('animated', False):
             add_animated_texture_nodes(mat, texture_info, file_path)
-        for frame_data in texture_info.get('frames', []):
-            frame_type = frame_data.get('type', '').lower()
-            if frame_type == 'layer':
-                add_layered_texture_nodes(mat, texture_info, node_group_cache, file_path)
-            elif frame_type == 'detail':
-                add_detail_texture_nodes(mat, texture_info, node_group_cache, file_path)
-            elif frame_type == 'palette_mask':
-                add_palette_mask_texture_nodes(mat, texture_info, node_group_cache, file_path)
-            elif frame_type == 'tiled':
-                add_tiled_texture_nodes(mat, frame_data, texture_info, node_group_cache, file_path)
+        if 'frames' in texture_info and texture_info['frames']:
+            for file_entry in texture_info['frames'][0].get('frame_files', []):
+                file_type = file_entry.get('type', '').lower()
+                if file_type == 'layer':
+                    add_layered_texture_nodes(mat, texture_info, node_group_cache, file_path)
+                elif file_type == 'detail':
+                    add_detail_texture_nodes(mat, texture_info, node_group_cache, file_path)
+                elif file_type == 'palette_mask':
+                    add_palette_mask_texture_nodes(mat, texture_info, node_group_cache, file_path)
+                elif file_type == 'tiled':
+                    add_tiled_texture_nodes(mat, file_entry, texture_info, node_group_cache, file_path)
 
         created_materials[mat_name] = mat
 

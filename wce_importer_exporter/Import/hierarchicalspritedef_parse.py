@@ -57,6 +57,9 @@ def hierarchicalspritedef_parse(r, parse_property, current_line):
         sprite_value = records[1]
         bone_data['sprite'] = sprite_value if sprite_value else None
 
+        records = parse_property(r, "SPRITEINDEX", 1)
+        bone_data['sprite_index'] = int(records[1])
+
         # Parse TRACK
         records = parse_property(r, "TRACK", 1)
         base_track = records[1]
