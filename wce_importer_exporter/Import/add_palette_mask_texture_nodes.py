@@ -26,39 +26,41 @@ def add_palette_mask_texture_nodes(material, texture_info, node_group_cache, bas
     blur_node.location = (-1600, -1200)
 
     # Process palette mask frames
-    for frame_data in texture_info.get('frames', []):
-        if frame_data.get('type') == 'palette_mask':
-            frame_file = frame_data['file']
+    if 'frames' in texture_info and texture_info['frames']:
+        first_frame = texture_info['frames'][0]
+        for file_entry in first_frame.get('frame_files', []):
+            if file_entry.get('type', '').lower() == 'palette_mask':
+                frame_file = file_entry['file']
 
-            # Construct full path to the file
-            full_path = os.path.join(base_path, frame_file) if base_path else frame_file
-            texture_path = bpy.path.abspath(full_path)
+                # Construct full path to the file
+                full_path = os.path.join(base_path, frame_file) if base_path else frame_file
+                texture_path = bpy.path.abspath(full_path)
 
-            # Check if the file exists before loading
-            if not os.path.isfile(texture_path):
-                print(f"Warning: Palette mask texture file not found: {texture_path}")
-                continue
+                # Check if the file exists before loading
+                if not os.path.isfile(texture_path):
+                    print(f"Warning: Palette mask texture file not found: {texture_path}")
+                    continue
 
-            try:
-                # Add Image Texture node for the palette mask
-                palette_mask_texture_node = nodes.new(type='ShaderNodeTexImage')
-                palette_mask_texture_node.location = (-1400, -1200)
-                palette_mask_texture_node.interpolation = 'Closest'
-                palette_mask_texture_node.image = bpy.data.images.load(texture_path)
-                palette_mask_texture_node.image.colorspace_settings.name = 'Non-Color'
-                palette_mask_texture_node.name = f"{os.path.basename(texture_path)}"
-                palette_mask_texture_node.label = f"{os.path.basename(texture_path)}"
+                try:
+                    # Add Image Texture node for the palette mask
+                    palette_mask_texture_node = nodes.new(type='ShaderNodeTexImage')
+                    palette_mask_texture_node.location = (-1400, -1200)
+                    palette_mask_texture_node.interpolation = 'Closest'
+                    palette_mask_texture_node.image = bpy.data.images.load(texture_path)
+                    palette_mask_texture_node.image.colorspace_settings.name = 'Non-Color'
+                    palette_mask_texture_node.name = f"{os.path.basename(texture_path)}"
+                    palette_mask_texture_node.label = f"{os.path.basename(texture_path)}"
 
-                # Connect the Blur node group to the palette mask texture
-                links.new(blur_node.outputs[0], palette_mask_texture_node.inputs['Vector'])
+                    # Connect the Blur node group to the palette mask texture
+                    links.new(blur_node.outputs[0], palette_mask_texture_node.inputs['Vector'])
 
-            except RuntimeError as e:
-                print(f"Error loading palette mask texture file: {texture_path}: {e}")
-                continue
+                except RuntimeError as e:
+                    print(f"Error loading palette mask texture file: {texture_path}: {e}")
+                    continue
 
-            # Store the palette mask node for future use in tiled textures
-            texture_info['palette_mask_node'] = palette_mask_texture_node
-#            print(f"Added palette mask texture node to material: {material.name}")
+                # Store the palette mask node for future use in tiled textures
+                texture_info['palette_mask_node'] = palette_mask_texture_node
+    #            print(f"Added palette mask texture node to material: {material.name}")
 
 def create_blur_node_group(blur_node_group):
     """

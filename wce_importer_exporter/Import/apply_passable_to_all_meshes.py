@@ -8,7 +8,6 @@ def ensure_object_mode():
 # Function to create the passable geometry node group
 def create_passable_geometry_node_group():
     if "PASSABLE" in bpy.data.node_groups:
-        print("Using existing 'PASSABLE' geometry node group.")
         return bpy.data.node_groups["PASSABLE"]
     
     node_group = bpy.data.node_groups.new(name="PASSABLE", type="GeometryNodeTree")
@@ -91,8 +90,6 @@ def create_passable_material():
         passable_mat.node_tree.links.new(mix_shader.outputs['Shader'], material_output.inputs['Surface'])
 
         emission_shader.inputs['Color'].default_value = (0.0, 1.0, 0.0, 1.0)  # Green color
-    else:
-        print("'PASSABLE' material already exists.")
     
     return passable_mat
 
@@ -101,8 +98,6 @@ def apply_passable_to_mesh(mesh_obj, geo_node_group, passable_mat):
     if mesh_obj.type != 'MESH':
         print(f"Skipping non-mesh object: {mesh_obj.name}")
         return
-    
-    print(f"Applying PASSABLE geometry node to {mesh_obj.name}")
     
     modifier = mesh_obj.modifiers.get("PASSABLE")
     if not modifier:

@@ -124,14 +124,15 @@ def create_materials(materials, textures, file_path, node_group_cache):
         mat["PAIRS"] = mat_data.get('pairs', (0.0, 0.0))
 
         # Add custom properties from simplespritedef_parse
+        mat["NUMFRAMES"] = texture_info.get('num_frames', 1)
+        mat["SLEEP"] = texture_info.get('sleep', 0)
         mat["SKIPFRAMES"] = bool(texture_info.get('skipframes', 0))
         mat["ANIMATED"] = bool(texture_info.get('animated_flag', 0))
         mat["CURRENTFRAME"] = texture_info.get('current_frame', 0)
 
-        # Handle animated textures, layered textures, and special frame types
-        if texture_info.get('animated', False):
-            add_animated_texture_nodes(mat, texture_info, file_path)
+        # Process overlay nodes regardless of animation
         if 'frames' in texture_info and texture_info['frames']:
+            # We assume the overlays (layer/detail/palette_mask/tiled) are in the first frame's file entries.
             for file_entry in texture_info['frames'][0].get('frame_files', []):
                 file_type = file_entry.get('type', '').lower()
                 if file_type == 'layer':
@@ -142,6 +143,10 @@ def create_materials(materials, textures, file_path, node_group_cache):
                     add_palette_mask_texture_nodes(mat, texture_info, node_group_cache, file_path)
                 elif file_type == 'tiled':
                     add_tiled_texture_nodes(mat, file_entry, texture_info, node_group_cache, file_path)
+
+        # Finally, if the texture is animated, modify the image texture nodes for animation.
+        if texture_info.get('animated', False):
+            add_animated_texture_nodes(mat, texture_info, file_path)
 
         created_materials[mat_name] = mat
 

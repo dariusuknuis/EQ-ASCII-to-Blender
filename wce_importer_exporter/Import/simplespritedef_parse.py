@@ -95,13 +95,13 @@ def simplespritedef_parse(r, parse_property, current_line):
                     file_entry['file'] = file_name.replace("_LAYER", "").strip()
                 elif "_DETAIL" in file_name:
                     file_entry['type'] = 'detail'
-                    if "_DETAIL_" in file_name:
-                        parts = file_name.split("_DETAIL_")
-                        if len(parts) > 1:
-                            try:
-                                file_entry['detail_value'] = float(parts[1])
-                            except Exception:
-                                pass
+                    parts = file_name.split("_DETAIL_")
+                    if len(parts) > 1:
+                        try:
+                            file_entry['detail_value'] = float(parts[1])
+                            file_entry['file'] = parts[0].strip()
+                        except Exception as e:
+                            print(f"Failed to extract detail_value from {file_name}: {e}")
             
             frame['frame_files'].append(file_entry)
         
