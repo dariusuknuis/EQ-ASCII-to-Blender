@@ -124,7 +124,7 @@ def create_materials(materials, textures, file_path, node_group_cache):
         mat["PAIRS"] = mat_data.get('pairs', (0.0, 0.0))
 
         # Add custom properties from simplespritedef_parse
-        mat["FRAME"] = texture_info.get('name', "")
+        mat["FRAME"] = texture_info['frames'][0].get('tag', "")
         mat["NUMFRAMES"] = texture_info.get('num_frames', 1)
         mat["SLEEP"] = texture_info.get('sleep', 0)
         mat["SKIPFRAMES"] = bool(texture_info.get('skipframes', 0))
