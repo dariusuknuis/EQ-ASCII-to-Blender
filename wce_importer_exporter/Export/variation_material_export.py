@@ -36,107 +36,119 @@ def write_variation_sprites_and_materials(material, file, written_sprites, writt
 
         # Identify nodes based on suffixes and naming patterns
         for node in valid_nodes:
-            if node.name.endswith("_LAYER") and layer_node is None:
+            if node.name.upper().endswith("_LAYER") and layer_node is None:
                 layer_node = node
-            elif node.name.endswith("_DETAIL") and detail_node is None:
+            elif node.name.upper().endswith("_DETAIL") and detail_node is None:
                 detail_node = node
-            elif node.name.endswith("PAL.BMP") and palette_mask_node is None:
+            elif "PAL.BMP" in node.name.upper() and palette_mask_node is None:
                 palette_mask_node = node
             elif re.match(r'^\d+,', node.name):
                 palette_nodes.append(node)
             elif primary_node is None:
-                primary_node = node  # Assign the first remaining node as primary_node
-
+                primary_node = node
         return primary_node, layer_node, detail_node, palette_mask_node, palette_nodes
 
     # SIMPLESPRITEDEF section
     primary_node, layer_node, detail_node, palette_mask_node, palette_nodes = identify_nodes(material)
+    tag_index = material.get("TAGINDEX", 0)
     variation = material.get("VARIATION", 0)
-    skipframes = 1 if material.get("SKIPFRAMES", False) else "NULL"
+    skipframes = "NULL" if not material.get("SKIPFRAMES", False) else 1
     animated = 1 if material.get("ANIMATED", False) else "NULL"
     sleep = material.get("SLEEP", 0)
     currentframe = material.get("CURRENTFRAME", "NULL") if material.get("CURRENTFRAME", 0) else "NULL"
 
-    # Determine SIMPLESPRITEDEF tag
+    # Determine sprite tag for the SIMPLESPRITEDEF header.
     if layer_node:
         sprite_tag = sanitize_filename(layer_node.name) + "_SPRITE"
     elif primary_node:
         sprite_tag = sanitize_filename(primary_node.name) + "_SPRITE"
     else:
         sprite_tag = ""
-
+    
     if sprite_tag not in written_sprites and sprite_tag:
         written_sprites.add(sprite_tag)
         
-        # Write SIMPLESPRITEDEF header
+        # Write SIMPLESPRITEDEF header.
         file.write(f'\nSIMPLESPRITEDEF "{sprite_tag}"\n')
+        file.write(f'\tTAGINDEX {tag_index}\n')
         file.write(f'\tVARIATION {variation}\n')
         file.write(f'\tSKIPFRAMES? {skipframes}\n')
         file.write(f'\tANIMATED? {animated}\n')
         file.write(f'\tSLEEP? {sleep}\n')
         file.write(f'\tCURRENTFRAME? {currentframe}\n')
-
-        # Determine and write FRAME entries based on node presence and conditions
-        frames = []
         
-        # Start with the primary texture node
-        if primary_node:
-            frames.append((primary_node, sanitize_filename(get_texture_name(primary_node))))
-        
-        # Add layer, detail, palette mask, and palette nodes
-        if layer_node:
-            frames.append((layer_node, sanitize_filename(get_texture_name(primary_node))))
-        if detail_node:
-            frames.append((detail_node, sanitize_filename(get_texture_name(primary_node))))
-        if palette_mask_node:
-            frames.append((palette_mask_node, sanitize_filename(get_texture_name(primary_node))))
-        if palette_nodes:
-            frames.extend((node, sanitize_filename(get_texture_name(primary_node))) for node in palette_nodes)
-        
-        # Handle animated frames from custom properties
-        frame_props = sorted([k for k in material.keys() if k.startswith("FRAME")])
-        if frame_props:
-            # Count all frames except the first one to add to NUMFRAMES
-            for prop in frame_props[1:]:
-                texture_name = material[prop]
-                frame_tag = sanitize_filename(texture_name)
-                frames.append((texture_name, frame_tag))
-
-        # Write NUMFRAMES and individual FRAME lines
-        file.write(f'\tNUMFRAMES {len(frames)}\n')
-        for node, frame_tag in frames:
-            texture_name = get_texture_name(node) if isinstance(node, bpy.types.Node) else node
+        # Now, handle the FRAME block differently based on NUMFRAMES.
+        num_frames = int(material.get("NUMFRAMES", 1))
+        if num_frames > 1:
+            # Animated: assume numbered properties "FRAME 001", "FRAME 002", etc.
+            frame_keys = sorted([k for k in material.keys() if k.startswith("FRAME ")])
+            file.write(f'\tNUMFRAMES {len(frame_keys)}\n')
+            for key in frame_keys:
+                parts = [p.strip() for p in material[key].split(",")]
+                if len(parts) < 2:
+                    continue
+                frame_tag_val = parts[0]
+                base_file_val = parts[1]
+                file.write(f'\t\tFRAME "{frame_tag_val}"\n')
+                file.write(f'\t\t\tNUMFILES 1\n')
+                file.write(f'\t\t\t\tFILE "{base_file_val}"\n')
+        else:
+            # Static: NUMFRAMES == 1.
+            # In this case, the custom property "FRAME" contains only the frame tag.
+            frame_tag_val = material.get("FRAME", "")
+            # Get the texture names from the nodes.
+            primary_node, layer_node, detail_node, palette_mask_node, palette_nodes = identify_nodes(material)
+            base_texture = get_texture_name(primary_node) if primary_node else ""
+            # Check if a _DETAIL or _LAYER node exists.
+            overlay_texture = ""
+            if detail_node:
+                overlay_texture = get_texture_name(detail_node)
+            elif layer_node:
+                overlay_texture = get_texture_name(layer_node)
             
-            # Check if the node is detail_node and append the scale value if so
-            if node == detail_node:
-                # Get the mapping scale value if available, default to 1.0 if not
-                mapping_node = next((link.from_node for link in detail_node.inputs["Vector"].links if link.from_node.type == 'MAPPING'), None)
-                scale_x = mapping_node.inputs["Scale"].default_value[0] if mapping_node else 1.0
-                texture_name = f"{texture_name}_{scale_x:.6f}"
+            # Also, if a palette mask node exists, then we expect multiple valid nodes.
+            if palette_mask_node:
+                palette_nodes_sorted = sorted(palette_nodes, key=lambda n: int(re.search(r'^(\d+)', n.name).group(1)) if re.search(r'^(\d+)', n.name) else 0)
+                num_files = 2 + len(palette_nodes_sorted)
+                file.write(f'\tNUMFRAMES 1\n')
+                file.write(f'\t\tFRAME "{frame_tag_val}"\n')
+                file.write(f'\t\t\tNUMFILES {num_files}\n')
+                file.write(f'\t\t\t\tFILE "{base_texture}"\n')
+                file.write(f'\t\t\t\tFILE "{palette_mask_node.name}"\n')
+                for node in palette_nodes_sorted:
+                    file.write(f'\t\t\t\tFILE "{node.name}"\n')
+            elif overlay_texture:
+                file.write(f'\tNUMFRAMES 1\n')
+                file.write(f'\t\tFRAME "{frame_tag_val}"\n')
+                file.write(f'\t\t\tNUMFILES 2\n')
+                file.write(f'\t\t\t\tFILE "{base_texture}"\n')
+                file.write(f'\t\t\t\tFILE "{overlay_texture}"\n')
+            else:
+                file.write(f'\tNUMFRAMES 1\n')
+                file.write(f'\t\tFRAME "{frame_tag_val}"\n')
+                file.write(f'\t\t\tNUMFILES 1\n')
+                file.write(f'\t\t\t\tFILE "{base_texture}"\n')
 
-            file.write(f'\t\tFRAME "{texture_name}" "{frame_tag}"\n')
-
-    # MATERIALDEFINITION section
+    # Write MATERIALDEFINITION section.
     file.write(f'\nMATERIALDEFINITION "{material.name}"\n')
+    file.write(f'\tTAGINDEX {tag_index}\n')
     file.write(f'\tVARIATION {variation}\n')
-    
-    # Find the primary node group (ignoring "PaletteMask" and "Blur" groups)
-    rendermethod = next((ng for ng in material.node_tree.nodes if ng.type == 'GROUP' and "PaletteMask" not in ng.name and "Blur" not in ng.name), None)
-    if rendermethod:
-        rm_name = get_node_group_name(rendermethod)
+    node_group = next((ng for ng in material.node_tree.nodes if ng.type == 'GROUP' and "PaletteMask" not in ng.name and "Blur" not in ng.name), None)
+    if node_group:
+        rm_name = get_node_group_name(node_group)
         file.write(f'\tRENDERMETHOD "{rm_name}"\n')
-
     rgbpen = material.get("RGBPEN", [0.7, 0.7, 0.7, 0])
     rgbpen_scaled = [int(round(c * 255)) for c in rgbpen]
     file.write(f'\tRGBPEN {" ".join(map(str, rgbpen_scaled))}\n')
     brightness = material.get("BRIGHTNESS", 0.0)
-    scaledambient = material.get("SCALEDAMBIENT", 0.75)
+    scaledambient = material.get("SCALEDAMBIENT", 1.0)
     file.write(f'\tBRIGHTNESS {brightness:.8e}\n')
     file.write(f'\tSCALEDAMBIENT {scaledambient:.8e}\n')
-    file.write(f'\tSIMPLESPRITEINST\n\t\tTAG "{sprite_tag}"\n')
-    hex_fifty_flag = 1 if material.get("HEXFIFTYFLAG", False) else 0
-    file.write(f'\t\tHEXFIFTYFLAG {hex_fifty_flag}\n')
+    # Write SIMPLESPRITEINST section.
+    file.write(f'\tSIMPLESPRITEINST\n')
+    file.write(f'\t\tTAG "{sprite_tag}"\n')
+    hex_flag = 1 if material.get("HEXFIFTYFLAG", False) else 0
+    file.write(f'\t\tHEXFIFTYFLAG {hex_flag}\n')
     pairs = material.get("PAIRS", [0, 0.0])
     file.write(f'\tPAIRS? {int(pairs[0])} {pairs[1]:.8e}\n')
-    double_sided = 0 if material.use_backface_culling else 1
-    file.write(f'\tDOUBLESIDED {double_sided}\n')
+    file.write(f'\tDOUBLESIDED {0 if material.use_backface_culling else 1}\n')

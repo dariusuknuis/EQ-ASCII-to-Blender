@@ -124,7 +124,6 @@ def create_materials(materials, textures, file_path, node_group_cache):
         mat["PAIRS"] = mat_data.get('pairs', (0.0, 0.0))
 
         # Add custom properties from simplespritedef_parse
-        mat["FRAME"] = texture_info['frames'][0].get('tag', "")
         mat["NUMFRAMES"] = texture_info.get('num_frames', 1)
         mat["SLEEP"] = texture_info.get('sleep', 0)
         mat["SKIPFRAMES"] = bool(texture_info.get('skipframes', 0))
@@ -144,10 +143,12 @@ def create_materials(materials, textures, file_path, node_group_cache):
                     add_palette_mask_texture_nodes(mat, texture_info, node_group_cache, file_path)
                 elif file_type == 'tiled':
                     add_tiled_texture_nodes(mat, file_entry, texture_info, node_group_cache, file_path)
-
-        # Finally, if the texture is animated, modify the image texture nodes for animation.
-        if texture_info.get('animated', False):
-            add_animated_texture_nodes(mat, texture_info, file_path)
+            # Finally, if the texture is animated, modify the image texture nodes for animation.
+            if texture_info.get('animated', False):
+                add_animated_texture_nodes(mat, texture_info, file_path)
+            else:
+                mat["FRAME"] = texture_info['frames'][0].get('tag', "")
+        
 
         created_materials[mat_name] = mat
 

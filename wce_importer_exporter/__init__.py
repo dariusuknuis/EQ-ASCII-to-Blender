@@ -28,6 +28,8 @@ from .Import import import_wce_file
 from .Export import master_export  # Assuming 'master_export.py' is in the Export folder
 from .passable_flag_editor import register_passable_editor, unregister_passable_editor
 
+from .update_handler import update_animated_texture_nodes
+
 bpy.types.Scene.export_folder_path = bpy.props.StringProperty(name="Export Folder", default="")
 
 # Importer Preferences
@@ -244,6 +246,9 @@ def register():
     bpy.utils.register_class(ExportWCEPanel)
     register_passable_editor()  # Register the Passable Flag Editor
 
+    if update_animated_texture_nodes not in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.append(update_animated_texture_nodes)
+
 def unregister():
     bpy.utils.unregister_class(WCEImporterPreferences)
     bpy.utils.unregister_class(ModelItem)
@@ -257,6 +262,9 @@ def unregister():
     bpy.utils.unregister_class(WCEExporterDialogOperator)
     bpy.utils.unregister_class(ExportWCEPanel)
     unregister_passable_editor()  # Unregister the Passable Flag Editor
+
+    if update_animated_texture_nodes in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.remove(update_animated_texture_nodes)
 
 if __name__ == "__main__":
     register()
