@@ -30,7 +30,7 @@ def assign_mesh_to_armature(mesh_obj, armature_obj, armature_data, cumulative_ma
                     # Adjust the origin by subtracting the Y-length of the bone tail
                     bone_tail_y = bone_obj.tail.y
                     mesh_obj.location.y -= bone_tail_y
-                    mesh_obj["SPRITEINDEX"] = bone.get['sprite_index']
+                    mesh_obj["SPRITEINDEX"] = bone.get("sprite_index", 0)
                     print(f"Mesh '{mesh_name}' parented to bone '{bone['name']}' with origin adjusted by tail length: {bone_tail_y}")
                     assigned = True
                     break  # Mesh is assigned, no need to check further
