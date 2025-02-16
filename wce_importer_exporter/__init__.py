@@ -81,17 +81,32 @@ class WCEImportDialogOperator(bpy.types.Operator):
             item.selected = False
             item.include_line = include_line  # Store the full INCLUDE line
 
-        return context.window_manager.invoke_props_dialog(self, width=800)
+        num_items = len(context.scene.wce_model_list)
+
+        # Dynamically adjust width and column count
+        base_width = 600  # Minimum width
+        max_width = 1000  # Maximum width
+        base_columns = 10  # Minimum columns
+        max_columns = 25  # Maximum columns
+
+        # Scale width and columns dynamically based on the number of items
+        dialog_width = min(max_width, base_width + num_items * 1.5)  # Scale but limit to max_width
+        column_count = min(max_columns, max(base_columns, int(num_items / 12)))  # Adjust columns proportionally
+
+        # Store column_count in class so we can use it in draw()
+        self.column_count = column_count
+
+        return context.window_manager.invoke_props_dialog(self, width=int(dialog_width))
 
     def draw(self, context):
         layout = self.layout
         layout.label(text="Select assets to import:")
 
-        column_count = 20
         row = layout.row()
-        
+        col = None  # Initialize column variable
+
         for i, item in enumerate(context.scene.wce_model_list):
-            if i % column_count == 0:
+            if i % self.column_count == 0:  # Create a new column every N items
                 col = row.column()
             col.prop(item, "selected", text=item.name)
 

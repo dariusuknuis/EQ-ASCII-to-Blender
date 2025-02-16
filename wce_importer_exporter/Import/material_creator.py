@@ -12,6 +12,7 @@ from userdefined_20 import create_node_group_ud20, create_material_with_node_gro
 from userdefined_21 import create_node_group_ud21, create_material_with_node_group_ud21
 from userdefined_22 import create_node_group_ud22, create_material_with_node_group_ud22
 from userdefined_24 import create_node_group_ud24, create_material_with_node_group_ud24
+from userdefined_26 import create_node_group_ud26, create_material_with_node_group_ud26
 from add_animated_texture_nodes import add_animated_texture_nodes
 from add_layered_texture_nodes import add_layered_texture_nodes
 from add_detail_texture_nodes import add_detail_texture_nodes
@@ -102,6 +103,9 @@ def create_materials(materials, textures, file_path, node_group_cache):
         elif rendermethod == 'USERDEFINED_24':
             node_group = get_or_create_node_group('USERDEFINED_24', create_node_group_ud24, node_group_cache)
             mat = create_material_with_node_group_ud24(mat_name, texture_full_path, node_group)
+        elif rendermethod == 'USERDEFINED_26':
+            node_group = get_or_create_node_group('USERDEFINED_26', create_node_group_ud26, node_group_cache)
+            mat = create_material_with_node_group_ud26(mat_name, texture_full_path, node_group)
         else:
             mat = bpy.data.materials.new(name=mat_name)
             mat.use_nodes = True
