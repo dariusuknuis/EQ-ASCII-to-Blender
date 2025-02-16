@@ -114,9 +114,9 @@ def split_vertices_by_uv(mesh_obj):
 
 def reindex_vertices_by_vertex_group(mesh_obj, armature_obj=None):
     # Check if the mesh has any vertex groups; skip if not
-    if not mesh_obj.vertex_groups:
-        # print(f"Skipping reindexing: No vertex groups found for {mesh_obj.name}")
-        return
+    # if not mesh_obj.vertex_groups:
+    #     # print(f"Skipping reindexing: No vertex groups found for {mesh_obj.name}")
+    #     return
     mesh = mesh_obj.data
     bm = bmesh.new()
     bm.from_mesh(mesh)
@@ -141,23 +141,26 @@ def reindex_vertices_by_vertex_group(mesh_obj, armature_obj=None):
     passable_layer = bm.faces.layers.int.get('PASSABLE')
     material_layer = bm.verts.layers.int.get('Vertex_Material_Index')
 
+    has_vertex_groups = bool(mesh_obj.vertex_groups)
+
     # Collect vertex group weights by name for each vertex
     for v in bm.verts:
         mesh_data['vertices'].append(v.co.copy())
 
-        # Collect vertex group weights by group name
-        mesh_data['vertex_groups'][v.index] = {}
-        for group in mesh_obj.vertex_groups:
-            try:
-                weight = group.weight(v.index)
-                if weight > 0:
-                    mesh_data['vertex_groups'][v.index][group.name] = weight
-            except RuntimeError:
-                pass
-
-        # Collect vertex materials
+        # Collect vertex material index (applies to all cases)
         if material_layer:
             mesh_data['vertex_materials'].append(v[material_layer])
+        
+        # Collect vertex group data if available
+        if has_vertex_groups:
+            mesh_data['vertex_groups'][v.index] = {}
+            for group in mesh_obj.vertex_groups:
+                try:
+                    weight = group.weight(v.index)
+                    if weight > 0:
+                        mesh_data['vertex_groups'][v.index][group.name] = weight
+                except RuntimeError:
+                    pass
 
     # Collect face and loop data
     for face in bm.faces:
@@ -179,29 +182,45 @@ def reindex_vertices_by_vertex_group(mesh_obj, armature_obj=None):
         vertex_index, loop_index, normal = loop
         # print(f"Loop {loop_index}: Vertex {vertex_index} - Normal {normal}")
 
-    # Step 2: Reorder vertices by vertex group, preserving order within groups
-    group_assignments = {}
-    for v in bm.verts:
-        group_data = [(group.group, group.weight) for group in mesh_obj.data.vertices[v.index].groups]
-        if group_data:
-            group_index = group_data[0][0]  # Use the first group the vertex belongs to
-            if group_index not in group_assignments:
-                group_assignments[group_index] = []
-            group_assignments[group_index].append(v.index)
-
-    # Flatten and reorder vertices by vertex group
+    # Step 2: Reorder vertices
     sorted_vertex_indices = []
-    for group_index, vertices in sorted(group_assignments.items()):
-        sorted_vertex_indices.extend(vertices)
+
+    if has_vertex_groups:
+        group_assignments = {}
+
+        # Collect vertex group assignments
+        for v in bm.verts:
+            group_data = [(group.group, group.weight) for group in mesh_obj.data.vertices[v.index].groups]
+            if group_data:
+                group_index = group_data[0][0]  # First group assigned
+                if group_index not in group_assignments:
+                    group_assignments[group_index] = []
+                group_assignments[group_index].append(v.index)
+
+        # Sort by vertex group, then by material index within the group
+        for group_index, vertices in sorted(group_assignments.items()):
+            vertices_sorted_by_material = sorted(vertices, key=lambda v: mesh_data['vertex_materials'][v])
+            sorted_vertex_indices.extend(vertices_sorted_by_material)
+
+    else:
+        sorted_vertex_indices = sorted(range(len(mesh_data['vertices'])), 
+                                       key=lambda v: mesh_data['vertex_materials'][v])
 
     # Create a mapping from old index to new index
     old_to_new_index = {old_index: new_index for new_index, old_index in enumerate(sorted_vertex_indices)}
 
     # Step 3: Update the face vertex indices to reflect the new vertex order
-    new_faces = []
-    for face in mesh_data['faces']:
-        new_faces.append([old_to_new_index[vi] for vi in face])
+    new_faces = [[old_to_new_index[vi] for vi in face] for face in mesh_data['faces']]
     mesh_data['faces'] = new_faces
+
+    # 🔹 Sort faces, passable values, and UVs by face material index
+    sorted_faces_data = sorted(zip(mesh_data['faces'], mesh_data['face_materials'], mesh_data['passable'], mesh_data['uvs']), key=lambda x: x[1])
+
+    # Extract the sorted lists
+    mesh_data['faces'] = [face for face, mat, pas, uvs in sorted_faces_data]
+    mesh_data['face_materials'] = [mat for face, mat, pas, uvs in sorted_faces_data]
+    mesh_data['passable'] = [pas for face, mat, pas, uvs in sorted_faces_data]
+    mesh_data['uvs'] = [uvs for face, mat, pas, uvs in sorted_faces_data]
 
     # Step 4: Clear the original mesh data
     mesh.clear_geometry()
@@ -258,14 +277,15 @@ def reindex_vertices_by_vertex_group(mesh_obj, armature_obj=None):
         poly.material_index = mesh_data['face_materials'][i]
 
     # Step 8: Recreate and apply vertex groups using the collected data
-    mesh_obj.vertex_groups.clear()
+    if has_vertex_groups:
+        mesh_obj.vertex_groups.clear()
 
-    for old_index, new_index in old_to_new_index.items():
-        for group_name, weight in mesh_data['vertex_groups'][old_index].items():
-            group = mesh_obj.vertex_groups.get(group_name)
-            if not group:
-                group = mesh_obj.vertex_groups.new(name=group_name)
-            group.add([new_index], weight, 'ADD')
+        for old_index, new_index in old_to_new_index.items():
+            for group_name, weight in mesh_data['vertex_groups'][old_index].items():
+                group = mesh_obj.vertex_groups.get(group_name)
+                if not group:
+                    group = mesh_obj.vertex_groups.new(name=group_name)
+                group.add([new_index], weight, 'ADD')
 
     mesh.calc_normals_split()
     normals_after = []
@@ -279,3 +299,62 @@ def reindex_vertices_by_vertex_group(mesh_obj, armature_obj=None):
     mesh.update()
 
     # print(f"Reindexed and modified the object: {mesh_obj.name}")
+
+def reindex_faces_by_material(mesh_obj):
+    """
+    Reorders faces in the mesh so that faces using the same material index are grouped together,
+    while preserving UVs, normals, and custom attributes.
+    """
+    mesh = mesh_obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+
+    # Ensure lookup tables
+    bm.faces.ensure_lookup_table()
+    bm.verts.ensure_lookup_table()
+
+    # Step 1: Store existing face data
+    face_data = []
+    
+    uv_layer = bm.loops.layers.uv.active
+    passable_layer = bm.faces.layers.int.get('PASSABLE')
+
+    for face in bm.faces:
+        face_info = {
+            'material_index': face.material_index,
+            'vertices': [v.index for v in face.verts],  # Store original vertex indices
+            'uvs': [loop[uv_layer].uv.copy() for loop in face.loops] if uv_layer else None,
+            'passable': face[passable_layer] if passable_layer else None
+        }
+        face_data.append(face_info)
+
+    # Step 2: Sort faces by material index
+    face_data.sort(key=lambda x: x['material_index'])
+
+    # Step 3: Clear existing faces and recreate them in the new order
+    bmesh.ops.delete(bm, geom=bm.faces, context='FACES')
+
+    # 🔹 **Fix: Ensure Lookup Tables Are Updated**
+    bm.faces.ensure_lookup_table()
+    bm.verts.ensure_lookup_table()
+
+    for face_info in face_data:
+        new_face = bm.faces.new([bm.verts[i] for i in face_info['vertices']])
+        new_face.material_index = face_info['material_index']
+
+        if passable_layer and face_info['passable'] is not None:
+            new_face[passable_layer] = face_info['passable']
+
+        # Restore UVs
+        if uv_layer and face_info['uvs']:
+            for loop, uv in zip(new_face.loops, face_info['uvs']):
+                loop[uv_layer].uv = uv
+
+    # 🔹 **Fix: Ensure Lookup Tables Are Updated Again**
+    bm.faces.ensure_lookup_table()
+    bm.verts.ensure_lookup_table()
+
+    # Apply changes back to the mesh
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
