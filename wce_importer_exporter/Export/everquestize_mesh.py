@@ -112,7 +112,7 @@ def split_vertices_by_uv(mesh_obj):
     print(f"Finished splitting vertices by UVs for object: {mesh_obj.name}")
 
 
-def reindex_vertices_by_vertex_group(mesh_obj, armature_obj=None):
+def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
     # Check if the mesh has any vertex groups; skip if not
     # if not mesh_obj.vertex_groups:
     #     # print(f"Skipping reindexing: No vertex groups found for {mesh_obj.name}")

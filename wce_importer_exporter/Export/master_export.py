@@ -13,7 +13,7 @@ from track_export import export_animation_data
 from actordef_export import write_actordef
 from material_export import write_materials_and_sprites
 from variation_material_export import write_variation_sprites_and_materials
-from everquestize_mesh import split_vertices_by_uv, reindex_vertices_by_vertex_group, update_vertex_material_indices, reindex_faces_by_material
+from everquestize_mesh import split_vertices_by_uv, reindex_vertices_and_faces, update_vertex_material_indices
 
 def get_armature(obj):
     """Finds and returns the armature associated with the given object."""
@@ -155,8 +155,7 @@ def export_dmspritedef(obj, file):
     for mesh in meshes:
         split_vertices_by_uv(mesh)
         update_vertex_material_indices(mesh)
-        reindex_vertices_by_vertex_group(mesh)
-        # reindex_faces_by_material(mesh)
+        reindex_vertices_and_faces(mesh)
         write_dmspritedef(mesh, file)
 
 
