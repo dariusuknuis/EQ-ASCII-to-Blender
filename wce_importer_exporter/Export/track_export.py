@@ -39,6 +39,7 @@ def export_animation_data(armature_obj, file, include_pos=False):
             # Filter the fcurves for the current action and this bone
             location_fcurves = [fcurve for fcurve in action.fcurves if f'pose.bones["{bone_name}"].location' in fcurve.data_path]
             rotation_fcurves = [fcurve for fcurve in action.fcurves if f'pose.bones["{bone_name}"].rotation_quaternion' in fcurve.data_path]
+            scale_fcurves = [fcurve for fcurve in action.fcurves if f'pose.bones["{bone_name}"].scale' in fcurve.data_path]
 
             if not location_fcurves and not rotation_fcurves:
                 continue  # Skip if no animation data exists for this bone
@@ -74,7 +75,17 @@ def export_animation_data(armature_obj, file, include_pos=False):
             for frame_idx in range(num_frames):
                 scale_factor = 256
                 rotation_factor = 16384
-                
+
+                # --- Extract scale data and compute average ---
+                if scale_fcurves:
+                    scale_values = [
+                        scale_fcurves[i].keyframe_points[frame_idx].co[1] for i in range(3)  # X, Y, Z scales
+                    ]
+                    average_scale = sum(scale_values) / 3.0
+                    calculated_scale = round(average_scale * scale_factor)
+                else:
+                    calculated_scale = scale_factor  # Fallback if no scale fcurves
+
                 # Extract translation (location) data
                 translation = [0, 0, 0]
                 if location_fcurves:
@@ -92,7 +103,7 @@ def export_animation_data(armature_obj, file, include_pos=False):
                     ]
 
                 # Write the frame data
-                file.write(f'\t\tFRAME {scale_factor} {translation[0]} {translation[1]} {translation[2]} {rotation[0]} {rotation[1]} {rotation[2]} {rotation[3]}\n')
+                file.write(f'\t\tFRAME {calculated_scale} {translation[0]} {translation[1]} {translation[2]} {rotation[0]} {rotation[1]} {rotation[2]} {rotation[3]}\n')
 
             # Write NUMLEGACYFRAMES (default to 0)
             file.write(f'\tNUMLEGACYFRAMES 0\n')
