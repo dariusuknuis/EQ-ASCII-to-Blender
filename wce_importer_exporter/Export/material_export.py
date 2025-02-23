@@ -16,6 +16,8 @@ def write_materials_and_sprites(mesh, file, written_sprites=set(), written_mater
         """Return the node group name; if 'USERDEFINED_20' variation, return just 'USERDEFINED_20'."""
         if "USERDEFINED_20" in node.node_tree.name:
             return "USERDEFINED_20"
+        if "USERDEFINED_26" in node.node_tree.name:
+            return "USERDEFINED_26"
         return node.node_tree.name
 
     def identify_nodes(material):

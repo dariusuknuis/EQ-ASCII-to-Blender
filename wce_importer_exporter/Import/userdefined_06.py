@@ -20,7 +20,7 @@ def create_node_group_ud06():
     principled_node = node_group.nodes.new(type='ShaderNodeBsdfPrincipled')
     principled_node.location = (300, 0)
     principled_node.inputs['Specular'].default_value = 0.0
-    principled_node.inputs['Alpha'].default_value = 0.50  # Set alpha to 0.75 for 25% transparency
+    principled_node.inputs['Alpha'].default_value = 0.50
 
     # Create links within the node group
     group_links = node_group.links

@@ -7,11 +7,15 @@ from userdefined_02 import create_node_group_ud02, create_material_with_node_gro
 from userdefined_06 import create_node_group_ud06, create_material_with_node_group_ud06
 from userdefined_08 import create_node_group_ud08, create_material_with_node_group_ud08
 from userdefined_10 import create_node_group_ud10, create_material_with_node_group_ud10
+from userdefined_11 import create_node_group_ud11, create_material_with_node_group_ud11
 from userdefined_12 import create_node_group_ud12, create_material_with_node_group_ud12
+from userdefined_17 import create_node_group_ud17, create_material_with_node_group_ud17
+from userdefined_19 import create_node_group_ud19, create_material_with_node_group_ud19
 from userdefined_20 import create_node_group_ud20, create_material_with_node_group_ud20
 from userdefined_21 import create_node_group_ud21, create_material_with_node_group_ud21
 from userdefined_22 import create_node_group_ud22, create_material_with_node_group_ud22
 from userdefined_24 import create_node_group_ud24, create_material_with_node_group_ud24
+from userdefined_25 import create_node_group_ud25, create_material_with_node_group_ud25
 from userdefined_26 import create_node_group_ud26, create_material_with_node_group_ud26
 from add_animated_texture_nodes import add_animated_texture_nodes
 from add_layered_texture_nodes import add_layered_texture_nodes
@@ -88,9 +92,18 @@ def create_materials(materials, textures, file_path, node_group_cache):
         elif rendermethod == 'USERDEFINED_10':
             node_group = get_or_create_node_group('USERDEFINED_10', create_node_group_ud10, node_group_cache)
             mat = create_material_with_node_group_ud10(mat_name, texture_full_path, node_group)
+        elif rendermethod == 'USERDEFINED_11':
+            node_group = get_or_create_node_group('USERDEFINED_11', create_node_group_ud11, node_group_cache)
+            mat = create_material_with_node_group_ud11(mat_name, texture_full_path, node_group)
         elif rendermethod == 'USERDEFINED_12':
             node_group = get_or_create_node_group('USERDEFINED_12', create_node_group_ud12, node_group_cache)
             mat = create_material_with_node_group_ud12(mat_name, texture_full_path, node_group)
+        elif rendermethod == 'USERDEFINED_17':
+            node_group = get_or_create_node_group('USERDEFINED_17', create_node_group_ud17, node_group_cache)
+            mat = create_material_with_node_group_ud17(mat_name, texture_full_path, node_group)
+        elif rendermethod == 'USERDEFINED_19':
+            node_group = get_or_create_node_group('USERDEFINED_19', create_node_group_ud19, node_group_cache)
+            mat = create_material_with_node_group_ud19(mat_name, texture_full_path, node_group)
         elif rendermethod == 'USERDEFINED_20':
             node_group = get_or_create_node_group('USERDEFINED_20', create_node_group_ud20, node_group_cache, texture_full_path)
             mat = create_material_with_node_group_ud20(mat_name, texture_full_path, node_group)
@@ -103,6 +116,9 @@ def create_materials(materials, textures, file_path, node_group_cache):
         elif rendermethod == 'USERDEFINED_24':
             node_group = get_or_create_node_group('USERDEFINED_24', create_node_group_ud24, node_group_cache)
             mat = create_material_with_node_group_ud24(mat_name, texture_full_path, node_group)
+        elif rendermethod == 'USERDEFINED_25':
+            node_group = get_or_create_node_group('USERDEFINED_25', create_node_group_ud25, node_group_cache)
+            mat = create_material_with_node_group_ud25(mat_name, texture_full_path, node_group)
         elif rendermethod == 'USERDEFINED_26':
             node_group = get_or_create_node_group('USERDEFINED_26', create_node_group_ud26, node_group_cache)
             mat = create_material_with_node_group_ud26(mat_name, texture_full_path, node_group)
