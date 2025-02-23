@@ -2,14 +2,14 @@ import bpy
 
 def export_animation_data(armature_obj, file, include_pos=False):
     # Debug: Print armature object being used
-    print(f"Exporting animations for armature: {armature_obj.name}")
+    # print(f"Exporting animations for armature: {armature_obj.name}")
 
     if not armature_obj.animation_data or not armature_obj.animation_data.nla_tracks:
         print(f"No NLA tracks found for armature {armature_obj.name}.")
         return
 
     for nla_track in armature_obj.animation_data.nla_tracks:
-        print(f"Processing NLA track: {nla_track.name}")
+        # print(f"Processing NLA track: {nla_track.name}")
         
         for strip in nla_track.strips:
             action = strip.action
@@ -17,7 +17,7 @@ def export_animation_data(armature_obj, file, include_pos=False):
                 continue  # Skip if action is None
         
         # Debug: Print the action being processed
-        print(f"Processing action: {action.name}")
+        # print(f"Processing action: {action.name}")
 
         # Filter actions based on POS inclusion
         if include_pos and not action.name.startswith("POS"):
@@ -26,12 +26,12 @@ def export_animation_data(armature_obj, file, include_pos=False):
             continue
 
         # Debug: Print which actions are being processed
-        print(f"Writing animation: {action.name} (POS included: {include_pos})")
+        # print(f"Writing animation: {action.name} (POS included: {include_pos})")
 
         # Write TRACKDEFINITION and TRACKINSTANCE for each bone in the armature
         for bone in armature_obj.pose.bones:
             bone_name = bone.name
-            print(f"Processing bone: {bone_name}")
+            # print(f"Processing bone: {bone_name}")
 
             # Strip off any .001, .002 suffixes and remove _DAG or _ANIDAG
             stripped_bone_name = bone_name.replace('_DAG', '').replace('_ANIDAG', '').split('.')[0]
@@ -58,7 +58,7 @@ def export_animation_data(armature_obj, file, include_pos=False):
             track_instance_name = f"{action_prefix}{stripped_bone_name}_TRACK"
 
             # Debug: Print track definition being written
-            print(f"Writing TRACKDEFINITION: {track_def_name}")
+            # print(f"Writing TRACKDEFINITION: {track_def_name}")
 
             file.write(f'\nTRACKDEFINITION "{track_def_name}"\n')
 
@@ -123,4 +123,4 @@ def export_animation_data(armature_obj, file, include_pos=False):
                 sleep_time = "NULL"
             file.write(f'\tSLEEP? {sleep_time}\n')
 
-    print("Animation export complete")
+    # print("Animation export complete")
