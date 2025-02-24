@@ -44,6 +44,7 @@ def add_layered_texture_nodes(material, texture_info, node_group_cache, base_pat
     # Process layered frames
     if 'frames' in texture_info and texture_info['frames']:
         first_frame = texture_info['frames'][0]
+        assets_folder = "assets"
         for file_entry in first_frame.get('frame_files', []):
             if file_entry.get('type', '').lower() == 'layer':
                 frame_file = file_entry['file']
@@ -51,7 +52,7 @@ def add_layered_texture_nodes(material, texture_info, node_group_cache, base_pat
                 layer_name = f"{layer_file_name}_LAYER"
 
                 # Construct full path to the file
-                full_path = os.path.join(base_path, frame_file) if base_path else frame_file
+                full_path = os.path.join(base_path, assets_folder, frame_file) if base_path else os.path.join(assets_folder, frame_file)
                 texture_path = bpy.path.abspath(full_path)
 
                 try:

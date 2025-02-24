@@ -41,6 +41,7 @@ def add_detail_texture_nodes(material, texture_info, node_group_cache, base_path
     # Process detail overlay nodes from the first frame's file entries.
     if 'frames' in texture_info and texture_info['frames']:
         first_frame = texture_info['frames'][0]
+        assets_folder = "assets"
         for file_entry in first_frame.get('frame_files', []):
             if file_entry.get('type', '').lower() == 'detail':
                 frame_file = file_entry['file']
@@ -49,7 +50,7 @@ def add_detail_texture_nodes(material, texture_info, node_group_cache, base_path
                 detail_name = f"{detail_file_name}_DETAIL"
 
                 # Construct full path to the file
-                full_path = os.path.join(base_path, frame_file) if base_path else frame_file
+                full_path = os.path.join(base_path, assets_folder, frame_file) if base_path else os.path.join(assets_folder, frame_file)
                 texture_path = bpy.path.abspath(full_path)
 
                 # Check if the file exists before loading

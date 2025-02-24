@@ -51,6 +51,7 @@ def create_materials(materials, textures, file_path, node_group_cache):
     """
     created_materials = {}
     base_path = file_path
+    assets_folder = "assets"
 
     for mat_data in materials:
         mat_name = mat_data['name']
@@ -68,7 +69,7 @@ def create_materials(materials, textures, file_path, node_group_cache):
                 texture_file = ''
         else:
             texture_file = ''
-        texture_full_path = os.path.join(base_path, texture_file)
+        texture_full_path = os.path.join(base_path, assets_folder, texture_file)
 
         rendermethod = mat_data['rendermethod']
         if rendermethod == 'SOLIDFILLAMBIENTGOURAUD1':

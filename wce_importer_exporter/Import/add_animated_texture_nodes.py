@@ -38,6 +38,7 @@ def add_animated_texture_nodes(material, texture_info, base_path=None):
         return
 
     # --- 3. Build lists from texture_info ---
+    assets_folder = "assets"
     base_frame_files = []
     overlay_frame_files = []
     for frame in texture_info.get('frames', []):
@@ -45,7 +46,7 @@ def add_animated_texture_nodes(material, texture_info, base_path=None):
         if len(files) > 0:
             # Run DDS check on the base file.
             base_file = files[0].get('file', '')
-            full_path = os.path.join(base_path, base_file) if base_path else base_file
+            full_path = os.path.join(base_path, assets_folder, base_file) if base_path else os.path.join(assets_folder, base_file)
             texture_path = bpy.path.abspath(full_path)
             if os.path.isfile(texture_path):
                 try:
@@ -57,7 +58,7 @@ def add_animated_texture_nodes(material, texture_info, base_path=None):
             base_frame_files.append('')
         if len(files) > 1:
             overlay_file = files[1].get('file', '')
-            full_path = os.path.join(base_path, overlay_file) if base_path else overlay_file
+            full_path = os.path.join(base_path, assets_folder, overlay_file) if base_path else os.path.join(assets_folder, overlay_file)
             texture_path = bpy.path.abspath(full_path)
             if os.path.isfile(texture_path):
                 try:

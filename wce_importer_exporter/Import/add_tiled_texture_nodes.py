@@ -23,6 +23,7 @@ def add_tiled_texture_nodes(material, frame_data, texture_info, node_group_cache
     palette_mask_file = ''
     if 'frames' in texture_info and texture_info['frames']:
         first_frame = texture_info['frames'][0]
+        assets_folder = "assets"
         for fe in first_frame.get('frame_files', []):
             if fe.get('type', '').lower() == 'palette_mask':
                 palette_mask_file = fe.get('file', '')
@@ -30,7 +31,7 @@ def add_tiled_texture_nodes(material, frame_data, texture_info, node_group_cache
 
     if palette_mask_file:
         # Convert the palette mask file path to an absolute path
-        palette_mask_file_path = os.path.abspath(os.path.join(base_path, palette_mask_file)) if base_path else palette_mask_file
+        palette_mask_file_path = os.path.abspath(os.path.join(base_path, assets_folder, palette_mask_file)) if base_path else os.path.join(assets_folder, palette_mask_file)
 
         # Identify palette_mask_texture_node by matching the image filepath
         for node in nodes:
@@ -57,6 +58,7 @@ def add_tiled_texture_nodes(material, frame_data, texture_info, node_group_cache
     # Process the specific tiled frame
     if frame_data.get('type', '').lower() == 'tiled':
         frame_file = frame_data['file']
+        assets_folder = "assets"
         color_index = frame_data['color_index']  # Use color_index instead of frame_index
         scale = frame_data['scale']
         blend = frame_data['blend']
@@ -66,7 +68,7 @@ def add_tiled_texture_nodes(material, frame_data, texture_info, node_group_cache
         tiled_texture_name = f"{color_index + 1}, {int(scale / 10)}, {blend}, {os.path.basename(frame_file)}"
 
         # Construct full path to the tiled file
-        full_path = os.path.join(base_path, frame_file) if base_path else frame_file
+        full_path = os.path.join(base_path, assets_folder, frame_file) if base_path else os.path.join(assets_folder, frame_file)
         texture_path = bpy.path.abspath(full_path)
 
         # Check if the file exists before loading
@@ -89,7 +91,7 @@ def add_tiled_texture_nodes(material, frame_data, texture_info, node_group_cache
 
         # Read the palette color for the current color index
         if palette_mask_file:
-            palette_mask_path = os.path.join(base_path, palette_mask_file) if base_path else palette_mask_file
+            palette_mask_path = os.path.join(base_path, assets_folder, palette_mask_file) if base_path else os.path.join(assets_folder, palette_mask_file)
             if os.path.isfile(palette_mask_path):
 #                print(f"Palette mask texture file found: {palette_mask_path} for color index: {color_index}")
                 palette_color = read_bmp_palette_color(palette_mask_path, color_index)
