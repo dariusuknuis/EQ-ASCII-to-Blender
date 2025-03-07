@@ -57,11 +57,17 @@ def export_mesh_and_pos_animation(obj, output_path):
 
         # Call the mesh export function
         export_dmspritedef(obj, file)
+
+        # Call the DMTRACKDEF2 export for each DMSPRITEDEF mesh with shape keys
+        meshes = find_all_child_meshes(obj)
+        for mesh in meshes:
+            if mesh.data.shape_keys and len(mesh.data.shape_keys.key_blocks) > 1:
+                write_dmtrackdef2(mesh, file)
         
         # Try to find the armature for POS action export
         armature = get_armature(obj)
         if armature:
-            export_pos_animation(armature, file)
+            export_animation_data(armature, file, action_filter="POS")
             write_hierarchicalspritedef(armature, file)
         else:
             print("No armature found for the mesh object!")
@@ -75,22 +81,18 @@ def export_mesh_and_pos_animation(obj, output_path):
 
 # Call the rest of the animation export
 def export_animation(obj, output_path):
-    ani_output_file = os.path.join(output_path, f"{sanitize_name(obj.name)}_ani.wce")
-    with open(ani_output_file, 'w') as file:
-        armature = get_armature(obj)
-        if armature:
-            print(f"Exporting animations for armature: {armature.name}")
-            export_track_animation(armature, file)
-        else:
-            print(f"No armature found for object {obj.name}. Skipping animation export.")
-
-        # Call the DMTRACKDEF2 export for each DMSPRITEDEF mesh with shape keys
-        meshes = find_all_child_meshes(obj)
-        for mesh in meshes:
-            if mesh.data.shape_keys and len(mesh.data.shape_keys.key_blocks) > 1:
-                write_dmtrackdef2(mesh, file)
-
-    print(f"Remaining animation data exported to {ani_output_file}")
+    armature = get_armature(obj)
+    if armature:
+        # Export each non-POS action separately
+        for nla_track in armature.animation_data.nla_tracks:
+            for strip in nla_track.strips:
+                action = strip.action
+                if action and not action.name.startswith("POS"):
+                    ani_output_file = os.path.join(output_path, f"{sanitize_name(action.name)}.wce")
+                    with open(ani_output_file, 'w') as file:
+                        export_animation_data(armature, file, action_filter=action.name)
+    else:
+        print(f"No armature found for object {obj.name}. Skipping animation export.")
 
 def export_materials(obj, file):
     print("Running material export...")
@@ -159,14 +161,14 @@ def export_dmspritedef(obj, file):
         write_dmspritedef(mesh, file)
 
 
-def export_pos_animation(armature, file):
-    print("Running POS action export...")
-    export_animation_data(armature, file, include_pos=True)
+# def export_pos_animation(armature, file):
+#     print("Running POS action export...")
+#     export_animation_data(armature, file, include_pos=True)
 
 
-def export_track_animation(armature, file):
-    print("Running track action export...")
-    export_animation_data(armature, file, include_pos=False)
+# def export_track_animation(armature, file):
+#     print("Running track action export...")
+#     export_animation_data(armature, file, include_pos=False)
 
 
 def find_all_child_meshes(parent_obj):

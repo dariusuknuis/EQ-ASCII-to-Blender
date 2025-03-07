@@ -65,6 +65,6 @@ def write_actordef(empty_obj, file):
 
     # Write remaining properties USEMODELCOLLIDER and USERDATA
     file.write(f'\tUSEMODELCOLLIDER {use_model_collider}\n')
-    file.write(f'\tUSERDATA {userdata}\n')
+    file.write(f'\tUSERDATA "{userdata}"\n')
 
     print(f'ACTORDEF data for "{actordef_name}" exported.')

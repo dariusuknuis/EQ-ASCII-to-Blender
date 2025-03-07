@@ -140,7 +140,7 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
             text_block = bpy.data.texts.new(text_block_name)
 
         text_block.clear()
-        text_block.write(f"MESHOPS for {mesh_data['name']}:\n")
+        #text_block.write(f"MESHOPS for {mesh_data['name']}:\n")
 
         # Write each MESHOP entry
         for meshop in mesh_data['meshops']:

@@ -56,6 +56,7 @@ def write_variation_sprites_and_materials(material, file, written_sprites, writt
     animated = 1 if material.get("ANIMATED", False) else "NULL"
     sleep = material.get("SLEEP", 0)
     currentframe = material.get("CURRENTFRAME", "NULL") if material.get("CURRENTFRAME", 0) else "NULL"
+    simple_sprite_tag_index = material.get("SIMPLESPRITETAGINDEX", 0)
 
     # Determine sprite tag for the SIMPLESPRITEDEF header.
     if layer_node:
@@ -70,7 +71,7 @@ def write_variation_sprites_and_materials(material, file, written_sprites, writt
         
         # Write SIMPLESPRITEDEF header.
         file.write(f'\nSIMPLESPRITEDEF "{sprite_tag}"\n')
-        file.write(f'\tTAGINDEX {tag_index}\n')
+        file.write(f'\tTAGINDEX {simple_sprite_tag_index}\n')
         file.write(f'\tVARIATION {variation}\n')
         file.write(f'\tSKIPFRAMES? {skipframes}\n')
         file.write(f'\tANIMATED? {animated}\n')
@@ -147,6 +148,7 @@ def write_variation_sprites_and_materials(material, file, written_sprites, writt
     # Write SIMPLESPRITEINST section.
     file.write(f'\tSIMPLESPRITEINST\n')
     file.write(f'\t\tTAG "{sprite_tag}"\n')
+    file.write(f'\t\tSIMPLESPRITETAGINDEX {simple_sprite_tag_index}\n')
     hex_flag = 1 if material.get("HEXFIFTYFLAG", False) else 0
     file.write(f'\t\tHEXFIFTYFLAG {hex_flag}\n')
     pairs = material.get("PAIRS", [0, 0.0])
