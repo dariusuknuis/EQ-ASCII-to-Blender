@@ -37,8 +37,8 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
 
 #    print(f"Parsing file: {filename}")
     base_name = os.path.splitext(filename)[0].upper()  # Define base_name from the file name
-    if base_name.endswith("_ANI"):  # Check if the base_name ends with '_ANI'
-        base_name = base_name[:-4]  # Remove the last 4 characters ('_ANI')
+    if "_" in base_name:
+        base_name = base_name.split("_", 1)[1]
 
     actordef_data = None
     material_palettes = {}

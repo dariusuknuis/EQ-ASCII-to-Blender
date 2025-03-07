@@ -143,6 +143,7 @@ def create_materials(materials, textures, file_path, node_group_cache):
         mat["SCALEDAMBIENT"] = mat_data.get('scaledambient', 0.75)
         mat["HEXFIFTYFLAG"] = bool(mat_data.get('hexfiftyflag', 0))
         mat["PAIRS"] = mat_data.get('pairs', (0.0, 0.0))
+        mat["SIMPLESPRITETAGINDEX"] = mat_data.get('simple_sprite_tag_index', 0)
 
         # Add custom properties from simplespritedef_parse
         mat["NUMFRAMES"] = texture_info.get('num_frames', 1)
@@ -150,7 +151,7 @@ def create_materials(materials, textures, file_path, node_group_cache):
         mat["SKIPFRAMES"] = bool(texture_info.get('skipframes', 0))
         mat["ANIMATED"] = bool(texture_info.get('animated_flag', 0))
         mat["CURRENTFRAME"] = texture_info.get('current_frame', 0)
-
+        
         # Process overlay nodes regardless of animation
         if 'frames' in texture_info and texture_info['frames']:
             # We assume the overlays (layer/detail/palette_mask/tiled) are in the first frame's file entries.

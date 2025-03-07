@@ -64,7 +64,7 @@ def export_animation_data(armature_obj, file, include_pos=False):
 
             # Write action custom properties if they exist
             tag_index = action.get("TAGINDEX", 0)
-            definition_index = action.get("DEFINITIONINDEX", 0)
+            definition_index = action.get("SPRITEINDEX", 0)
             interpolate = 1 if action.get("INTERPOLATE", True) else 0
             reverse = 1 if action.get("REVERSE", False) else 0
 
@@ -111,8 +111,8 @@ def export_animation_data(armature_obj, file, include_pos=False):
             # Write TRACKINSTANCE for this bone
             file.write(f'\nTRACKINSTANCE "{track_instance_name}"\n')
             file.write(f'\tTAGINDEX {tag_index}\n')
-            file.write(f'\tDEFINITION "{track_def_name}"\n')
-            file.write(f'\tDEFINITIONINDEX {definition_index}\n')
+            file.write(f'\tSPRITE "{track_def_name}"\n')
+            file.write(f'\tSPRITEINDEX {definition_index}\n')
             file.write(f'\tINTERPOLATE {interpolate}\n')
             file.write(f'\tREVERSE {reverse}\n')
 

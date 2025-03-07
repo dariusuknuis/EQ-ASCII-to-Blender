@@ -92,12 +92,12 @@ def actordef_parse(r, parse_property, current_line):
         # Append the action to the actions list in actordef
         actordef_data["actions"].append(action)
 
-    # Parse UNK2
-    records = parse_property(r, "UNK2", 1)
-    actordef_data["unk2"] = int(records[1])
+    # Parse USEMODELCOLLIDER (SPRITEVOLUMEONLY)
+    records = parse_property(r, "USEMODELCOLLIDER", 1)
+    actordef_data["usemodelcollider"] = bool(int(records[1]))
 
-    # Parse HASEIGHTYFLAG
-    records = parse_property(r, "HASEIGHTYFLAG", 1)
-    actordef_data["haseightyflag"] = bool(int(records[1]))
+    # Parse USERDATA
+    records = parse_property(r, "USERDATA", 1)
+    actordef_data["userdata"] = records[1]
 
     return actordef_data

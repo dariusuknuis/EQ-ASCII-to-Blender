@@ -64,7 +64,7 @@ def write_hierarchicalspritedef(armature, file):
     polyhedron_name = armature.get("POLYHEDRON", "")
 
     file.write(f'\n\tPOLYHEDRON\n')
-    file.write(f'\t\tDEFINITION "{polyhedron_name}"\n')
+    file.write(f'\t\tSPRITE "{polyhedron_name}"\n')
         
     # CENTEROFFSET and BOUNDINGRADIUS calculations
     armature_loc = armature.location

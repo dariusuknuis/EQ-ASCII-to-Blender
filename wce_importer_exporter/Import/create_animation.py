@@ -146,8 +146,7 @@ def create_animation(armature_obj, track_definitions, armature_data, model_prefi
 
         # Add custom properties to the NLA strip
         action["TAGINDEX"] = track_instance.get('tag_index', 0)
-        action["SPRITE"] = track_instance.get('sprite', "")
-        action["DEFINITIONINDEX"] = track_instance.get('definition_index', 0)
+        action["SPRITEINDEX"] = track_instance.get('definition_index', 0)
         action["INTERPOLATE"] = track_instance.get('interpolate', False)
         action["REVERSE"] = track_instance.get('reverse', False)
 

@@ -24,7 +24,7 @@ def write_dmspritedef(mesh, file):
     verts = mesh.data.vertices
     file.write(f'\tNUMVERTICES {len(verts)}\n')
     for v in verts:
-        file.write(f'\t\tXYZ {v.co.x:.8e} {v.co.y:.8e} {v.co.z:.8e}\n')
+        file.write(f'\t\tVXYZ {v.co.x:.8e} {v.co.y:.8e} {v.co.z:.8e}\n')
 
     # Write UV coordinates (NUMUVS, UV)
     uv_layer = mesh.data.uv_layers.active
@@ -77,9 +77,9 @@ def write_dmspritedef(mesh, file):
             if count_per_vertex[vertex_index] > 0:
                 normal = normal_per_vertex[vertex_index]
                 avg_normal = [n / count_per_vertex[vertex_index] for n in normal]
-                file.write(f'\t\tXYZ {avg_normal[0]:.8e} {avg_normal[1]:.8e} {avg_normal[2]:.8e}\n')
+                file.write(f'\t\tNXYZ {avg_normal[0]:.8e} {avg_normal[1]:.8e} {avg_normal[2]:.8e}\n')
             else:
-                file.write(f'\t\tXYZ 0.00000000e+00 0.00000000e+00 0.00000000e+00\n')  # Handle missing normals
+                file.write(f'\t\tNXYZ 0.00000000e+00 0.00000000e+00 0.00000000e+00\n')  # Handle missing normals
     else:
         file.write(f'\tNUMVERTEXNORMALS 0\n')
 
@@ -186,9 +186,9 @@ def write_dmspritedef(mesh, file):
     polyhedron_mesh = find_child_mesh(mesh, '_POLYHDEF')
     polyhedron_name = mesh.get("POLYHEDRON", "")
     if polyhedron_mesh:
-        file.write(f'\n\tPOLYHEDRON\n\t\tDEFINITION "{polyhedron_mesh.name}"\n')
+        file.write(f'\n\tPOLYHEDRON\n\t\tSPRITE "{polyhedron_mesh.name}"\n')
     else:
-        file.write(f'\n\tPOLYHEDRON\n\t\tDEFINITION "{polyhedron_name}"\n')
+        file.write(f'\n\tPOLYHEDRON\n\t\tSPRITE "{polyhedron_name}"\n')
 
     # Write face and material data
     faces = mesh.data.polygons

@@ -107,7 +107,7 @@ def hierarchicalspritedef_parse(r, parse_property, current_line):
 
     # Parse POLYHEDRON
     records = parse_property(r, "POLYHEDRON", 0)
-    records = parse_property(r, "DEFINITION", 1)
+    records = parse_property(r, "SPRITE", 1)
     polyhedron_definition = records[1]
     armature_data['polyhedron'] = polyhedron_definition
 

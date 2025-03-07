@@ -146,13 +146,13 @@ def track_parse(r, parse_property, model_prefix, current_line):
         track_instance['name'] += format_tag_index(instance_tag_index)
 
     # Parse DEFINITION (inside TRACKINSTANCE)
-    records = parse_property(r, "DEFINITION", 1)
+    records = parse_property(r, "SPRITE", 1)
     track_instance['definition'] = records[1]
     if instance_tag_index > 0:
         track_instance['definition'] += format_tag_index(instance_tag_index)
 
     # Parse DEFINITIONINDEX
-    records = parse_property(r, "DEFINITIONINDEX", 1)
+    records = parse_property(r, "SPRITEINDEX", 1)
     track_instance['definition_index'] = int(records[1])
 
     # Parse INTERPOLATE

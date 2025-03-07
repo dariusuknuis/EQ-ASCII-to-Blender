@@ -23,7 +23,7 @@ def dmspritedef2_parse(r, parse_property, current_line):
     num_vertices = int(records[1])
     vertices = []
     for i in range(num_vertices):
-        records = parse_property(r, "XYZ", 3)
+        records = parse_property(r, "VXYZ", 3)
         vertices.append(tuple(map(float, records[1:])))
     mesh['vertices'] = vertices
 
@@ -41,7 +41,7 @@ def dmspritedef2_parse(r, parse_property, current_line):
     num_normals = int(records[1])
     normals = []
     for i in range(num_normals):
-        records = parse_property(r, "XYZ", 3)
+        records = parse_property(r, "NXYZ", 3)
         normals.append(tuple(map(float, records[1:])))
     mesh['normals'] = normals
 
@@ -84,7 +84,7 @@ def dmspritedef2_parse(r, parse_property, current_line):
 
     # Parse POLYHEDRON and its DEFINITION
     records = parse_property(r, "POLYHEDRON", 0)
-    records = parse_property(r, "DEFINITION", 1)
+    records = parse_property(r, "SPRITE", 1)
     polyhedron_data = records[1]
     mesh['polyhedron'] = polyhedron_data
 
