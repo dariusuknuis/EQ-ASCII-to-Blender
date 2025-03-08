@@ -121,7 +121,7 @@ def create_materials(materials, textures, file_path, node_group_cache):
             node_group = get_or_create_node_group('USERDEFINED_25', create_node_group_ud25, node_group_cache)
             mat = create_material_with_node_group_ud25(mat_name, texture_full_path, node_group)
         elif rendermethod == 'USERDEFINED_26':
-            node_group = get_or_create_node_group('USERDEFINED_26', create_node_group_ud26, node_group_cache)
+            node_group = get_or_create_node_group('USERDEFINED_26', create_node_group_ud26, node_group_cache, texture_full_path)
             mat = create_material_with_node_group_ud26(mat_name, texture_full_path, node_group)
         else:
             mat = bpy.data.materials.new(name=mat_name)

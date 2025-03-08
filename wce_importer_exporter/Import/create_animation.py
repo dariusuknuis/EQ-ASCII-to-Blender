@@ -2,6 +2,27 @@ import bpy
 import mathutils
 from mathutils import Quaternion
 
+fallback_names = {
+    "HUM": "ELM", "HUF": "ELF", "BAM": "ELM", "BAF": "ELF", "ERM": "ELM", "ERF": "ELF",
+    "HIM": "ELM", "HIF": "ELF", "DAM": "ELM", "DAF": "ELF", "HAM": "ELM", "HAF": "ELF",
+    "TRM": "OGF", "TRF": "OGF", "OGM": "OGF", "HOM": "DWM", "HOF": "DWF", "GNM": "DWM",
+    "GNF": "DWF", "BRM": "ELM", "BRF": "ELF", "GOM": "GIA", "GOL": "GIA", "BET": "SPI",
+    "CPF": "CPM", "FRG": "FRO", "GAM": "GAR", "GHU": "GOB", "FPM": "ELM", "IMP": "GAR",
+    "GRI": "DRK", "KOB": "WER", "LIF": "LIM", "MIN": "GNN", "BGM": "ELM", "PIF": "FAF",
+    "BGG": "KGO", "SKE": "ELM", "TIG": "LIM", "HHM": "ELM", "ZOM": "ELM", "ZOF": "ELF",
+    "QCM": "ELM", "QCF": "ELF", "PUM": "LIM", "NGM": "ELM", "EGM": "ELM", "RIM": "DWM",
+    "RIF": "DWF", "SKU": "RAT", "SPH": "DRK", "ARM": "RAT", "CLM": "DWM", "CLF": "DWF",
+    "CL": "DWM", "HLM": "ELM", "HLF": "ELF", "GRM": "OGF", "GRF": "OGF", "OKM": "OGF",
+    "OKF": "OGF", "KAM": "DWM", "KAF": "DWF", "KA": "DWM", "FEM": "ELM", "FEF": "ELF",
+    "GFM": "ELM", "GFF": "ELF", "STC": "LIM", "IKF": "IKM", "ICM": "IKM", "ICF": "IKM",
+    "ICN": "IKM", "ERO": "ELF", "TRI": "ELM", "BRI": "DWM", "FDF": "FDR", "SSK": "SRW",
+    "VRF": "VRM", "WUR": "DRA", "IKS": "IKM", "IKH": "REA", "FMO": "DRK", "BTM": "RHI",
+    "SDE": "DML", "TOT": "SCA", "SPC": "SPE", "ENA": "ELM", "YAK": "GNN", "COM": "DWM",
+    "COF": "DWF", "COK": "DWM", "DR2": "TRK", "HAG": "ELF", "SIR": "ELF", "STG": "FSG",
+    "CCD": "TRK", "ABH": "ELF", "BWD": "TRK", "GDR": "DRA", "PRI": "TRK", "FEL": "AEL",
+    "SHN": "SHM", "SUN": "SNN"
+}
+
 def create_animation(armature_obj, track_definitions, armature_data, model_prefix):
     # Get the scene's frame rate
     frame_rate = bpy.context.scene.render.fps
@@ -11,8 +32,9 @@ def create_animation(armature_obj, track_definitions, armature_data, model_prefi
 
     for animation_name, animation_data in track_definitions['animations'].items():
         animation_key = animation_data.get('animation_prefix', animation_name[:3]).strip()
-        
-        action_name = f"{animation_key}_{model_prefix.strip()}"
+        model_name = animation_data.get('model_name', model_prefix.strip())  # Use stored model_name, fallback to model_prefix
+
+        action_name = f"{animation_key}_{model_name}"
 
         if action_name not in animations_by_key:
             animations_by_key[action_name] = []
@@ -57,6 +79,20 @@ def create_animation(armature_obj, track_definitions, armature_data, model_prefi
             # Strip the animation prefix and '_TRACK' from the track instance name
             stripped_track_instance_name = track_instance_name[len(animation_key):].replace('_TRACK', '')
 
+            # Check if the track contains the model name
+            if model_prefix not in stripped_track_instance_name:
+                fallback_name = fallback_names.get(model_prefix, None)
+                
+                if fallback_name and fallback_name in stripped_track_instance_name:
+                    modified_track_instance_name = stripped_track_instance_name.replace(fallback_name, model_prefix)
+                else:
+                    modified_track_instance_name = model_name + stripped_track_instance_name
+            else:
+                modified_track_instance_name = stripped_track_instance_name
+            
+            if model_name == "WOE":
+                modified_track_instance_name = stripped_track_instance_name.replace("WOE", "WEL")
+
             # Identify which bone this track belongs to
             bone_name = None
 
@@ -70,6 +106,10 @@ def create_animation(armature_obj, track_definitions, armature_data, model_prefi
 
                     if stripped_bone_name == stripped_track_instance_name:
                         bone_name = bone.name
+                        break
+                    elif stripped_bone_name == modified_track_instance_name:
+                        bone_name = bone.name
+                        stripped_track_instance_name = modified_track_instance_name
                         break
                     elif bone.name.replace('_ANIDAG', '') == stripped_track_instance_name:
                         bone_name = bone.name

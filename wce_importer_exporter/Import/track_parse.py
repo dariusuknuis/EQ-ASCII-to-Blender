@@ -1,34 +1,136 @@
 import mathutils
 import shlex
+import re
 
-# Define the list of animation prefixes
-animation_prefixes = [
-    "C01", "C02", "C03", "C04", "C05", "C06", "C07", "C08", "C09", "C10", "C11", "D01", "D02", "D03", 
-    "D04", "D05", "L01", "L02", "L03", "L04", "L05", "L06", "L07", "L08", "L09", "L10", "L11", "L12", 
-    "O01", "O02", "O03", "P01", "P02", "P03", "P04", "P05", "P06", "P07", "P08", "P09", "S01", "S02",
-    "S03", "S04", "S05", "T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "S06", "S07",
-    "S08", "S09", "S10", "S11", "S12", "S13", "S14", "S15", "S16", "S17", "S18", "S19", "S20", "S21",
-    "S22", "S23", "S24", "S25", "S26", "S27", "S28", "S29"
+# Regex patterns for detecting animation prefixes and item models
+regexAniPrefix = re.compile(r"^[CDLOPST](0[1-9]|[1-9][0-9])")
+regexItemModel = re.compile(r"IT\d+")
+
+# Store state variables between function calls
+currentAniCode = ""
+currentAniModelCode = ""
+previousAnimations = {}
+
+# Dummy strings from Go code for tag matching
+dummy_strings = [
+    "10404P0", "2HNSWORD", "BARDING", "BELT", "BODY", "BONE",
+    "BOW", "BOX", "DUMMY", "HUMEYE", "MESH", "POINT", "POLYSURF",
+    "RIDER", "SHOULDER"
 ]
 
-# Create a new list that includes the variants with "A" and "B"
-animation_prefix_variants = animation_prefixes + [prefix + "A" for prefix in animation_prefixes] + [prefix + "B" for prefix in animation_prefixes] + [prefix + "G" for prefix in animation_prefixes]
+# Regex patterns for item models (IT)
+item_patterns = [
+    r"^[CDLOPST](0[1-9]|[1-9][0-9])IT\d+_TRACK$",
+    r"^[CDLOPST](0[1-9]|[1-9][0-9])_IT\d+_TRACK$",
+    r"^([CDLOPST](0[1-9]|[1-9][0-9])){2}_IT\d+_TRACK$"
+]
+
+# Character model suffix matching rules (from Go)
+character_suffixes = {
+    "SED": ["FDD"],
+    "FMP": ["PE", "CH", "NE", "HE", "BI", "FO", "TH", "CA", "BO"],
+    "SKE": ["BI", "BO", "CA", "CH", "FA", "FI", "FO", "HA", "HE", "L_POINT",
+            "NE", "PE", "R_POINT", "SH", "TH", "TO", "TU"]
+}
+
+# Special suffix rules for item models (non-character)
+item_suffixes = {
+    "IT157": ["SNA"],
+    "IT61": ["WIP"]
+}
+
+# Animation parsing patterns
+animation_patterns = [
+    r"^[CDLOPST](0[1-9]|[1-9][0-9])[A-Z]{3}_TRACK$",
+    r"^([CDLOPST](0[1-9]|[1-9][0-9])){2}[A-Z]{3}_TRACK$",
+    r"^([CDLOPST](0[1-9]|[1-9][0-9])){2}_[A-Z]{3}_TRACK$",
+    r"^[CDLOPST](0[1-9]|[1-9][0-9])[A-Z]{3}[CDLOPST](0[1-9]|[1-9][0-9])[A-Z]{3}_TRACK$",
+    r"^[CDLOPST](0[1-9]|[1-9][0-9])[A-Z]{3}[CDLOPST](0[1-9]|[1-9][0-9])_[A-Z]{3}_TRACK$",
+    r"^[CDLOPST](0[1-9]|[1-9][0-9])[A,B,G][A-Z]{3}[CDLOPST](0[1-9]|[1-9][0-9])[A,B,G]_[A-Z]{3}_TRACK$",
+    r"^[CDLOPST](0[1-9]|[1-9][0-9])[A,B,G][CDLOPST](0[1-9]|[1-9][0-9])_[A-Z]{3}_TRACK$"
+]
+
+
+def track_animation_parse(tag, model_prefix):
+    """Parses the track name and extracts the animation and model codes."""
+    global currentAniCode, currentAniModelCode, previousAnimations
+
+    # Determine if it's a character model (not an item model)
+    is_character = not bool(regexItemModel.match(model_prefix))
+    
+    # Check if the tag starts with currentAniCode + currentAniModelCode
+    combined_code = currentAniCode + currentAniModelCode
+    if currentAniCode and currentAniModelCode and tag.startswith(combined_code):
+        return currentAniCode, currentAniModelCode
+
+    # Check against previousAnimations
+    for previous in previousAnimations.keys():
+        if tag.startswith(previous):
+            parts = previous.split(":")
+            if len(parts) == 2:
+                currentAniCode, currentAniModelCode = parts[0], parts[1]
+                return currentAniCode, currentAniModelCode
+            
+    # Check if tag starts with currentAniCode and contains a dummy string
+    if currentAniCode:
+        for dummy in dummy_strings:
+            if tag.startswith(currentAniCode) and dummy in tag:
+                return currentAniCode, currentAniModelCode
+
+    # Handle special cases for character models
+    if is_character:
+        if tag.startswith(currentAniCode):
+            if currentAniModelCode in character_suffixes:
+                suffix_start_index = len(currentAniCode)
+                for suffix in character_suffixes[currentAniModelCode]:
+                    if tag[suffix_start_index:].startswith(suffix):
+                        return currentAniCode, currentAniModelCode
+
+        # Attempt regex pattern matching
+        for i, pattern in enumerate(animation_patterns):
+            if re.match(pattern, tag):
+                if i == 0:
+                    currentAniCode, currentAniModelCode = tag[:3], tag[3:6]
+                elif i == 1:
+                    currentAniCode, currentAniModelCode = tag[:3], tag[6:9]
+                elif i == 2:
+                    currentAniCode, currentAniModelCode = tag[:3], tag[7:10]
+                elif i in [3, 4]:
+                    currentAniCode, currentAniModelCode = tag[:3], tag[3:6]
+                elif i == 5:
+                    currentAniCode, currentAniModelCode = tag[:4], tag[4:7]
+                elif i == 6:
+                    currentAniCode, currentAniModelCode = tag[:4], tag[8:11]
+                return currentAniCode, currentAniModelCode
+
+        # Fallback for character models
+        if len(tag) >= 6:
+            currentAniCode, currentAniModelCode = tag[:3], tag[3:6]
+            return currentAniCode, currentAniModelCode
+
+    # Handle special cases for item models (isChr == false)
+    if not is_character:
+        if tag.startswith(currentAniCode):
+            if currentAniModelCode in item_suffixes:
+                if any(tag[3:].startswith(suffix) for suffix in item_suffixes[currentAniModelCode]):
+                    return currentAniCode, currentAniModelCode
+
+        # Check known item patterns
+        for pattern in item_patterns:
+            if re.match(pattern, tag):
+                ani_code = tag[:3]
+                model_match = re.search(r"IT\d+", tag)
+                model_code = model_match.group(0) if model_match else None
+                currentAniCode, currentAniModelCode = ani_code, model_code
+                return currentAniCode, currentAniModelCode
+
+    # Default fallback
+    return "", ""
+
 
 def format_tag_index(tag_index):
     """Format the tag index as .xxx where xxx = tag_index / 1000."""
     return f".{tag_index:03d}"
-
-def generate_unique_name(model_prefix, existing_names):
-    """Generate a unique name by adding a numerical suffix if needed."""
-    if model_prefix not in existing_names:
-        return model_prefix
-    
-    suffix = 1
-    while True:
-        new_name = f"{model_prefix}.{suffix:03d}"
-        if new_name not in existing_names:
-            return new_name
-        suffix += 1
 
 def track_parse(r, parse_property, model_prefix, current_line):
     track_definitions = {}
@@ -169,15 +271,17 @@ def track_parse(r, parse_property, model_prefix, current_line):
 
     # Determine whether the track is an animation or an armature track
     track_instance_name = track_instance['name']
-    prefix = track_instance['name'].split(model_prefix)[0]
+    is_animation = regexAniPrefix.match(track_instance_name)
 
-    if any(prefix.startswith(anim_prefix) for anim_prefix in animation_prefixes):
+    if is_animation:
+        ani_prefix, model_name = track_animation_parse(track_instance_name, model_prefix)
+
         animations[track_instance_name] = {
             'instance': track_instance,
             'definition': track_def,
-            'animation_prefix': prefix  # Store the animation prefix
+            'animation_prefix': ani_prefix,
+            'model_name': model_name
         }
-        #print(f"Stored animation prefix '{prefix}' for track '{track_instance['name']}'")
     else:
         armature_tracks[track_instance['name']] = {
             'instance': track_instance,

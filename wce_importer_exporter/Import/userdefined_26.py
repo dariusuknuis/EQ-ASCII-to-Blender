@@ -1,4 +1,4 @@
-#Diffuse5
+#Similar to TransparentMasked
 
 import bpy
 import struct
