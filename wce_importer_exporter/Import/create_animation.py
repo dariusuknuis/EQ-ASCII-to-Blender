@@ -20,7 +20,7 @@ fallback_names = {
     "SDE": "DML", "TOT": "SCA", "SPC": "SPE", "ENA": "ELM", "YAK": "GNN", "COM": "DWM",
     "COF": "DWF", "COK": "DWM", "DR2": "TRK", "HAG": "ELF", "SIR": "ELF", "STG": "FSG",
     "CCD": "TRK", "ABH": "ELF", "BWD": "TRK", "GDR": "DRA", "PRI": "TRK", "FEL": "AEL",
-    "SHN": "SHM", "SUN": "SNN"
+    "SHN": "SHM", "SUN": "SNN", "FAN": "GNN", "CPM": "GNN", "SHF": "SHM", "MTC": "LIM" 
 }
 
 def create_animation(armature_obj, track_definitions, armature_data, model_prefix):
