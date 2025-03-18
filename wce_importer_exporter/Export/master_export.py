@@ -155,7 +155,8 @@ def export_dmspritedef(obj, file):
     
     # Run everquestize_mesh.py functions on all meshes before export
     for mesh in meshes:
-        split_vertices_by_uv(mesh)
+        if mesh.data.uv_layers:
+            split_vertices_by_uv(mesh)
         update_vertex_material_indices(mesh)
         reindex_vertices_and_faces(mesh)
         write_dmspritedef(mesh, file)

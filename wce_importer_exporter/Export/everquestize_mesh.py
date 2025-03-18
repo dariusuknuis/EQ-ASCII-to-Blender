@@ -139,6 +139,7 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
     }
 
     uv_layer = bm.loops.layers.uv.active
+    has_uvs = uv_layer is not None
     passable_layer = bm.faces.layers.int.get('PASSABLE')
     material_layer = bm.verts.layers.int.get('Vertex_Material_Index')
 
@@ -170,7 +171,7 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
         if passable_layer:
             mesh_data['passable'].append(face[passable_layer])
 
-        if uv_layer:
+        if has_uvs:
             mesh_data['uvs'].append([loop[uv_layer].uv.copy() for loop in face.loops])
 
     # Collect and store custom split normals (before reindexing)
@@ -221,19 +222,32 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
     new_faces = [[old_to_new_vertex_index[vi] for vi in face] for face in mesh_data['faces']]
     mesh_data['faces'] = new_faces
 
-    # 🔹 Sort faces, passable values, and UVs by face material index
-    sorted_faces_data = sorted(enumerate(zip(mesh_data['faces'], mesh_data['face_materials'],
-                                             mesh_data['passable'], mesh_data['uvs'], mesh_data['normals'])),
-                               key=lambda x: x[1][1])  # Sort by material index
-    
-    old_to_new_face_index = {original_idx: new_idx for new_idx, (original_idx, _) in enumerate(sorted_faces_data)}
-    
-    # Extract the sorted lists
-    mesh_data['faces'] = [face for _, (face, _, _, _, _) in sorted_faces_data]
-    mesh_data['face_materials'] = [mat for _, (_, mat, _, _, _) in sorted_faces_data]
-    mesh_data['passable'] = [pas for _, (_, _, pas, _, _) in sorted_faces_data]
-    mesh_data['uvs'] = [uvs for _, (_, _, _, uvs, _) in sorted_faces_data]
-    mesh_data['normals'] = [normals for _, (_, _, _, _, normals) in sorted_faces_data]
+    # 🔹 Sort faces, passable values, and optionally UVs by face material index
+    if has_uvs:
+        sorted_faces_data = sorted(enumerate(zip(mesh_data['faces'], mesh_data['face_materials'],
+                                                mesh_data['passable'], mesh_data['uvs'], mesh_data['normals'])),
+                                key=lambda x: x[1][1])  # Sort by material index
+
+        old_to_new_face_index = {original_idx: new_idx for new_idx, (original_idx, _) in enumerate(sorted_faces_data)}
+
+        # Extract the sorted lists
+        mesh_data['faces'] = [face for _, (face, _, _, _, _) in sorted_faces_data]
+        mesh_data['face_materials'] = [mat for _, (_, mat, _, _, _) in sorted_faces_data]
+        mesh_data['passable'] = [pas for _, (_, _, pas, _, _) in sorted_faces_data]
+        mesh_data['uvs'] = [uvs for _, (_, _, _, uvs, _) in sorted_faces_data]
+        mesh_data['normals'] = [normals for _, (_, _, _, _, normals) in sorted_faces_data]
+    else:
+        sorted_faces_data = sorted(enumerate(zip(mesh_data['faces'], mesh_data['face_materials'],
+                                                mesh_data['passable'], mesh_data['normals'])),
+                                key=lambda x: x[1][1])  # Sort by material index
+
+        old_to_new_face_index = {original_idx: new_idx for new_idx, (original_idx, _) in enumerate(sorted_faces_data)}
+
+        # Extract the sorted lists without UVs
+        mesh_data['faces'] = [face for _, (face, _, _, _) in sorted_faces_data]
+        mesh_data['face_materials'] = [mat for _, (_, mat, _, _) in sorted_faces_data]
+        mesh_data['passable'] = [pas for _, (_, _, pas, _) in sorted_faces_data]
+        mesh_data['normals'] = [normals for _, (_, _, _, normals) in sorted_faces_data]
 
     # Step 4: Clear the original mesh data
     mesh.clear_geometry()
@@ -244,7 +258,7 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
     mesh.update()
 
     # Step 6: Reapply UVs, normals, vertex materials, material index, and passable flags
-    if 'uvs' in mesh_data and mesh_data['uvs']:
+    if has_uvs and 'uvs' in mesh_data and mesh_data['uvs']:
         uvlayer = mesh.uv_layers.new(name=mesh_obj.name + "_uv")
         for i, poly in enumerate(mesh.polygons):
             for j, loop_index in enumerate(poly.loop_indices):
