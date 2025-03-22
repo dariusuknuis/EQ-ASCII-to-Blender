@@ -51,6 +51,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
     vertex_animations = []
     includes = []
     worldtree_data = None
+    regions = []
 
     # First Pass: Process all INCLUDE files
     for line in r:
@@ -76,6 +77,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
                 actordef_data = include_results[9]
             if include_results[10]:
                 worldtree_data = include_results[10]
+            regions.extend(include_results[11])
 
     # Reset reader to the beginning for the next pass
     r.seek(0)
@@ -154,6 +156,12 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
             from worldtree_parse import worldtree_parse
             worldtree_data = worldtree_parse(r, parse_property, line)
             print(f"Parsed WORLDTREE with {len(worldtree_data['nodes'])} nodes")
+        
+        elif line.startswith("REGION"):
+            from region_parse import region_parse
+            region = region_parse(r, parse_property, line)
+            regions.append(region)
+            print(f"Parsed REGION with {region}")
 
     # Debug print to track final merged data from this file
 #    print(f"Final parsed results for {filename}:")
@@ -167,7 +175,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
 
     print(f"actordef_data in eq_ascii_parse: {actordef_data}")
 
-    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data
+    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions
 
 # Shared utility function to parse a single property and validate it
 def parse_property(r, property: str, num_args: int = -1):
@@ -200,13 +208,13 @@ def parse_property(r, property: str, num_args: int = -1):
 # Main function to start parsing from the main file
 def eq_ascii_parse(filepath):
     # Start parsing the main file
-    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data = parse(filepath)
+    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions = parse(filepath)
 
-    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data
+    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions
 
 if __name__ == '__main__':
     filepath = r"C:\Users\dariu\Documents\Quail\crushbone.quail\_root.wce"
-    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data = eq_ascii_parse(filepath)
+    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions = eq_ascii_parse(filepath)
 
     # if actordef_data:
     #     print("\nFinal Collected Actordef:")
@@ -267,3 +275,8 @@ if __name__ == '__main__':
             print("\nFinal Collected Worldtree:")
             for node in worldtree_data["nodes"]:
                 print(f"{node}")
+
+    if regions:
+        print("\nFinal Collected Regions:")
+        for region in regions:
+            print(f"{region}")

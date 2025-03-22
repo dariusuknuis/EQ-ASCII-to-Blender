@@ -7,7 +7,7 @@ modules_loaded = False
 
 # Function that loads external modules only during execution
 def load_modules():
-    global eq_ascii_parse, create_materials, register_passable_editor, unregister_passable_editor
+    global eq_ascii_parse, create_materials, register_passable_editor, unregister_passable_editor, create_region
     global apply_passable_to_all_meshes, apply_passable_to_mesh, create_passable_geometry_node_group, create_passable_material
     global create_mesh, create_armature, assign_mesh_to_armature, create_animation, add_actordef_to_object, create_worldtree
     global create_default_pose, create_polyhedron, create_bounding_sphere, create_bounding_box, parent_polyhedron
@@ -27,6 +27,7 @@ def load_modules():
         from create_mesh_and_bounding_shapes import create_bounding_sphere, create_bounding_box
         from add_actordef_to_object import add_actordef_to_object
         from parent_polyhedron import parent_polyhedron
+        from create_region import create_region
 
         # Set the flag to True to prevent re-loading
         modules_loaded = True
@@ -39,7 +40,7 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
     include_filepath = os.path.normpath(os.path.join(file_dir, include_line))
 
     # Call eq_ascii_parse after ensuring modules are loaded
-    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data = eq_ascii_parse(include_filepath)
+    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions = eq_ascii_parse(include_filepath)
     
     print(f"actordef_data in process_include_file: {actordef_data}")
 
@@ -72,6 +73,10 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         worldtree_root = create_worldtree(worldtree_data)
         if worldtree_root:
             print(f"WorldTree created with root: {worldtree_root.name}")
+    
+    if regions:
+        for region in regions:
+            region_obj = create_region(region)
 
     # Create materials
     created_materials = create_materials(materials, textures, file_dir, node_group_cache)
@@ -125,7 +130,7 @@ def process_root_file(file_path):
     load_modules()  # Ensure modules are loaded before use
 
     file_dir = os.path.dirname(file_path)
-    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data = eq_ascii_parse(file_path)
+    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions = eq_ascii_parse(file_path)
 
     print(f"actordef in process_root_file: {actordef_data}")
     
