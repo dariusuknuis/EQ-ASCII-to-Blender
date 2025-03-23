@@ -1,7 +1,8 @@
 import bpy
 import os
 from solidfillambientgouraud1 import create_node_group_sfag1, create_material_with_node_group_sfag1
-from texture5ambientgouraud1 import create_node_group_t5ag1, create_material_with_node_group_t5ag1
+from wce_importer_exporter.Import.texture5ambientgouraud1 import create_node_group_t5ag1, create_material_with_node_group_t5ag1
+from wce_importer_exporter.Import.texture5ambientgouraud2 import create_node_group_t5ag2, create_material_with_node_group_t5ag2
 from transparent import create_node_group_transparent, create_material_with_node_group_transparent
 from userdefined_02 import create_node_group_ud02, create_material_with_node_group_ud02
 from userdefined_06 import create_node_group_ud06, create_material_with_node_group_ud06
@@ -78,6 +79,9 @@ def create_materials(materials, textures, file_path, node_group_cache):
         elif rendermethod == 'TEXTURE5AMBIENTGOURAUD1':
             node_group = get_or_create_node_group('TEXTURE5AMBIENTGOURAUD1', create_node_group_t5ag1, node_group_cache)
             mat = create_material_with_node_group_t5ag1(mat_name, texture_full_path, node_group)
+        elif rendermethod == 'TEXTURE5AMBIENTGOURAUD2':
+            node_group = get_or_create_node_group('TEXTURE5AMBIENTGOURAUD2', create_node_group_t5ag2, node_group_cache)
+            mat = create_material_with_node_group_t5ag2(mat_name, texture_full_path, node_group)
         elif rendermethod == 'TRANSPARENT':
             node_group = get_or_create_node_group('TRANSPARENT', create_node_group_transparent, node_group_cache)
             mat = create_material_with_node_group_transparent(mat_name, node_group)

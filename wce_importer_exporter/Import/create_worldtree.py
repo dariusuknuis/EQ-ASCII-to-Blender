@@ -47,8 +47,8 @@ def create_worldtree(worldtree_data):
         position = calculate_point_on_plane(normal, d)
         
         node_obj = bpy.data.objects.new(node_name, None)
-        node_obj.empty_display_type = 'SPHERE'  # Use sphere for better visualization
-        node_obj.empty_display_size = 0.1  # Set size for better visibility
+        node_obj.empty_display_type = 'ARROWS'
+        node_obj.empty_display_size = 500.0  # Set size for better visibility
         node_obj.location = position  # Set the node's location based on the plane
         
         bpy.context.collection.objects.link(node_obj)

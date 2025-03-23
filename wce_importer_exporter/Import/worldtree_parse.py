@@ -32,7 +32,7 @@ def worldtree_parse(r, parse_property, current_line):
         back_tree = int(records[1])
 
         node = {
-            "worldnode": i,  # Add worldnode property with index
+            "worldnode": i + 1,  # Add worldnode property with index
             "normal": normal,
             "region_tag": region_tag,
             "front_tree": front_tree,
