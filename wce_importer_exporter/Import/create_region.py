@@ -6,7 +6,7 @@ def create_region(region_data):
 
     # Create the empty
     empty = bpy.data.objects.new(name, None)
-    empty.empty_display_type = 'CUBE'  # Use 'CUBE' to show bounding volume
+    empty.empty_display_type = 'SPHERE'  # Use 'CUBE' to show bounding volume
     empty.empty_display_size = sphere[3]  # Diameter as visual scale (optional)
 
     # Position the empty at the center of the sphere
