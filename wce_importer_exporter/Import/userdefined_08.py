@@ -20,9 +20,9 @@ def create_node_group_ud08(image_texture_file):
     :return: The node group created.
     """
     if has_dds_header(image_texture_file):
-        node_group_name = "USERDEFINED_08(DXT5DDS)"
+        node_group_name = "USERDEFINED_8(DXT5DDS)"
     else:
-        node_group_name = "USERDEFINED_08(NDXCLRBMP)"
+        node_group_name = "USERDEFINED_8(NDXCLRBMP)"
     
     # Check if the node group already exists
     if node_group_name in bpy.data.node_groups:
