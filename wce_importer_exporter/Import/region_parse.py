@@ -64,12 +64,36 @@ def region_parse(r, parse_property, current_line):
     num_visible_lists = int(records[1])
     visible_lists = []
     for i in range(num_visible_lists):
-        records = parse_property(r, "VISLIST", 0)
-        records = parse_property(r, "REGIONS", -1)
-        parts = records[1:]
-        num_visible_regions = int(parts[0])
-        visible_regions = parts[1:]
-        visible_list = (num_visible_regions, visible_regions)
+        parse_property(r, "VISLIST", 0)
+        # Peek at the next line to determine if it's RANGE or REGIONS
+        line = next(r).strip()
+        if "//" in line:
+            line = line.split("//")[0].strip()
+        if not line:
+            continue  # skip empty lines
+
+        keyword = shlex.split(line)[0].upper()
+        if keyword == "REGIONS":
+            records = shlex.split(line)
+            num_regions = int(records[1])
+            visible_regions = records[2:]
+            visible_list = {
+                "type": "REGIONS",
+                "num": num_regions,
+                "regions": visible_regions,
+            }
+        elif keyword == "RANGE":
+            records = shlex.split(line)
+            num_ranges = int(records[1])
+            range_bytes = records[2:]
+            visible_list = {
+                "type": "RANGE",
+                "num": num_ranges,
+                "ranges": range_bytes,
+            }
+        else:
+            raise Exception(f"Expected REGIONS or RANGE after VISLIST, got: {keyword}")
+
         visible_lists.append(visible_list)
     region['visible_lists'] = visible_lists
 
