@@ -73,10 +73,6 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         worldtree_root = create_worldtree(worldtree_data)
         if worldtree_root:
             print(f"WorldTree created with root: {worldtree_root.name}")
-    
-    if regions:
-        for region in regions:
-            region_obj = create_region(region)
 
     # Create materials
     created_materials = create_materials(materials, textures, file_dir, node_group_cache)
@@ -119,6 +115,10 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         polyhedron_name = polyhedron_data['name']
         base_name = polyhedron_name.split('.')[0]
         parent_polyhedron(polyhedron_obj, base_name, main_obj, armature_obj, meshes, armature_data)
+
+    if regions:
+        for region in regions:
+            region_obj = create_region(region)
 
     # Set an undo point for each model import
     bpy.ops.ed.undo_push(message=f"Imported model: {main_obj_name}")

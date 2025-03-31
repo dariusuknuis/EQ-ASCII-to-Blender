@@ -5,19 +5,15 @@ def create_region(region_data):
     name = region_data['name']
     sphere = region_data['sphere']  # [x, y, z, radius]
 
-    # Create the empty
+    # Create the region empty
     empty = bpy.data.objects.new(name, None)
-    empty.empty_display_type = 'SPHERE'  # Use 'CUBE' to show bounding volume
-    empty.empty_display_size = sphere[3]  # Diameter as visual scale (optional)
-
-    # Position the empty at the center of the sphere
+    empty.empty_display_type = 'SPHERE'
+    empty.empty_display_size = sphere[3]
     empty.location = (sphere[0], sphere[1], sphere[2])
-    
-
-    # Add custom properties
     empty["VISLISTBYTES"] = bool(region_data.get("vislistbytes", 1))
+    bpy.context.collection.objects.link(empty)
 
-    # Dump each visible list to a numbered property
+    # Write VISLISTs as custom JSON properties
     visible_lists = region_data.get("visible_lists", [])
     for i, vis in enumerate(visible_lists):
         # Prepare key name like "VISLIST_01", "VISLIST_02", etc.
@@ -38,7 +34,16 @@ def create_region(region_data):
         # Assign JSON string as a custom property
         empty[key] = json.dumps(json_data)
 
-    # Link to the current collection
-    bpy.context.collection.objects.link(empty)
+    # Try to parent the corresponding mesh (sprite) to the region empty
+    sprite_name = region_data.get("sprite", "").strip('"')  # sometimes it might come with quotes
+    if sprite_name in bpy.data.objects:
+        mesh_obj = bpy.data.objects[sprite_name]
+        # Preserve world transform while re-parenting
+        wm = mesh_obj.matrix_world.copy()
+        mesh_obj.parent = empty
+        mesh_obj.matrix_parent_inverse = empty.matrix_world.inverted()
+        mesh_obj.matrix_world = wm
+    else:
+        print(f"[WARN] Mesh object for sprite '{sprite_name}' not found for region '{name}'")
 
     return empty
