@@ -68,12 +68,6 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
 
     print(f"Model prefix: {model_prefix}")
 
-    # Process WorldTree if data is present
-    if worldtree_data:
-        worldtree_root = create_worldtree(worldtree_data)
-        if worldtree_root:
-            print(f"WorldTree created with root: {worldtree_root.name}")
-
     # Create materials
     created_materials = create_materials(materials, textures, file_dir, node_group_cache)
 
@@ -119,6 +113,12 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
     if regions:
         for region in regions:
             region_obj = create_region(region)
+
+    # Process WorldTree if data is present
+    if worldtree_data:
+        worldtree_root = create_worldtree(worldtree_data)
+        if worldtree_root:
+            print(f"WorldTree created with root: {worldtree_root.name}")
 
     # Set an undo point for each model import
     bpy.ops.ed.undo_push(message=f"Imported model: {main_obj_name}")

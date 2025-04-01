@@ -34,15 +34,24 @@ def create_region(region_data):
         # Assign JSON string as a custom property
         empty[key] = json.dumps(json_data)
 
-    # Try to parent the corresponding mesh (sprite) to the region empty
+        # Try to parent the corresponding mesh (sprite) to the region empty
     sprite_name = region_data.get("sprite", "").strip('"')  # sometimes it might come with quotes
     if sprite_name in bpy.data.objects:
         mesh_obj = bpy.data.objects[sprite_name]
-        # Preserve world transform while re-parenting
-        wm = mesh_obj.matrix_world.copy()
-        mesh_obj.parent = empty
-        mesh_obj.matrix_parent_inverse = empty.matrix_world.inverted()
-        mesh_obj.matrix_world = wm
+
+        # Make sure we're in Object mode
+        if bpy.ops.object.mode_set.poll():
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        # Deselect all, then select parent and child
+        bpy.ops.object.select_all(action='DESELECT')
+        empty.select_set(True)
+        mesh_obj.select_set(True)
+        bpy.context.view_layer.objects.active = empty  # parent must be active
+
+        # Set parent and keep transform
+        bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+
     else:
         print(f"[WARN] Mesh object for sprite '{sprite_name}' not found for region '{name}'")
 
