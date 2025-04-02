@@ -11,6 +11,7 @@ def load_modules():
     global apply_passable_to_all_meshes, apply_passable_to_mesh, create_passable_geometry_node_group, create_passable_material
     global create_mesh, create_armature, assign_mesh_to_armature, create_animation, add_actordef_to_object, create_worldtree
     global create_default_pose, create_polyhedron, create_bounding_sphere, create_bounding_box, parent_polyhedron
+    global parent_regions_to_worldtree, create_bounding_cube_for_region_empties
     global modules_loaded
 
     if not modules_loaded:
@@ -28,6 +29,7 @@ def load_modules():
         from add_actordef_to_object import add_actordef_to_object
         from parent_polyhedron import parent_polyhedron
         from create_region import create_region
+        from parent_regions_to_worldtree import parent_regions_to_worldtree, create_bounding_cube_for_region_empties
 
         # Set the flag to True to prevent re-loading
         modules_loaded = True
@@ -119,6 +121,12 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         worldtree_root = create_worldtree(worldtree_data)
         if worldtree_root:
             print(f"WorldTree created with root: {worldtree_root.name}")
+
+    if bpy.data.objects.get("WorldTree_Root") and bpy.data.objects.get("R"):
+        create_bounding_cube_for_region_empties()
+        parent_regions_to_worldtree()
+    else:
+        print("WorldTree_Root or R not found, skipping region-to-worldtree parenting.")
 
     # Set an undo point for each model import
     bpy.ops.ed.undo_push(message=f"Imported model: {main_obj_name}")
