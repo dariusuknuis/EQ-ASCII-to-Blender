@@ -146,6 +146,8 @@ def create_worldtree(worldtree_data):
             solidify = node_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
             solidify.thickness = 3.0
             solidify.offset = 0.0
+            
+            
 
         bpy.context.collection.objects.link(node_obj)
 
@@ -171,6 +173,7 @@ def create_worldtree(worldtree_data):
                 front_child.parent = parent_obj
                 front_child.matrix_parent_inverse = parent_obj.matrix_world.inverted()
                 front_child.matrix_world = wm
+                parent_obj.hide_set(True)
         if node["back_tree"] > 0:
             back_child = node_objects.get(node["back_tree"])
             if back_child:
@@ -178,6 +181,7 @@ def create_worldtree(worldtree_data):
                 back_child.parent = parent_obj
                 back_child.matrix_parent_inverse = parent_obj.matrix_world.inverted()
                 back_child.matrix_world = wm
+                parent_obj.hide_set(True)
 
     for node_obj in node_objects.values():
         if not node_obj.parent:
