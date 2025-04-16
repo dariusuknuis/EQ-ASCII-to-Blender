@@ -8,7 +8,7 @@ def worlddef_parse(r, parse_property, current_line):
     if records[0] != "WORLDDEF":
         raise Exception(f"Expected WORLDDEF, got {records[0]}")
 
-    worlddef = []
+    worlddef = {}
 
     # Parse NUMWORLDNODES
     records = parse_property(r, "NEWWORLD", 1)

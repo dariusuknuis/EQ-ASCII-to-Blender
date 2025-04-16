@@ -11,7 +11,7 @@ def load_modules():
     global apply_passable_to_all_meshes, apply_passable_to_mesh, create_passable_geometry_node_group, create_passable_material
     global create_mesh, create_armature, assign_mesh_to_armature, create_animation, add_actordef_to_object, create_worldtree
     global create_default_pose, create_polyhedron, create_bounding_sphere, create_bounding_box, parent_polyhedron
-    global parent_regions_to_worldtree, create_bounding_volume_for_region_empties
+    global parent_regions_to_worldtree, create_bounding_volume_for_region_empties, create_worlddef
     global modules_loaded
 
     if not modules_loaded:
@@ -25,6 +25,7 @@ def load_modules():
         from create_default_pose import create_default_pose
         from create_polyhedron import create_polyhedron
         from create_worldtree import create_worldtree
+        from create_worlddef import create_worlddef
         from create_mesh_and_bounding_shapes import create_bounding_sphere, create_bounding_box
         from add_actordef_to_object import add_actordef_to_object
         from parent_polyhedron import parent_polyhedron
@@ -42,7 +43,7 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
     include_filepath = os.path.normpath(os.path.join(file_dir, include_line))
 
     # Call eq_ascii_parse after ensuring modules are loaded
-    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions = eq_ascii_parse(include_filepath)
+    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data = eq_ascii_parse(include_filepath)
     
     print(f"actordef_data in process_include_file: {actordef_data}")
 
@@ -128,6 +129,13 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
     else:
         print("WorldTree_Root or R not found, skipping region-to-worldtree parenting.")
 
+    quail_folder = os.path.basename(file_dir)
+
+    if worlddef_data:
+        worlddef_obj = create_worlddef(worlddef_data, quail_folder)
+        if worldtree_root:
+            worldtree_root.parent = worlddef_obj
+
     # Set an undo point for each model import
     bpy.ops.ed.undo_push(message=f"Imported model: {main_obj_name}")
 
@@ -138,7 +146,7 @@ def process_root_file(file_path):
     load_modules()  # Ensure modules are loaded before use
 
     file_dir = os.path.dirname(file_path)
-    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions = eq_ascii_parse(file_path)
+    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data = eq_ascii_parse(file_path)
 
     print(f"actordef in process_root_file: {actordef_data}")
     
