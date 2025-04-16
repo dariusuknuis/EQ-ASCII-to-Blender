@@ -10,7 +10,6 @@ def worlddef_parse(r, parse_property, current_line):
 
     worlddef = {}
 
-    # Parse NUMWORLDNODES
     records = parse_property(r, "NEWWORLD", 1)
     worlddef["new_world"] = int(records[1])
 

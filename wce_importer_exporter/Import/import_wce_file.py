@@ -43,7 +43,7 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
     include_filepath = os.path.normpath(os.path.join(file_dir, include_line))
 
     # Call eq_ascii_parse after ensuring modules are loaded
-    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data = eq_ascii_parse(include_filepath)
+    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones = eq_ascii_parse(include_filepath)
     
     print(f"actordef_data in process_include_file: {actordef_data}")
 
@@ -128,6 +128,11 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         parent_regions_to_worldtree()
     else:
         print("WorldTree_Root or R not found, skipping region-to-worldtree parenting.")
+
+    if zones and meshes:
+        for zone in zones:
+            zone_obj = create_zone(zone)
+
 
     quail_folder = os.path.basename(file_dir)
 
