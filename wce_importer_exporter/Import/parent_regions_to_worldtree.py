@@ -72,6 +72,7 @@ def parent_regions_to_worldtree():
 
                 # Optionally hide the parent
                 parent_obj.hide_set(True)
+                obj.hide_set(True)
                 print(f"Parented region empty '{obj.name}' to worldtree node '{parent_obj.name}'")
             else:
                 print(f"No worldtree node found for region '{obj.name}'")

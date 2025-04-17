@@ -175,7 +175,8 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
 
         elif line.startswith("ZONE"):
             from zone_parse import zone_parse
-            zones = zone_parse(r, parse_property, line)
+            zone = zone_parse(r, parse_property, line)
+            zones.append(zone)
             print(f"Parsed ZONE with {zones}")
 
     # Debug print to track final merged data from this file

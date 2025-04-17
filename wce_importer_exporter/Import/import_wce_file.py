@@ -11,7 +11,7 @@ def load_modules():
     global apply_passable_to_all_meshes, apply_passable_to_mesh, create_passable_geometry_node_group, create_passable_material
     global create_mesh, create_armature, assign_mesh_to_armature, create_animation, add_actordef_to_object, create_worldtree
     global create_default_pose, create_polyhedron, create_bounding_sphere, create_bounding_box, parent_polyhedron
-    global parent_regions_to_worldtree, create_bounding_volume_for_region_empties, create_worlddef
+    global parent_regions_to_worldtree, create_bounding_volume_for_region_empties, create_worlddef,create_zone
     global modules_loaded
 
     if not modules_loaded:
@@ -30,6 +30,7 @@ def load_modules():
         from add_actordef_to_object import add_actordef_to_object
         from parent_polyhedron import parent_polyhedron
         from create_region import create_region
+        from create_zone import create_zone
         from parent_regions_to_worldtree import parent_regions_to_worldtree, create_bounding_volume_for_region_empties
 
         # Set the flag to True to prevent re-loading
@@ -123,16 +124,15 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         if worldtree_root:
             print(f"WorldTree created with root: {worldtree_root.name}")
 
-    if bpy.data.objects.get("WorldTree_Root") and bpy.data.objects.get("R"):
+    if bpy.data.objects.get("WorldTree_Root") and bpy.data.objects.get("R") and not bpy.data.objects.get("ZONE_BOUNDS"):
         create_bounding_volume_for_region_empties()
         parent_regions_to_worldtree()
     else:
         print("WorldTree_Root or R not found, skipping region-to-worldtree parenting.")
 
-    if zones and meshes:
+    if zones:
         for zone in zones:
             zone_obj = create_zone(zone)
-
 
     quail_folder = os.path.basename(file_dir)
 
@@ -140,6 +140,15 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         worlddef_obj = create_worlddef(worlddef_data, quail_folder)
         if worldtree_root:
             worldtree_root.parent = worlddef_obj
+
+    worlddef_obj = None
+    for obj in bpy.data.objects:
+        if obj.name.upper().endswith("_WORLDDEF"):
+            worlddef_obj = obj
+            for obj in bpy.data.objects:
+                if obj.name.upper().endswith("_ZONE"):
+                    # Parent without changing world transform:
+                    obj.parent = worlddef_obj  
 
     # Set an undo point for each model import
     bpy.ops.ed.undo_push(message=f"Imported model: {main_obj_name}")
@@ -151,7 +160,7 @@ def process_root_file(file_path):
     load_modules()  # Ensure modules are loaded before use
 
     file_dir = os.path.dirname(file_path)
-    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data = eq_ascii_parse(file_path)
+    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones = eq_ascii_parse(file_path)
 
     print(f"actordef in process_root_file: {actordef_data}")
     
