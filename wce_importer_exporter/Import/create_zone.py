@@ -384,53 +384,73 @@ def create_zone(zone):
       "W2":("WATER2_ZONE",  0x1E2026,0.75),
       "W3":("WATER3_ZONE",  0xFFFFFF,0.10),
     }
-    mat_name, hexcol, alpha = mat_map.get(prefix, (None,None,None))
-    if mat_name:
-        mat = bpy.data.materials.get(mat_name)
-        if not mat:
-            mat = bpy.data.materials.new(mat_name)
-            mat.use_nodes    = True
-            mat.blend_method = 'BLEND'
-            bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    base_name, hexcol, alpha = mat_map.get(prefix, (None,None,None))
+    if not base_name:
+        return obj
+
+    # detect which overlays apply
+    do_pvp = len(name)>=3  and name[2:3]=="P"  or len(userdata)>=3  and userdata[2:3]=="P"
+    do_tp  = len(name)>=5  and name[3:5]=="TP" or len(userdata)>=5 and userdata[3:5]=="TP"
+    do_slp = "_S_" in name or "_S_" in userdata
+
+    overlay_codes = []
+    if do_pvp: overlay_codes.append("PVP")
+    if do_tp:  overlay_codes.append("TP")
+    if do_slp: overlay_codes.append("SLP")
+
+    # build final material name
+    base_key = base_name[:-5]  # strip "_ZONE"
+    suffix   = "".join(f"_{code}" for code in overlay_codes)
+    final_name = f"{base_key}{suffix}_ZONE"
+
+    # get or create/duplicate
+    mat = bpy.data.materials.get(final_name)
+    if not mat:
+        # if no overlays, reuse or create the plain base
+        if not overlay_codes:
+            mat = bpy.data.materials.get(base_name)
+            if not mat:
+                mat = bpy.data.materials.new(base_name)
+                mat.use_nodes = True
+        else:
+            # overlays needed: if base already exists, copy it; otherwise new
+            src = bpy.data.materials.get(base_name)
+            if src:
+                mat = src.copy()
+            else:
+                mat = bpy.data.materials.new(base_name)
+                mat.use_nodes = True
+            mat.name = final_name
+
+        # initialize nodes on brand‑new materials
+        if mat.use_nodes is False:
+            mat.use_nodes = True
+        mat.blend_method = 'BLEND'
+        mat.use_backface_culling = True
+
+        # configure the Principled BSDF
+        bsdf = mat.node_tree.nodes.get("Principled BSDF")
+        if bsdf:
             r = ((hexcol>>16)&0xFF)/255
             g = ((hexcol>>8)&0xFF)/255
             b = ( hexcol    &0xFF)/255
             bsdf.inputs["Base Color"].default_value = (r,g,b,1)
             bsdf.inputs["Alpha"].default_value      = alpha
-            mat.use_backface_culling = True
 
-        if obj.data.materials:
-            obj.data.materials[0] = mat
-        else:
-            obj.data.materials.append(mat)
+    # assign to the object
+    if obj.data.materials:
+        obj.data.materials[0] = mat
+    else:
+        obj.data.materials.append(mat)
 
-        bsdf_node = None
-        for n in mat.node_tree.nodes:
-            if n.type == 'BSDF_PRINCIPLED':
-                bsdf_node = n
-                break
-        if not bsdf_node:
-            print(f"[create_zone] no Principled BSDF in material {mat.name}")
-        else:
-            # 2) detect which overlays apply
-            name3  = (len(name)  >= 3 and name[2]  == 'P') or (len(userdata)>=3 and userdata[2]=='P')
-            name45 = (len(name)  >= 5 and name[3:5]=='TP') or (len(userdata)>=5 and userdata[3:5]=='TP')
-            s_flag = "_S_" in name or "_S_" in userdata
-
-            overlays = []
-            if name3:
-                overlays.append((ensure_pvp_node_group(),     "PVP"))
-            if name45:
-                overlays.append((ensure_tp_node_group(),      "TP"))
-            if s_flag:
-                overlays.append((ensure_slippery_node_group(),"SLP"))
-
-            # 3) apply them
-            apply_overlays(mat, bsdf_node, overlays)
-
-            # 4) rename the material
-            base   = mat.name.rsplit("_ZONE", 1)[0]
-            suffix = "".join(f"_{lbl}" for (_,lbl) in overlays)
-            mat.name = f"{base}{suffix}_ZONE"
+    # ─── 8) apply overlays ─────────────────────────────────────────────────────
+    # find the BSDF node in this material
+    bsdf_node = next((n for n in mat.node_tree.nodes if n.type=="BSDF_PRINCIPLED"), None)
+    if bsdf_node:
+        overlays = []
+        if do_pvp: overlays.append((ensure_pvp_node_group(),   "PVP"))
+        if do_tp:  overlays.append((ensure_tp_node_group(),    "TP"))
+        if do_slp: overlays.append((ensure_slippery_node_group(),"SLP"))
+        apply_overlays(mat, bsdf_node, overlays)
 
     return obj
