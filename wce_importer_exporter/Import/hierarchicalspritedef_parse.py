@@ -53,7 +53,7 @@ def hierarchicalspritedef_parse(r, parse_property, current_line):
         existing_bone_names.add(bone_data['name'])
 
         # Parse SPRITE
-        records = parse_property(r, "SPRITE", 1)
+        records = parse_property(r, "SPRITETAG", 1)
         sprite_value = records[1]
         bone_data['sprite'] = sprite_value if sprite_value else None
 

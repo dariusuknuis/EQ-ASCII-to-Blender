@@ -54,6 +54,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
     regions = []
     worlddef_data = None
     zones = []
+    ambient_light = None
 
     # First Pass: Process all INCLUDE files
     for line in r:
@@ -83,6 +84,8 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
             if include_results[12]:
                 worlddef_data = include_results[12]
             zones.extend(include_results[13])
+            if include_results[14]:
+                ambient_light = include_results[14]
 
     # Reset reader to the beginning for the next pass
     r.seek(0)
@@ -179,6 +182,11 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
             zones.append(zone)
             print(f"Parsed ZONE with {zones}")
 
+        elif line.startswith("AMBIENTLIGHT"):
+            from ambientlight_parse import ambientlight_parse
+            ambient_light = ambientlight_parse(r, parse_property, line)
+            print(f"Parsed AMBIENTLIGHT with {ambient_light}")
+
     # Debug print to track final merged data from this file
 #    print(f"Final parsed results for {filename}:")
 #    print(f"Meshes: {meshes}")
@@ -191,7 +199,7 @@ def parse_definitions(r: io.TextIOWrapper = None, file_dir: str = None, filename
 
     # print(f"actordef_data in eq_ascii_parse: {actordef_data}")
 
-    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones
+    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones, ambient_light
 
 # Shared utility function to parse a single property and validate it
 def parse_property(r, property: str, num_args: int = -1):
@@ -224,13 +232,13 @@ def parse_property(r, property: str, num_args: int = -1):
 # Main function to start parsing from the main file
 def eq_ascii_parse(filepath):
     # Start parsing the main file
-    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones = parse(filepath)
+    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones, ambient_light = parse(filepath)
 
-    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones
+    return meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones, ambient_light
 
 if __name__ == '__main__':
     filepath = r"C:\Users\dariu\Documents\Quail\crushbone.quail\_root.wce"
-    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones = eq_ascii_parse(filepath)
+    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones, ambient_light = eq_ascii_parse(filepath)
 
     # if actordef_data:
     #     print("\nFinal Collected Actordef:")

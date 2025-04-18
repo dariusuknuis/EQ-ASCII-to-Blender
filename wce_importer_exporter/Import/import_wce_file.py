@@ -44,7 +44,7 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
     include_filepath = os.path.normpath(os.path.join(file_dir, include_line))
 
     # Call eq_ascii_parse after ensuring modules are loaded
-    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones = eq_ascii_parse(include_filepath)
+    meshes, armature_data, track_definitions, material_palettes, includes, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones, ambient_light = eq_ascii_parse(include_filepath)
     
     print(f"actordef_data in process_include_file: {actordef_data}")
 
@@ -138,7 +138,6 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
 
     if worlddef_data:
         worlddef_obj = create_worlddef(worlddef_data, quail_folder)
-    
 
     worlddef_obj = None
     for obj in bpy.data.objects:
@@ -159,7 +158,7 @@ def process_root_file(file_path):
     load_modules()  # Ensure modules are loaded before use
 
     file_dir = os.path.dirname(file_path)
-    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones = eq_ascii_parse(file_path)
+    meshes, armature_data, track_definitions, material_palettes, include_files, polyhedrons, textures, materials, vertex_animations, actordef_data, worldtree_data, regions, worlddef_data, zones, ambient_light = eq_ascii_parse(file_path)
 
     print(f"actordef in process_root_file: {actordef_data}")
     
