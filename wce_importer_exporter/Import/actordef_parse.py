@@ -60,7 +60,7 @@ def actordef_parse(r, parse_property, current_line):
         action["unk1"] = int(records[1])
 
         # Parse NUMLEVELSOFDETAIL
-        records = parse_property(r, "NUMLEVELSOFDETAIL", 1)
+        records = parse_property(r, "NUMLEVELSOFDETAILS", 1)
         action["numlevelsofdetail"] = int(records[1])
 
         # Parse LEVELOFDETAIL blocks

@@ -1,5 +1,59 @@
 import shlex
 
+def process_vislist(vislistbytes, ranges):
+    """
+    Decode a WCE‐style visibility RANGE byte stream into a flat list of region indices.
+    `vislistbytes` is the VISLISTBYTES flag from your region.
+    `ranges` is a list of ints (0–255).
+    """
+    regions = []
+    current = 1
+
+    if vislistbytes == 1:
+        # RLE‐encoded
+        i = 0
+        while i < len(ranges):
+            b = ranges[i]
+            if   b <= 0x3E:
+                current += b
+            elif b == 0x3F:
+                # next two bytes are a 16‑bit count, little‑endian
+                count = (ranges[i+2] << 8) | ranges[i+1]
+                current += count
+                i += 2
+            elif 0x40 <= b <= 0x7F:
+                skip = (b & 0b0011_1000) >> 3
+                take = b & 0b0000_0111
+                current += skip
+                for _ in range(take):
+                    regions.append(current)
+                    current += 1
+            elif 0x80 <= b <= 0xBF:
+                take = (b & 0b0011_1000) >> 3
+                for _ in range(take):
+                    regions.append(current)
+                    current += 1
+                current += (b & 0b0000_0111)
+            elif 0xC0 <= b <= 0xFE:
+                take = b - 0xC0
+                for _ in range(take):
+                    regions.append(current)
+                    current += 1
+            elif b == 0xFF:
+                count = (ranges[i+2] << 8) | ranges[i+1]
+                for _ in range(count):
+                    regions.append(current)
+                    current += 1
+                i += 2
+            i += 1
+    else:
+        # direct uint16 reads, little‑endian pairs
+        for i in range(0, len(ranges), 2):
+            idx = (ranges[i+1] << 8) | ranges[i]
+            regions.append(idx + 1)
+
+    return regions
+
 def region_parse(r, parse_property, current_line):
     region = {}
 
@@ -27,13 +81,13 @@ def region_parse(r, parse_property, current_line):
     records = parse_property(r, "VISLISTBYTES", 1)
     region["vislistbytes"] = int(records[1])
 
-    records = parse_property(r, "NUMREGIONVERTEX", 1)
+    records = parse_property(r, "NUMREGIONVERTEXS", 1)
     region["num_region_vertex"] = int(records[1])
 
     records = parse_property(r, "NUMRENDERVERTICES", 1)
     region["num_render_vertices"] = int(records[1])
 
-    ecords = parse_property(r, "NUMWALLS", 1)
+    records = parse_property(r, "NUMWALLS", 1)
     region["num_walls"] = int(records[1])
 
     records = parse_property(r, "NUMOBSTACLES", 1)
@@ -43,12 +97,12 @@ def region_parse(r, parse_property, current_line):
     region["num_cutting_obstacles"] = int(records[1])
 
     records = parse_property(r, "VISTREE", 0)
-    records = parse_property(r, "NUMVISNODE", 1)
+    records = parse_property(r, "NUMVISNODES", 1)
     num_visnodes = int(records[1])
     visnodes = []
     for i in range(num_visnodes):
         records = parse_property(r, "VISNODE", 0)
-        records = parse_property(r, "NORMALABCD", 4)
+        records = parse_property(r, "VNORMALABCD", 4)
         normal = list(map(float, records[1:]))
         records = parse_property(r, "VISLISTINDEX", 1)
         vislist_index = int(records[1])
@@ -60,42 +114,23 @@ def region_parse(r, parse_property, current_line):
         visnodes.append(visnode)
     region['visnodes'] = visnodes
 
-    records = parse_property(r, "NUMVISIBLELIST", 1)
-    num_visible_lists = int(records[1])
-    visible_lists = []
-    for i in range(num_visible_lists):
+    records = parse_property(r, "NUMVISIBLELISTS", 1)
+    num_vislists = int(records[1])
+    vislists = []
+    for i in range(num_vislists):
         parse_property(r, "VISLIST", 0)
         # Peek at the next line to determine if it's RANGE or REGIONS
-        line = next(r).strip()
-        if "//" in line:
-            line = line.split("//")[0].strip()
-        if not line:
-            continue  # skip empty lines
+        records = parse_property(r, "RANGE", -1)
+        raw_bytes = [int(tok) for tok in records[2:]]
+        decoded_regions = process_vislist(region['vislistbytes'], raw_bytes)
+        vislist = {
+            "type":    "REGIONS",          # always a list of region indices
+            "num":     len(decoded_regions),       # number of regions decoded
+            "regions": decoded_regions,            # the actual region indices
+        }
+        vislists.extend(vislist)
 
-        keyword = shlex.split(line)[0].upper()
-        if keyword == "REGIONS":
-            records = shlex.split(line)
-            num_regions = int(records[1])
-            visible_regions = records[2:]
-            visible_list = {
-                "type": "REGIONS",
-                "num": num_regions,
-                "regions": visible_regions,
-            }
-        elif keyword == "RANGE":
-            records = shlex.split(line)
-            num_ranges = int(records[1])
-            range_bytes = records[2:]
-            visible_list = {
-                "type": "RANGE",
-                "num": num_ranges,
-                "ranges": range_bytes,
-            }
-        else:
-            raise Exception(f"Expected REGIONS or RANGE after VISLIST, got: {keyword}")
-
-        visible_lists.append(visible_list)
-    region['visible_lists'] = visible_lists
+    region['vislists'] = vislists
 
     records = parse_property(r, "SPHERE", 4)
     region['sphere'] = list(map(float, records[1:]))

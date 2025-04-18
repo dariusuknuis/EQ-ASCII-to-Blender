@@ -124,11 +124,11 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         if worldtree_root:
             print(f"WorldTree created with root: {worldtree_root.name}")
 
-    if bpy.data.objects.get("WorldTree_Root") and bpy.data.objects.get("R") and not bpy.data.objects.get("ZONE_BOUNDS"):
+    if bpy.data.objects.get("WorldTree_Root") and bpy.data.objects.get("REGION") and not bpy.data.objects.get("ZONE_BOUNDS"):
         create_bounding_volume_for_region_empties()
         parent_regions_to_worldtree()
     else:
-        print("WorldTree_Root or R not found, skipping region-to-worldtree parenting.")
+        print("WorldTree_Root or REGION not found, skipping region-to-worldtree parenting.")
 
     if zones:
         for zone in zones:
@@ -138,15 +138,14 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
 
     if worlddef_data:
         worlddef_obj = create_worlddef(worlddef_data, quail_folder)
-        if worldtree_root:
-            worldtree_root.parent = worlddef_obj
+    
 
     worlddef_obj = None
     for obj in bpy.data.objects:
         if obj.name.upper().endswith("_WORLDDEF"):
             worlddef_obj = obj
             for obj in bpy.data.objects:
-                if obj.name.upper().endswith("_ZONE"):
+                if obj.name.upper().endswith("_ZONE") or obj.name == "WorldTree_Root":
                     # Parent without changing world transform:
                     obj.parent = worlddef_obj  
 

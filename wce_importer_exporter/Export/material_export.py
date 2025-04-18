@@ -163,10 +163,10 @@ def write_materials_and_sprites(mesh, file, written_sprites=set(), written_mater
             file.write(f'\tSCALEDAMBIENT {scaledambient:.8e}\n')
             # Write SIMPLESPRITEINST section.
             file.write(f'\tSIMPLESPRITEINST\n')
-            file.write(f'\t\tTAG "{sprite_tag}"\n')
+            file.write(f'\t\tSIMPLESPRITETAG "{sprite_tag}"\n')
             file.write(f'\t\tSIMPLESPRITETAGINDEX {simple_sprite_tag_index}\n')
-            hex_flag = 1 if material.get("HEXFIFTYFLAG", False) else 0
-            file.write(f'\t\tHEXFIFTYFLAG {hex_flag}\n')
+            hex_flag = 1 if material.get("SIMPLESPRITEHEXFIFTYFLAG", False) else 0
+            file.write(f'\t\tSIMPLESPRITEHEXFIFTYFLAG {hex_flag}\n')
             pairs = material.get("PAIRS", [0, 0.0])
             file.write(f'\tPAIRS? {int(pairs[0])} {pairs[1]:.8e}\n')
             file.write(f'\tDOUBLESIDED {0 if material.use_backface_culling else 1}\n')

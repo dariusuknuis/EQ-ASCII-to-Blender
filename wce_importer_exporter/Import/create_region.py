@@ -14,7 +14,7 @@ def create_region(region_data):
     bpy.context.collection.objects.link(empty)
 
     # Write VISLISTs as custom JSON properties
-    visible_lists = region_data.get("visible_lists", [])
+    visible_lists = region_data.get("vislists", [])
     for i, vis in enumerate(visible_lists):
         # Prepare key name like "VISLIST_01", "VISLIST_02", etc.
         key = f"VISLIST_{i+1:02d}"

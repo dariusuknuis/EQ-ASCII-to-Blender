@@ -51,7 +51,7 @@ def write_actordef(empty_obj, file):
         # Write the ACTION block
         file.write(f'\t\tACTION\n')
         file.write(f'\t\t\tUNK1 {unk1}\n')
-        file.write(f'\t\t\tNUMLEVELSOFDETAIL {num_lod}\n')
+        file.write(f'\t\t\tNUMLEVELSOFDETAILS {num_lod}\n')
         
         # Write each level of detail within the ACTION block
         for lod in levels_of_detail:

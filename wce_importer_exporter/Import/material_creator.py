@@ -145,7 +145,7 @@ def create_materials(materials, textures, file_path, node_group_cache):
         mat["RGBPEN"] = mat_data.get('rgbpen', (0.698, 0.698, 0.698, 0.0))
         mat["BRIGHTNESS"] = mat_data.get('brightness', 0.0)
         mat["SCALEDAMBIENT"] = mat_data.get('scaledambient', 0.75)
-        mat["HEXFIFTYFLAG"] = bool(mat_data.get('hexfiftyflag', 0))
+        mat["SIMPLESPRITEHEXFIFTYFLAG"] = bool(mat_data.get('hexfiftyflag', 0))
         mat["PAIRS"] = mat_data.get('pairs', (0.0, 0.0))
         mat["SIMPLESPRITETAGINDEX"] = mat_data.get('simple_sprite_tag_index', 0)
 

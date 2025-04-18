@@ -41,14 +41,14 @@ def materialdefinition_parse(r, parse_property, current_line):
     records = parse_property(r, "SIMPLESPRITEINST", 0)
 
     # Parse TAG within SIMPLESPRITEINST
-    records = parse_property(r, "TAG", 1)
+    records = parse_property(r, "SIMPLESPRITETAG", 1)
     material['texture_tag'] = records[1]
 
     records = parse_property(r, "SIMPLESPRITETAGINDEX", 1)
     material['simple_sprite_tag_index'] = int(records[1])
 
     # Parse HEXFIFTYFLAG
-    records = parse_property(r, "HEXFIFTYFLAG", 1)
+    records = parse_property(r, "SIMPLESPRITEHEXFIFTYFLAG", 1)
     material['hexfiftyflag'] = int(records[1])
 
     # Parse PAIRS? and handle NULL
