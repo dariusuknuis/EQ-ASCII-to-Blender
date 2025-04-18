@@ -24,11 +24,9 @@ def create_region(region_data):
             # If already in dict format (just in case)
             json_data = vis
         else:
-            list_type = "REGIONS" if isinstance(vis[1], list) else "RANGE"
             json_data = {
-                "type": list_type,
-                "num": vis[0],
-                "regions" if list_type == "REGIONS" else "ranges": vis[1]
+                "num_ranges": vis[0],
+                "range_bytes": vis[1]
             }
 
         # Assign JSON string as a custom property

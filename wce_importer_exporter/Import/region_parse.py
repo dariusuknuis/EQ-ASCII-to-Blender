@@ -118,17 +118,13 @@ def region_parse(r, parse_property, current_line):
     num_vislists = int(records[1])
     vislists = []
     for i in range(num_vislists):
-        parse_property(r, "VISLIST", 0)
-        # Peek at the next line to determine if it's RANGE or REGIONS
+        records = parse_property(r, "VISLIST", 0)
         records = parse_property(r, "RANGE", -1)
-        raw_bytes = [int(tok) for tok in records[2:]]
-        decoded_regions = process_vislist(region['vislistbytes'], raw_bytes)
-        vislist = {
-            "type":    "REGIONS",          # always a list of region indices
-            "num":     len(decoded_regions),       # number of regions decoded
-            "regions": decoded_regions,            # the actual region indices
-        }
-        vislists.extend(vislist)
+        parts = records[1:]
+        num_ranges = int(parts[0])
+        range_bytes = parts[1:]
+        vislist = (num_ranges, range_bytes)
+        vislists.append(vislist)
 
     region['vislists'] = vislists
 
