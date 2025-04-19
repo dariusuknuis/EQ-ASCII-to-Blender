@@ -14,6 +14,7 @@ from actordef_export import write_actordef
 from material_export import write_materials_and_sprites
 from export_worldtree import export_worldtree
 from export_regions import export_regions
+from export_ambientlight import export_ambientlight
 from variation_material_export import write_variation_sprites_and_materials
 from everquestize_mesh import split_vertices_by_uv, reindex_vertices_and_faces, update_vertex_material_indices
 
@@ -195,6 +196,7 @@ def export_model(obj_name, output_path):
         export_mesh_and_pos_animation(obj, output_path)
         export_animation(obj, output_path)
 
+        export_ambientlight(obj, output_path)
         export_worldtree(obj, output_path)
         export_regions(obj, output_path)
 

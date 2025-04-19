@@ -3,8 +3,8 @@ bl_info = {
     "name": "WCE Importer and Exporter",
     "description": "A tool to import EQ WCE files and export model data.",
     "author": "Darius",
-    "version": (2, 3, 2),
-    "Quail": (1, 5, 9),
+    "version": (2, 4, 0),
+    "Quail": (1, 6, 0),
     "blender": (3, 6, 2),
     "location": "View3D > Tool Shelf > WCE Importer/Exporter",
     "category": "Import-Export",
@@ -27,6 +27,8 @@ if export_folder not in sys.path:
 from .Import import import_wce_file
 from .Export import master_export  # Assuming 'master_export.py' is in the Export folder
 from .passable_flag_editor import register_passable_editor, unregister_passable_editor
+from .ui_outdoor_world import register as register_outdoor_bsp, unregister as unregister_outdoor_bsp
+from .ui_radial_visibility import register as register_radial_vis, unregister as unregister_radial_vis
 
 from .update_handler import update_animated_texture_nodes
 
@@ -263,6 +265,8 @@ def register():
     bpy.utils.register_class(WCEExporterDialogOperator)
     bpy.utils.register_class(ExportWCEPanel)
     register_passable_editor()  # Register the Passable Flag Editor
+    register_outdoor_bsp()
+    register_radial_vis()
 
     if update_animated_texture_nodes not in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.append(update_animated_texture_nodes)
@@ -280,6 +284,8 @@ def unregister():
     bpy.utils.unregister_class(WCEExporterDialogOperator)
     bpy.utils.unregister_class(ExportWCEPanel)
     unregister_passable_editor()  # Unregister the Passable Flag Editor
+    unregister_outdoor_bsp()
+    unregister_radial_vis()
 
     if update_animated_texture_nodes in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.remove(update_animated_texture_nodes)

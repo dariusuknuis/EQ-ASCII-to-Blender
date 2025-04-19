@@ -14,7 +14,7 @@ def export_worldtree(root_obj, output_path):
         return
 
     zone_file = os.path.join(output_path, "zone.wce")
-    with open(zone_file, 'w') as f:
+    with open(zone_file, 'a') as f:
         # Header
         f.write('WORLDTREE ""\n')
         f.write(f"\tNUMWORLDNODES {len(worldnodes)}\n")
