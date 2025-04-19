@@ -1,8 +1,10 @@
 import bpy
 import bmesh
 import mathutils
-from mathutils import Vector, Matrix
-from create_bounding_sphere import create_bounding_sphere 
+from mathutils import Vector, Matrix, kdtree
+from mathutils.kdtree import KDTree
+from create_bounding_sphere import create_bounding_sphere
+from parent_regions_to_worldtree import parent_regions_to_worldtree 
 import math
 import re
 
@@ -278,6 +280,36 @@ def normalize_bounds(min_bound, max_bound, target_size):
     new_max = center + adjusted_size * 0.5
     return new_min, new_max
 
+def copy_point_domain_color_attrs(original_obj, me):
+    src = original_obj.data
+    if not src.color_attributes:
+        return
+
+    # build a KDTree on the *local* verts of the source
+    size = len(src.vertices)
+    tree = kdtree.KDTree(size)
+    for i, v in enumerate(src.vertices):
+        tree.insert(v.co, i)
+    tree.balance()
+
+    # for each point‑domain colour layer on the source:
+    for src_attr in src.color_attributes:
+        if src_attr.domain != 'POINT':
+            continue
+
+        # create a matching colour attribute on the new mesh
+        dst_attr = me.color_attributes.new(
+            name=src_attr.name,
+            type=src_attr.data_type,   # 'FLOAT_COLOR' or 'BYTE_COLOR'
+            domain='POINT',
+        )
+
+        # copy by nearest‐vertex lookup
+        for i, v in enumerate(me.vertices):
+            co = v.co
+            _, idx, _ = tree.find(co)
+            dst_attr.data[i].color = src_attr.data[idx].color
+
 def create_region_empty(center, sphere_radius, index):
     """
     Create an empty (for labeling/visualization) at the given center.
@@ -293,35 +325,125 @@ def create_region_empty(center, sphere_radius, index):
     
     return empty
 
+def parent_regions_to_empties():
+    # build a dict: region_index (int) → mesh object
+    mesh_pat = re.compile(r"^R(\d+)_DMSPRITEDEF$")
+    meshes_by_idx = {}
+    for obj in bpy.data.objects:
+        if obj.type != 'MESH':
+            continue
+        m = mesh_pat.match(obj.name)
+        if m:
+            idx = int(m.group(1))     # e.g. "00012" → 12, "12" → 12
+            meshes_by_idx[idx] = obj
+
+    # now walk your empties
+    empty_pat = re.compile(r"^R(\d+)$")
+    for empty in bpy.data.objects:
+        if empty.type != 'EMPTY':
+            continue
+        m = empty_pat.match(empty.name)
+        if not m:
+            continue
+        idx = int(m.group(1))       # same integer
+        mesh = meshes_by_idx.get(idx)
+        if not mesh:
+            print(f"[WARN] no mesh found for empty {empty.name}")
+            continue
+
+        # make sure we’re in object mode
+        if bpy.ops.object.mode_set.poll():
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        # parent via the operator to preserve transforms
+        bpy.ops.object.select_all(action='DESELECT')
+        empty.select_set(True)
+        mesh.select_set(True)
+        bpy.context.view_layer.objects.active = empty
+        bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+
+        print(f"Parented {mesh.name} → {empty.name}")
+
 def duplicate_faces_by_tag(bm, tag_value):
     """
-    Duplicate all faces in bm that have face.tag == tag_value into a new bmesh.
-    Preserves the active UV layer if present.
+    Duplicate all bm.faces with face.tag==tag_value into a new BMesh,
+    copying across:
+      - all UV (loop) layers
+      - all loop‐color layers
+      - all loop float_vector layers
+      - all vertex int layers
+      - all vertex color layers
+      - all vertex float_vector layers
+      - all face int layers
     """
     new_bm = bmesh.new()
-    v_map = {}
-    uv_layer_src = bm.loops.layers.uv.active
-    uv_layer_dst = new_bm.loops.layers.uv.new() if uv_layer_src else None
+    v_map  = {}
+
+    # ─── gather all source layers ────────────────────────────────────────
+    uv_srcs        = {lay.name: lay for lay in bm.loops.layers.uv}
+    loop_col_srcs  = {lay.name: lay for lay in bm.loops.layers.color}
+    loop_fvec_srcs = {lay.name: lay for lay in bm.loops.layers.float_vector}
+
+    vert_int_srcs  = {lay.name: lay for lay in bm.verts.layers.int}
+    vert_col_srcs  = {lay.name: lay for lay in bm.verts.layers.color}
+    vert_fvec_srcs = {lay.name: lay for lay in bm.verts.layers.float_vector}
+
+    face_int_srcs  = {lay.name: lay for lay in bm.faces.layers.int}
+
+    # ─── create matching layers in new_bm ───────────────────────────────
+    uv_dsts        = {name: new_bm.loops.layers.uv.new(name)          for name in uv_srcs}
+    loop_col_dsts  = {name: new_bm.loops.layers.color.new(name)       for name in loop_col_srcs}
+    loop_fvec_dsts = {name: new_bm.loops.layers.float_vector.new(name) for name in loop_fvec_srcs}
+
+    vert_int_dsts  = {name: new_bm.verts.layers.int.new(name)           for name in vert_int_srcs}
+    vert_col_dsts  = {name: new_bm.verts.layers.color.new(name)         for name in vert_col_srcs}
+    vert_fvec_dsts = {name: new_bm.verts.layers.float_vector.new(name)  for name in vert_fvec_srcs}
+
+    face_int_dsts  = {name: new_bm.faces.layers.int.new(name)           for name in face_int_srcs}
+
+    # ─── duplicate only tagged faces ────────────────────────────────────
     for face in bm.faces:
-        if face.tag == tag_value:
-            new_verts = []
-            for v in face.verts:
-                if v not in v_map:
-                    v_map[v] = new_bm.verts.new(v.co)
-                new_verts.append(v_map[v])
-            try:
-                new_face = new_bm.faces.new(new_verts)
-            except ValueError:
-                continue  # Skip degenerate faces
-            new_face.material_index = face.material_index
-            if uv_layer_src and uv_layer_dst:
-                for l_old, l_new in zip(face.loops, new_face.loops):
-                    l_new[uv_layer_dst].uv = l_old[uv_layer_src].uv
+        if not face.tag:
+            continue
+
+        # copy verts & their attributes
+        new_verts = []
+        for v in face.verts:
+            if v not in v_map:
+                v_new = new_bm.verts.new(v.co)
+                v_map[v] = v_new
+                # copy vertex-domain layers
+                for name, src in vert_int_srcs.items():
+                    v_new[vert_int_dsts[name]] = v[src]
+                for name, src in vert_col_srcs.items():
+                    v_new[vert_col_dsts[name]] = v[src]
+                for name, src in vert_fvec_srcs.items():
+                    v_new[vert_fvec_dsts[name]] = v[src]
+            new_verts.append(v_map[v])
+
+        try:
+            f_new = new_bm.faces.new(new_verts)
+        except ValueError:
+            continue  # degenerate face
+
+        # copy material index
+        f_new.material_index = face.material_index
+
+        # copy face int layers
+        for name, src in face_int_srcs.items():
+            f_new[face_int_dsts[name]] = face[src]
+
+        # copy per-loop data: UVs, loop-colors, loop-float_vectors
+        for loop_old, loop_new in zip(face.loops, f_new.loops):
+            for name, src in uv_srcs.items():
+                loop_new[uv_dsts[name]].uv = loop_old[src].uv
+            for name, src in loop_col_srcs.items():
+                loop_new[loop_col_dsts[name]] = loop_old[src]
+            for name, src in loop_fvec_srcs.items():
+                loop_new[loop_fvec_dsts[name]] = loop_old[src]
+
     new_bm.normal_update()
     return new_bm
-
-import bpy
-from mathutils import Vector, Matrix
 
 def create_mesh_object_from_bmesh(bm, name, original_obj):
     """
@@ -337,6 +459,8 @@ def create_mesh_object_from_bmesh(bm, name, original_obj):
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
+
+    copy_point_domain_color_attrs(original_obj, me)
 
     # rename first UV layer if present
     if me.uv_layers:
@@ -773,22 +897,9 @@ def run_outdoor_bsp_split(target_size=282.0):
             zone.matrix_parent_inverse = container.matrix_world.inverted()
             zone.matrix_world = wm
 
-        # --- 5) Parent all region empties (R######) ---
-        for obj in bpy.data.objects:
-            if (obj.type == 'EMPTY' and
-                re.fullmatch(r"R\d{6}", obj.name)):
-                wm = obj.matrix_world.copy()
-                obj.parent = container
-                obj.matrix_parent_inverse = container.matrix_world.inverted()
-                obj.matrix_world = wm
-        
-        # 6) Parent all region meshes (R###_DMSPRITEDEF)
-        for obj in bpy.data.objects:
-            if re.fullmatch(r"R\d+_DMSPRITEDEF", obj.name):
-                wm = obj.matrix_world.copy()
-                obj.parent = container
-                obj.matrix_parent_inverse = container.matrix_world.inverted()
-                obj.matrix_world = wm
+        parent_regions_to_empties()
+
+        parent_regions_to_worldtree()
 
     print("BSP splitting complete.")
 

@@ -119,6 +119,14 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
     #     # print(f"Skipping reindexing: No vertex groups found for {mesh_obj.name}")
     #     return
     mesh = mesh_obj.data
+
+    col_attr = mesh.color_attributes.get("Color")
+    if col_attr and col_attr.domain == 'POINT':
+        saved_colors = [tuple(el.color) for el in col_attr.data]
+    else:
+        saved_colors = []
+    print(f"[DEBUG] saved_colors count = {len(saved_colors)}")
+
     bm = bmesh.new()
     bm.from_mesh(mesh)
 
@@ -135,7 +143,8 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
         'vertex_materials': [],
         'passable': [],
         'face_materials': [],
-        'vertex_groups': {}
+        'vertex_groups': {},
+        'vertex_colors': saved_colors
     }
 
     uv_layer = bm.loops.layers.uv.active
@@ -276,6 +285,11 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
                 reordered_normals.append(normal)
 
         mesh.normals_split_custom_set(reordered_normals)
+
+    if mesh_data['vertex_colors']:
+        dst = mesh.attributes.new(name="Color", type='FLOAT_COLOR', domain='POINT')
+        for i, col in enumerate(mesh_data['vertex_colors']):
+            dst.data[i].color = col
 
     if 'vertex_materials' in mesh_data:
         vertex_material_attribute = mesh.attributes.new(name="Vertex_Material_Index", type='INT', domain='POINT')

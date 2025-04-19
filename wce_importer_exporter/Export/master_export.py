@@ -158,6 +158,10 @@ def export_dmspritedef(obj, file):
     
     # Run everquestize_mesh.py functions on all meshes before export
     for mesh in meshes:
+        # DEBUG: list any new‑style Color attributes
+        print(f"[DEBUG] Mesh {mesh.name}: color_attributes = {list(mesh.data.color_attributes.keys())}")
+        # DEBUG: list any legacy vertex_colors layers
+        print(f"[DEBUG] Mesh {mesh.name}: vertex_colors = {[vcol.name for vcol in mesh.data.vertex_colors]}")
         if mesh.data.uv_layers:
             split_vertices_by_uv(mesh)
         update_vertex_material_indices(mesh)

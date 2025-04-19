@@ -7,9 +7,13 @@ def write_dmspritedef(mesh, file):
     # Automatically switch to Object Mode if currently in Edit Mode
     if bpy.context.object.mode != 'OBJECT':
         bpy.ops.object.mode_set(mode='OBJECT')
+
+    print(f"[DEBUG] mesh.data.attributes:")
+    for a in mesh.data.attributes:
+        print(f"    • {a.name}  (domain={a.domain}, type={a.data_type})")
+    print(f"[DEBUG] mesh.data.color_attributes: {[a.name for a in mesh.data.color_attributes]}")
         
     print(f"Writing data for mesh: {mesh.name}")
-    
     
     center_offset = mesh.location
     file.write(f'\nDMSPRITEDEF2 "{mesh.name}"\n')
@@ -31,72 +35,48 @@ def write_dmspritedef(mesh, file):
     if uv_layer:
         uv_data = uv_layer.data
         uv_per_vertex = {}
-
-        # Initialize UVs per vertex to default value (0.0, 0.0) to ensure we handle every vertex
         for vertex in mesh.data.vertices:
             uv_per_vertex[vertex.index] = (0.0, 0.0)
-
-        # Gather UVs for each vertex from loops, taking the last UV per vertex if multiple loops are found
         for loop in mesh.data.loops:
-            vertex_index = loop.vertex_index
-            uv = uv_data[loop.index].uv
-            # Add 1 to the V-coordinate to reverse the applied transformation
-            uv_per_vertex[vertex_index] = (uv.x, uv.y + 1)
-
-        file.write(f'\n\tNUMUVS {len(verts)}\n')  # Use the number of vertices for NUMUVS
-
-        # Write UV data per vertex in the order of vertex index
-        for vertex_index in range(len(verts)):
-            uv = uv_per_vertex[vertex_index]
-            file.write(f'\t\tUV {uv[0]:.8e} {uv[1]:.8e}\n')
+            uv_per_vertex[loop.vertex_index] = (uv_data[loop.index].uv.x,
+                                               uv_data[loop.index].uv.y + 1)
+        file.write(f'\n\tNUMUVS {len(verts)}\n')
+        for i in range(len(verts)):
+            u,v = uv_per_vertex[i]
+            file.write(f'\t\tUV {u:.8e} {v:.8e}\n')
     else:
-        # If there is no UV layer, write NUMUVS 0
         file.write(f'\n\tNUMUVS 0\n')
 
     # Write vertex normals (NUMVERTEXNORMALS, XYZ)
-    if mesh.data.has_custom_normals:  # Check if the mesh has custom normals
-        mesh.data.calc_normals_split()  # Calculate split normals for loops
+    if mesh.data.has_custom_normals:
+        # ‣ calc_split will clear custom data on some Blender versions,
+        #   so we restore immediately after.
+        mesh.data.calc_normals_split()
+        
         file.write(f'\n\tNUMVERTEXNORMALS {len(verts)}\n')
-
-        # Create a dictionary to store the averaged normal per vertex
-        normal_per_vertex = {v.index: [0.0, 0.0, 0.0] for v in mesh.data.vertices}
-        count_per_vertex = {v.index: 0 for v in mesh.data.vertices}
-
-        # Go through loops and sum the normals for each vertex
+        normal_accum = {v.index:[0,0,0] for v in mesh.data.vertices}
+        normal_count = {v.index:0 for v in mesh.data.vertices}
         for loop in mesh.data.loops:
-            vertex_index = loop.vertex_index
-            normal = loop.normal
-
-            normal_per_vertex[vertex_index][0] += normal.x
-            normal_per_vertex[vertex_index][1] += normal.y
-            normal_per_vertex[vertex_index][2] += normal.z
-            count_per_vertex[vertex_index] += 1
-
-        # Average the normals for each vertex and write them out
-        for vertex_index in range(len(verts)):
-            if count_per_vertex[vertex_index] > 0:
-                normal = normal_per_vertex[vertex_index]
-                avg_normal = [n / count_per_vertex[vertex_index] for n in normal]
-                file.write(f'\t\tNXYZ {avg_normal[0]:.8e} {avg_normal[1]:.8e} {avg_normal[2]:.8e}\n')
+            idx = loop.vertex_index
+            n = loop.normal
+            na = normal_accum[idx]
+            na[0] += n.x; na[1] += n.y; na[2] += n.z
+            normal_count[idx] += 1
+        for i in range(len(verts)):
+            if normal_count[i]:
+                avg = [c/normal_count[i] for c in normal_accum[i]]
+                file.write(f'\t\tNXYZ {avg[0]:.8e} {avg[1]:.8e} {avg[2]:.8e}\n')
             else:
-                file.write(f'\t\tNXYZ 0.00000000e+00 0.00000000e+00 0.00000000e+00\n')  # Handle missing normals
+                file.write('\t\tNXYZ 0.00000000e+00 0.00000000e+00 0.00000000e+00\n')
     else:
         file.write(f'\tNUMVERTEXNORMALS 0\n')
 
     # Write vertex colors (NUMVERTEXCOLORS, RGBA)
-    color_layer = mesh.data.color_attributes.get("Color")  # Assuming 'Color' is the name of the vertex color layer
-    if color_layer:
-        # Count the number of vertices (since we're using per-vertex colors)
-        file.write(f'\n\tNUMVERTEXCOLORS {len(mesh.data.vertices)}\n')
-        
-        # Iterate through the vertex colors and write them
-        for v_index, vert in enumerate(mesh.data.vertices):
-            # The color attribute is stored per vertex (POINT domain)
-            color = color_layer.data[v_index].color
-            r = round(color[0] * 255)
-            g = round(color[1] * 255)
-            b = round(color[2] * 255)
-            a = round(color[3] * 255)
+    col_attr = mesh.data.color_attributes.get("Color")
+    if col_attr:
+        file.write(f'\n\tNUMVERTEXCOLORS {len(col_attr.data)}\n')
+        for el in col_attr.data:
+            r,g,b,a = (round(c*255) for c in el.color)
             file.write(f'\t\tRGBA {r} {g} {b} {a}\n')
     else:
         file.write('\n\tNUMVERTEXCOLORS 0\n')
