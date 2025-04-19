@@ -704,7 +704,7 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
             split_result = zone_bsp_split(bm, zone_obj, source_obj, vol_min, vol_max, tol=1e-4, min_diag=0.1)
             if split_result is not None:
                 bm_inside, bm_outside, plane_no, d = split_result
-                node_data["normal"] = [plane_no.x, plane_no.y, plane_no.z, float(d)]
+                node_data["normal"] = [-plane_no.x, -plane_no.y, -plane_no.z, float(-d)]
                 node_data["front_tree"] = worldnode_idx[0]
                 print(f"Zone-based split succeeded with zone '{zone_obj.name}'.")
                 # Compute bounding boxes from the resulting sub-BMeshes.
