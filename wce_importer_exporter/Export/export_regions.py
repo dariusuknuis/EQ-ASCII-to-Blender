@@ -18,7 +18,7 @@ def export_regions(root_obj, output_path):
     if not regs:
         return
 
-    path = os.path.join(output_path, "regions.wce")
+    path = os.path.join(output_path, "region.wce")
     with open(path, "w") as f:
         for empty in sorted(regs, key=lambda o: int(o.name[1:])):
             # Header
