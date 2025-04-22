@@ -501,14 +501,22 @@ def create_mesh_object_from_bmesh(bm, name, original_obj):
 
     # center of that box in world-space
     center_world = (minv + maxv) * 0.5
+
+    # round to nearest integer
+    center_int = Vector((
+        round(center_world.x),
+        round(center_world.y),
+        round(center_world.z),
+    ))
+
     # half the diagonal is the sphere radius
     radius = ((maxv - minv).length) * 0.5
 
     # --- recenter the mesh geometry so box-center moves to origin ---
-    me.transform(Matrix.Translation(-center_world))
+    me.transform(Matrix.Translation(-center_int))
 
     # place the new object back at the box-center
-    new_obj.matrix_world = Matrix.Translation(center_world)
+    new_obj.matrix_world = Matrix.Translation(center_int)
 
     # --- finally, add the bounding sphere ---
     bounding_sphere = create_bounding_sphere(new_obj, radius)
