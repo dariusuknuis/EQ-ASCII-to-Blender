@@ -15,6 +15,7 @@ from material_export import write_materials_and_sprites
 from export_worldtree import export_worldtree
 from export_regions import export_regions
 from export_ambientlight import export_ambientlight
+from export_zones import export_zones
 from variation_material_export import write_variation_sprites_and_materials
 from everquestize_mesh import split_vertices_by_uv, reindex_vertices_and_faces, update_vertex_material_indices
 
@@ -203,6 +204,7 @@ def export_model(obj_name, output_path):
         export_ambientlight(obj, output_path)
         export_worldtree(obj, output_path)
         export_regions(obj, output_path)
+        export_zones(obj, output_path)
 
         print(f"[DEBUG] Successfully exported: {obj_name}")
     except Exception as e:

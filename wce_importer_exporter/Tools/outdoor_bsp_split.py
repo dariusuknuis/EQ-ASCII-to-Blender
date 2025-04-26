@@ -4,7 +4,8 @@ import mathutils
 from mathutils import Vector, Matrix, kdtree
 from mathutils.kdtree import KDTree
 from create_bounding_sphere import create_bounding_sphere
-from parent_regions_to_worldtree import parent_regions_to_worldtree 
+from parent_regions_to_worldtree import parent_regions_to_worldtree
+from .finalize_regions import finalize_regions
 import math
 import re
 
@@ -348,7 +349,7 @@ def parent_regions_to_empties():
         idx = int(m.group(1))       # same integer
         mesh = meshes_by_idx.get(idx)
         if not mesh:
-            print(f"[WARN] no mesh found for empty {empty.name}")
+            #print(f"[WARN] no mesh found for empty {empty.name}")
             continue
 
         # make sure we’re in object mode
@@ -362,7 +363,7 @@ def parent_regions_to_empties():
         bpy.context.view_layer.objects.active = empty
         bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
 
-        print(f"Parented {mesh.name} → {empty.name}")
+        #print(f"Parented {mesh.name} → {empty.name}")
 
 def duplicate_faces_by_tag(bm, tag_value):
     """
@@ -692,7 +693,7 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
     When a region is small enough, attempt to further split it using zone-based splits.
     """
     size = vol_max - vol_min
-    print(f"\nRecursive call at depth {depth}: volume from {vol_min} to {vol_max} (size {size})")
+    #print(f"\nRecursive call at depth {depth}: volume from {vol_min} to {vol_max} (size {size})")
     
     node_data = {
     "worldnode": worldnode_idx[0],
@@ -714,7 +715,7 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
                 bm_inside, bm_outside, plane_no, d = split_result
                 node_data["normal"] = [plane_no.x, plane_no.y, plane_no.z, float(d)]
                 node_data["front_tree"] = worldnode_idx[0]
-                print(f"Zone-based split succeeded with zone '{zone_obj.name}'.")
+                #print(f"Zone-based split succeeded with zone '{zone_obj.name}'.")
                 # Compute bounding boxes from the resulting sub-BMeshes.
                 bmin_i, bmax_i = calculate_bounds_for_bmesh(bm_inside)
                 bmin_o, bmax_o = calculate_bounds_for_bmesh(bm_outside)
@@ -739,7 +740,7 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
                          max(c.z for c in ws_corners)))
         # Compute the sphere radius that encloses this region.
         sphere_radius = (ws_max - ws_min).length / 2.0
-        print(f"Finalizing leaf region {region_index} with sphere radius {sphere_radius:.4f} (world-space).")
+        #print(f"Finalizing leaf region {region_index} with sphere radius {sphere_radius:.4f} (world-space).")
         empty_obj = create_region_empty(center, sphere_radius, region_index)
         node_data["region_tag"] = empty_obj.name
         node_data["back_tree"] = 0
@@ -758,7 +759,7 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
             region_index = region_counter[0]
             region_counter[0] += 1
             center = (vol_min + vol_max)*0.5
-            print(f"Empty region at depth {depth}; finalizing as leaf region {region_index}.")
+            #print(f"Empty region at depth {depth}; finalizing as leaf region {region_index}.")
             # Compute sphere radius from volume dimensions.
             sphere_radius = (size).length / 2.0
             empty_obj = create_region_empty(center, sphere_radius, region_index)
@@ -840,7 +841,7 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
     vol_lower_max[axis] = split_pos
     vol_upper_min = vol_min.copy()
     vol_upper_min[axis] = split_pos
-    print(f"Axis–aligned split at axis {axis} at position {split_pos}")
+    #print(f"Axis–aligned split at axis {axis} at position {split_pos}")
     recursive_bsp_split(bm_lower, vol_min, vol_lower_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, depth+1)
     recursive_bsp_split(bm_upper, vol_upper_min, vol_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, depth+1)
 
@@ -908,6 +909,8 @@ def run_outdoor_bsp_split(target_size=282.0):
         parent_regions_to_empties()
 
         parent_regions_to_worldtree()
+
+        finalize_regions()
 
     print("BSP splitting complete.")
 
