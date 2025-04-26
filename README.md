@@ -23,3 +23,34 @@ Export
 
 1) Export is now built into the add-on. Just hit the "Export Selected Models" button and it will open a file explorer window to select a location to export.
 2) It will then open a dialog with possible models to export. It will show every empty object blender file as a model to export. Select models and hit OK.
+
+World Tools
+If your input mesh has per-corner vertex colors, you should convert them to per-vertex colors. 
+Should load a dummy DMSPRITEDEF with Import, or copy the custom properties of another DMSPRITEDEF mesh so it copies the properties to the output region meshes. 
+Recommend FPSCALE of 5.
+
+Special "zone" volumes, like PVP, water, etc... need to follow these naming conventions:
+
+            Starts with:"DR" = Regular (Dry?)
+                        "WT" = Water
+                        "LA" = Lava
+                        "SL" = "Slime" (Greener water with closer fog plane)
+                        "VW" = "Velious" Water (Causes damage like Lava)
+                        "W2" = Water "Version 2" (Grey fog and farther plane than regular water)
+                        "W3" = Water "Version 3" (No fog and much farther clip plane than regular water)
+
+            3rd character: "N" = Non-PvP zone (Not required)
+                           "P" = PvP zone
+
+            4th & 5th characters = "TP" =  zoneline or in-zone teleport
+                        
+            "S" between "_" = Slippery (Example: DRN__00134000000000000000000000_S_000000000000)
+
+These types can mostly be combined. You can name the special zone volume with the above rules or put it in the "USERDATA" custom string property. The name of the special zone volumes always have to end with "_ZONE". Try to make them primitive shapes as much as possible. The logic for the teleport/zoneline volumes can be seen here: https://github.com/brainiac/MQ2Nav/blob/new-renderer/dependencies/zone-utilities/eqglib/eqg_terrain.cpp#L133
+
+Once you have your input mesh and special volumes prepared:
+1) Select the input mesh
+2) Open the N-menu and go to the Tools tab.
+3) Click "Generate Outdoor World. Wait a few minutes possibly.
+4) Click "Generate Radial Visibility.
+5) Follow rules for export from the Export section.
