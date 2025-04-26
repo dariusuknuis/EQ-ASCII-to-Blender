@@ -179,11 +179,15 @@ class WCEExporterDialogOperator(bpy.types.Operator):
         context.scene.wce_export_list.clear()
 
         # Compile the regex to match empties with names like R000001, R000002, etc.
-        pattern = re.compile(r"^R\d{6}$")
+        region_pat = re.compile(r"^R\d{6}$")
 
-        # Populate export list with empty objects that don't match the region pattern.
         for obj in bpy.data.objects:
-            if obj.type == 'EMPTY' and not pattern.match(obj.name):
+            # only empties, not region empties, and not *_BR empties
+            if (
+                obj.type == 'EMPTY'
+                and not region_pat.match(obj.name)
+                and not obj.name.endswith("_BR")
+            ):
                 item = context.scene.wce_export_list.add()
                 item.name = obj.name
                 item.selected = False

@@ -21,26 +21,11 @@ def get_bounding_material():
 
 # Function to create bounding sphere
 def create_bounding_sphere(mesh_obj, bounding_radius):
-    # Create a UV Sphere programmatically using bmesh
-    mesh = bpy.data.meshes.new(f"{mesh_obj.name}_BR_Mesh")
-    bm = bmesh.new()
-    bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=8, radius=bounding_radius)
-    bm.to_mesh(mesh)
-    bm.free()
-
-    # Create an object for the bounding sphere
-    sphere = bpy.data.objects.new(f"{mesh_obj.name}_BR", mesh)
-
-    # Get the bounding material
-    mat = get_bounding_material()
-
-    # Assign the material to the sphere
-    sphere.data.materials.append(mat)
-
-    # Link the sphere to the scene
+    name = f"{mesh_obj.name}_BR"
+    sphere = bpy.data.objects.new(name, None)
+    sphere.empty_display_type = 'SPHERE'
+    sphere.empty_display_size = bounding_radius
     bpy.context.collection.objects.link(sphere)
-
-    # Parent the sphere to the mesh
     sphere.parent = mesh_obj
 
     return sphere

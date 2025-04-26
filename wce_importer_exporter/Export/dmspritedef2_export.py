@@ -280,12 +280,9 @@ def write_dmspritedef(mesh, file):
         file.write(f'\tBOUNDINGBOXMIN 0.00000000e+00 0.00000000e+00 0.00000000e+00\n')
         file.write(f'\tBOUNDINGBOXMAX 0.00000000e+00 0.00000000e+00 0.00000000e+00\n')
 
-    bounding_radius_mesh = find_child_mesh(mesh, '_BR')
-    if bounding_radius_mesh:
-        # Get the X, Y, Z dimensions of the bounding box
-        dimensions = bounding_radius_mesh.dimensions
-        # Calculate the bounding radius as the largest dimension divided by 2
-        bounding_radius = max(dimensions.x, dimensions.y, dimensions.z) / 2
+    bounding_radius_empty = find_child_empty(mesh, '_BR')
+    if bounding_radius_empty:
+        bounding_radius = bounding_radius_empty.empty_display_size
         file.write(f'\tBOUNDINGRADIUS {bounding_radius:.8e}\n')
     else:
         file.write(f'\tBOUNDINGRADIUS 0.00000000e+00\n')
@@ -318,6 +315,13 @@ def find_armature_for_mesh(mesh):
 def find_child_mesh(parent_obj, suffix):
     for child in parent_obj.children:
         if child.type == 'MESH' and child.name.endswith(suffix):
+            return child
+    return None
+
+def find_child_empty(parent_obj, suffix):
+    """Find a child EMPTY whose name ends with `suffix`."""
+    for child in parent_obj.children:
+        if child.type == 'EMPTY' and child.name.endswith(suffix):
             return child
     return None
 
