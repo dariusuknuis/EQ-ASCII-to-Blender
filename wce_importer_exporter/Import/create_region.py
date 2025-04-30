@@ -1,7 +1,7 @@
 import bpy
 import json
 
-def create_region(region_data):
+def create_region(region_data, pending_objects=None):
     name = region_data['name']
     sphere = region_data['sphere']  # [x, y, z, radius]
 
@@ -11,7 +11,8 @@ def create_region(region_data):
     empty.empty_display_size = sphere[3]
     empty.location = (sphere[0], sphere[1], sphere[2])
     empty["VISLISTBYTES"] = bool(region_data.get("vislistbytes", 1))
-    bpy.context.collection.objects.link(empty)
+    empty["SPRITE"] = region_data['sprite']
+    pending_objects.append(empty)
 
     # Write VISLISTs as custom JSON properties
     visible_lists = region_data.get("vislists", [])
@@ -32,25 +33,11 @@ def create_region(region_data):
         # Assign JSON string as a custom property
         empty[key] = json.dumps(json_data)
 
-        # Try to parent the corresponding mesh (sprite) to the region empty
-    sprite_name = region_data.get("sprite", "").strip('"')  # sometimes it might come with quotes
-    if sprite_name in bpy.data.objects:
-        mesh_obj = bpy.data.objects[sprite_name]
-
-        # Make sure we're in Object mode
-        if bpy.ops.object.mode_set.poll():
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-        # Deselect all, then select parent and child
-        bpy.ops.object.select_all(action='DESELECT')
-        empty.select_set(True)
-        mesh_obj.select_set(True)
-        bpy.context.view_layer.objects.active = empty  # parent must be active
-
-        # Set parent and keep transform
-        bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
-
+    # Parent to REGION empty if it exists
+    region_parent = bpy.data.objects.get("REGION")
+    if region_parent:
+        empty.parent = region_parent
     else:
-        print(f"[WARN] Mesh object for sprite '{sprite_name}' not found for region '{name}'")
+        print("[WARN] REGION parent object not found.")
 
     return empty

@@ -72,7 +72,7 @@ def compute_scale_from_location(location, default_size=DEFAULT_SIZE):
     scale_factor = final_size / default_size
     return scale_factor
 
-def create_worldtree(worldtree_data):
+def create_worldtree(worldtree_data, pending_objects=None):
     """
     Creates a WorldTree from the provided data.
     Each non-leaf node is represented by a plane mesh (with a translucent yellow material and a Solidify modifier)
@@ -87,7 +87,7 @@ def create_worldtree(worldtree_data):
 
     # Create a root empty for organization.
     root_obj = bpy.data.objects.new("WorldTree_Root", None)
-    bpy.context.collection.objects.link(root_obj)
+    pending_objects.append(root_obj)
 
     # Create a base plane mesh for non-leaf nodes.
     base_mesh = create_bsp_plane_mesh(size=DEFAULT_SIZE)
@@ -136,6 +136,7 @@ def create_worldtree(worldtree_data):
         node_obj.location = position
         node_obj.rotation_euler = rotation
         node_obj.scale = obj_scale
+        node_obj.parent = root_obj
 
         # For non-leaf nodes, assign material and add a Solidify modifier.
         if not is_leaf:
@@ -149,7 +150,7 @@ def create_worldtree(worldtree_data):
             
             
 
-        bpy.context.collection.objects.link(node_obj)
+        pending_objects.append(node_obj)
 
         # Save custom properties.
         node_obj["worldnode"] = node["worldnode"]
@@ -161,34 +162,34 @@ def create_worldtree(worldtree_data):
 
         node_objects[node["worldnode"]] = node_obj
 
-    bpy.context.view_layer.update()
+    # bpy.context.view_layer.update()
 
-    # Re-parent child nodes while preserving their world transforms.
-    for node in worldtree_data["nodes"]:
-        parent_obj = node_objects[node["worldnode"]]
-        if node["front_tree"] > 0:
-            front_child = node_objects.get(node["front_tree"])
-            if front_child:
-                wm = front_child.matrix_world.copy()
-                front_child.parent = parent_obj
-                front_child.matrix_parent_inverse = parent_obj.matrix_world.inverted()
-                front_child.matrix_world = wm
-                parent_obj.hide_set(True)
-        if node["back_tree"] > 0:
-            back_child = node_objects.get(node["back_tree"])
-            if back_child:
-                wm = back_child.matrix_world.copy()
-                back_child.parent = parent_obj
-                back_child.matrix_parent_inverse = parent_obj.matrix_world.inverted()
-                back_child.matrix_world = wm
-                parent_obj.hide_set(True)
+    # # Re-parent child nodes while preserving their world transforms.
+    # for node in worldtree_data["nodes"]:
+    #     parent_obj = node_objects[node["worldnode"]]
+    #     if node["front_tree"] > 0:
+    #         front_child = node_objects.get(node["front_tree"])
+    #         if front_child:
+    #             wm = front_child.matrix_world.copy()
+    #             front_child.parent = parent_obj
+    #             front_child.matrix_parent_inverse = parent_obj.matrix_world.inverted()
+    #             front_child.matrix_world = wm
+    #             parent_obj.hide_set(True)
+    #     if node["back_tree"] > 0:
+    #         back_child = node_objects.get(node["back_tree"])
+    #         if back_child:
+    #             wm = back_child.matrix_world.copy()
+    #             back_child.parent = parent_obj
+    #             back_child.matrix_parent_inverse = parent_obj.matrix_world.inverted()
+    #             back_child.matrix_world = wm
+    #             parent_obj.hide_set(True)
 
-    for node_obj in node_objects.values():
-        if not node_obj.parent:
-            wm = node_obj.matrix_world.copy()
-            node_obj.parent = root_obj
-            node_obj.matrix_parent_inverse = root_obj.matrix_world.inverted()
-            node_obj.matrix_world = wm
+    # for node_obj in node_objects.values():
+    #     if not node_obj.parent:
+    #         wm = node_obj.matrix_world.copy()
+    #         node_obj.parent = root_obj
+    #         node_obj.matrix_parent_inverse = root_obj.matrix_world.inverted()
+    #         node_obj.matrix_world = wm
 
     print(f"Created WorldTree with {len(worldtree_data['nodes'])} nodes as meshes (leaf nodes have zero rotation).")
     return root_obj

@@ -48,7 +48,7 @@ def create_bounding_volume_for_region_empties():
     #print(f"Created bounding empty '{bounding_empty.name}' at {bounding_empty.location} with scale {bounding_empty.scale}")
     return bounding_empty
 
-def parent_regions_to_worldtree():
+def modify_regions_and_worldtree():
     # Build a dictionary of worldtree nodes by region tag.
     # (Assumes that objects created by create_worldtree have a custom property "region_tag")
     world_nodes = {}
@@ -62,18 +62,7 @@ def parent_regions_to_worldtree():
         if obj.type == 'EMPTY' and obj.name.startswith("R"):
             region_tag = obj.name
             if region_tag in world_nodes:
-                parent_obj = world_nodes[region_tag]
-                # Parent the region empty to its worldnode
-                bpy.ops.object.select_all(action='DESELECT')
-                parent_obj.select_set(True)
-                obj.select_set(True)
-                bpy.context.view_layer.objects.active = parent_obj
-                bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
-
-                # Optionally hide the parent
-                parent_obj.hide_set(True)
                 obj.hide_set(True)
-                #print(f"Parented region empty '{obj.name}' to worldtree node '{parent_obj.name}'")
             else:
                 print(f"No worldtree node found for region '{obj.name}'")
 
@@ -91,6 +80,7 @@ def parent_regions_to_worldtree():
         if obj.type == 'MESH' and obj.name.startswith("WorldNode_"):
             mod = obj.modifiers.new("ZoneBoundsIntersect", 'NODES')
             mod.node_group = gn_tree
+            obj.hide_set(True)
             #print(f"Added 'ZoneBoundsIntersect' modifier to {obj.name}")
 
 def create_zone_bounds_intersect_geometry_node():

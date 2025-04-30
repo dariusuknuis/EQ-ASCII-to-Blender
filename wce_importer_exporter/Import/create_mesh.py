@@ -1,13 +1,27 @@
 import bpy
 import bmesh
 import mathutils
+import re
 from create_vertex_animation import create_vertex_animation
 
-def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, material_palettes=None, created_materials=None, vertex_animations=None):
+def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, material_palettes=None, created_materials=None, vertex_animations=None, pending_objects=None):
     mesh = bpy.data.meshes.new(mesh_data['name'])
     obj = bpy.data.objects.new(mesh_data['name'], mesh)
-    bpy.context.collection.objects.link(obj)
-    obj.parent = parent_obj
+    pending_objects.append(obj)
+    region_mesh_pattern = re.compile(r"^R\d+_DMSPRITEDEF$")
+    if region_mesh_pattern.match(obj.name):
+        # Try to get the REGION_MESHES empty
+        region_meshes_empty = bpy.data.objects.get("REGION_MESHES")
+
+        # If REGION_MESHES doesn't exist yet, create and link it
+        if region_meshes_empty is None:
+            region_meshes_empty = bpy.data.objects.new("REGION_MESHES", None)
+            bpy.context.collection.objects.link(region_meshes_empty)
+
+        # Parent the mesh under REGION_MESHES
+        obj.parent = region_meshes_empty
+    else:
+        obj.parent = parent_obj
 
     # Adjust origin by the center_offset value
     center_offset = mathutils.Vector(mesh_data.get('center_offset', [0.0, 0.0, 0.0]))

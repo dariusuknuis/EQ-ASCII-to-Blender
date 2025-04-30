@@ -11,7 +11,7 @@ def load_modules():
     global apply_passable_to_all_meshes, apply_passable_to_mesh, create_passable_geometry_node_group, create_passable_material
     global create_mesh, create_armature, assign_mesh_to_armature, create_animation, add_actordef_to_object, create_worldtree
     global create_default_pose, create_polyhedron, create_bounding_sphere, create_bounding_box, parent_polyhedron
-    global parent_regions_to_worldtree, create_bounding_volume_for_region_empties, create_worlddef,create_zone
+    global modify_regions_and_worldtree, create_bounding_volume_for_region_empties, create_worlddef,create_zone
     global modules_loaded
 
     if not modules_loaded:
@@ -31,7 +31,7 @@ def load_modules():
         from parent_polyhedron import parent_polyhedron
         from create_region import create_region
         from create_zone import create_zone
-        from parent_regions_to_worldtree import parent_regions_to_worldtree, create_bounding_volume_for_region_empties
+        from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
 
         # Set the flag to True to prevent re-loading
         modules_loaded = True
@@ -39,6 +39,7 @@ def load_modules():
 # Process INCLUDE files
 def process_include_file(include_line, file_dir, root_file_path, node_group_cache):
     load_modules()  # Ensure modules are loaded before use
+    pending_objects = []
 
     # Normalize and construct the full path
     include_filepath = os.path.normpath(os.path.join(file_dir, include_line))
@@ -81,7 +82,7 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         armature_tracks = track_definitions['armature_tracks']
         armature_obj, bone_map, cumulative_matrices = create_armature(armature_data, armature_tracks, main_obj)
         for mesh_data in meshes:
-            mesh_obj = create_mesh(mesh_data, main_obj, armature_obj, armature_data, material_palettes, created_materials, vertex_animations)
+            mesh_obj = create_mesh(mesh_data, main_obj, armature_obj, armature_data, material_palettes, created_materials, vertex_animations, pending_objects)
             geo_node_group = create_passable_geometry_node_group()
             passable_mat = create_passable_material()
             apply_passable_to_mesh(mesh_obj, geo_node_group, passable_mat)
@@ -90,7 +91,7 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         create_animation(armature_obj, track_definitions, armature_data, model_prefix)
     else:
         for mesh_data in meshes:
-            mesh_obj = create_mesh(mesh_data, main_obj, None, None, material_palettes, created_materials, vertex_animations)
+            mesh_obj = create_mesh(mesh_data, main_obj, None, None, material_palettes, created_materials, vertex_animations, pending_objects)
             geo_node_group = create_passable_geometry_node_group()
             passable_mat = create_passable_material()
             apply_passable_to_mesh(mesh_obj, geo_node_group, passable_mat)
@@ -116,17 +117,20 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
 
     if regions:
         for region in regions:
-            region_obj = create_region(region)
+            region_obj = create_region(region, pending_objects)
 
     # Process WorldTree if data is present
     if worldtree_data:
-        worldtree_root = create_worldtree(worldtree_data)
+        worldtree_root = create_worldtree(worldtree_data, pending_objects)
         if worldtree_root:
             print(f"WorldTree created with root: {worldtree_root.name}")
 
+    for obj in pending_objects:
+        bpy.context.collection.objects.link(obj)
+
     if bpy.data.objects.get("WorldTree_Root") and bpy.data.objects.get("REGION") and not bpy.data.objects.get("ZONE_BOUNDS"):
         create_bounding_volume_for_region_empties()
-        parent_regions_to_worldtree()
+        modify_regions_and_worldtree()
     else:
         print("WorldTree_Root or REGION not found, skipping region-to-worldtree parenting.")
 
@@ -144,7 +148,7 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         if obj.name.upper().endswith("_WORLDDEF"):
             worlddef_obj = obj
             for obj in bpy.data.objects:
-                if obj.name.upper().endswith("_ZONE") or obj.name == "WorldTree_Root":
+                if obj.name.upper().endswith("_ZONE") or obj.name == "WorldTree_Root" or obj.name == "REGION" or obj.name == "REGION_MESHES":
                     # Parent without changing world transform:
                     obj.parent = worlddef_obj  
 
@@ -166,3 +170,5 @@ def process_root_file(file_path):
 
     for include_line in include_files:
         process_include_file(include_line, file_dir, file_path, node_group_cache)
+
+

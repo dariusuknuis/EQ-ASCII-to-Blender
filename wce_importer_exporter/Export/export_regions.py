@@ -83,7 +83,7 @@ def export_regions(root_obj, output_path):
             f.write("\tUSERDATA \"\"\n")
 
             # SPRITE: first mesh child
-            sprite = next((c.name for c in empty.children if c.type=="MESH"), "")
+            sprite = empty.get("SPRITE", "")
             f.write(f"\tSPRITE \"{sprite}\"\n\n")
 
     print(f"[export_regions] wrote {path}")

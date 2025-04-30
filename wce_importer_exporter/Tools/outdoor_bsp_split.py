@@ -4,206 +4,11 @@ import mathutils
 from mathutils import Vector, Matrix, kdtree
 from mathutils.kdtree import KDTree
 from create_bounding_sphere import create_bounding_sphere
-from parent_regions_to_worldtree import parent_regions_to_worldtree
+from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
+from create_worldtree import create_worldtree
 from .finalize_regions import finalize_regions
 import math
 import re
-
-
-# ------------------------------------------------------------
-# --- WorldNode Mesh Creation
-# ------------------------------------------------------------
-
-DEFAULT_SIZE = 10000.0  # Default plane side length
-
-def create_bsp_plane_mesh(name="BSPPlaneMesh", size=DEFAULT_SIZE):
-    """
-    Create a plane mesh that is oriented in its local space so that its face lies in the XZ plane.
-    That means its vertices are defined so that the plane’s normal is (0, 1, 0) (local +Y).
-    We create a square of side length 'size'.
-    """
-    half = size / 2.0
-    # Create a default plane in the XY plane (face normal = (0,0,1))
-    verts = [
-        (-half, -half, 0),
-        ( half, -half, 0),
-        ( half,  half, 0),
-        (-half,  half, 0)
-    ]
-    faces = [(0, 1, 2, 3)]
-    # Rotate the mesh by -90° about the X axis to put the face into the XZ plane.
-    rot = mathutils.Euler((-math.pi/2, 0, 0), 'XYZ').to_matrix().to_4x4()
-    verts_rot = [rot @ mathutils.Vector(v) for v in verts]
-    
-    mesh = bpy.data.meshes.new(name)
-    mesh.from_pydata(verts_rot, [], faces)
-    mesh.update()
-    return mesh
-
-def create_leaf_mesh(name="LeafMesh"):
-    """
-    Create a minimal mesh for leaf nodes.
-    We'll create a mesh with a single vertex at the origin.
-    """
-    mesh = bpy.data.meshes.new(name)
-    mesh.from_pydata([(0, 0, 0)], [], [])
-    mesh.update()
-    return mesh
-
-def rotation_from_normal(normal):
-    """
-    Compute an Euler rotation that rotates the object's local +Y axis (which is the normal of our base plane)
-    to align with the given target normal.
-    """
-    default_dir = mathutils.Vector((0, 1, 0))
-    target_dir = mathutils.Vector(normal).normalized()
-    quat = default_dir.rotation_difference(target_dir)
-    return quat.to_euler()
-
-def calculate_point_on_plane(normal, d, max_distance=10000.0):
-    """
-    Calculate the point on the plane (n · p + d = 0) that is closest to the origin.
-    n must be normalized. That point is p = -d * n.
-    
-    If the distance of that point exceeds max_distance, return the point on the ray (origin to p)
-    clamped to max_distance.
-    """
-    n = mathutils.Vector(normal).normalized()
-    p = -d * n  # The unique closest point on the plane.
-    if p.length > max_distance:
-        p = p.normalized() * max_distance
-    return p
-
-def compute_scale_from_location(location, default_size=DEFAULT_SIZE):
-    """
-    Compute a uniform scale factor for the plane based on the node's location.
-    Increase the plane's size by the absolute value of the highest coordinate.
-    """
-    offset = max(abs(location.x), abs(location.y), abs(location.z))
-    final_size = default_size + offset
-    scale_factor = final_size / default_size
-    return scale_factor
-
-def create_worldtree(worldtree_data):
-    """
-    Creates a WorldTree from the provided data.
-    Each non-leaf node is represented by a plane mesh (with a translucent yellow material and a Solidify modifier)
-    oriented so that its local +Y (the plane's normal) matches the node's plane normal.
-    For leaf nodes (no front_tree or back_tree), a minimal mesh (with one vertex) is created and its rotation is set to zero.
-    The plane's size is increased by the absolute maximum coordinate of its location.
-    Parent-child relationships are set up, but we preserve each object's world transform.
-    """
-    if not worldtree_data or "nodes" not in worldtree_data:
-        print("No WorldTree data to process.")
-        return None
-
-    # Create a root empty for organization.
-    root_obj = bpy.data.objects.new("WorldTree_Root", None)
-    bpy.context.collection.objects.link(root_obj)
-
-    # Create a base plane mesh for non-leaf nodes.
-    base_mesh = create_bsp_plane_mesh(size=DEFAULT_SIZE)
-    
-    # Create a translucent yellow material.
-    mat = bpy.data.materials.get("WorldTreePlaneMaterial")
-    if not mat:
-        mat = bpy.data.materials.new("WorldTreePlaneMaterial")
-        mat.use_nodes = True
-        bsdf = mat.node_tree.nodes.get("Principled BSDF")
-        if bsdf:
-            bsdf.inputs["Base Color"].default_value = (1.0, 1.0, 0.0, 0.25)  # yellow, alpha 0.25
-            bsdf.inputs["Alpha"].default_value = 0.25
-        mat.blend_method = 'BLEND'
-        mat.shadow_method = 'NONE'
-        mat.use_backface_culling = False
-
-    node_objects = {}
-
-    # Create an object for each node.
-    for node in worldtree_data["nodes"]:
-        node_name = f"WorldNode_{node['worldnode']}"
-        normal = node["normal"][:3]  # e.g., [0, -1, 0]
-        d = node["normal"][3]        # e.g., 261.188873
-
-        # Calculate the location of the plane.
-        position = calculate_point_on_plane(normal, d)
-        # Determine if the node is a leaf node.
-        is_leaf = (node["front_tree"] == 0 and node["back_tree"] == 0)
-        
-        if is_leaf:
-            # For leaf nodes, create a minimal mesh (1 vertex at the origin).
-            mesh_data = create_leaf_mesh(name=f"LeafMesh_{node['worldnode']}")
-            rotation = mathutils.Euler((0, 0, 0))  # zero rotation
-            obj_scale = (1, 1, 1)
-        else:
-            # Non-leaf nodes use the base plane mesh.
-            mesh_data = base_mesh
-            # Compute rotation so that the plane's local +Y (the face normal) aligns with the node's normal.
-            rotation = rotation_from_normal(normal)
-            # Compute scale factor based on the maximum offset.
-            scale_factor = compute_scale_from_location(position, default_size=DEFAULT_SIZE)
-            obj_scale = (scale_factor, scale_factor, scale_factor)
-        
-        node_obj = bpy.data.objects.new(node_name, mesh_data)
-        node_obj.location = position
-        node_obj.rotation_euler = rotation
-        node_obj.scale = obj_scale
-
-        # For non-leaf nodes, assign material and add a Solidify modifier.
-        if not is_leaf:
-            if len(node_obj.data.materials) == 0:
-                node_obj.data.materials.append(mat)
-            else:
-                node_obj.data.materials[0] = mat
-            solidify = node_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
-            solidify.thickness = 3.0
-            solidify.offset = 0.0
-            
-            
-
-        bpy.context.collection.objects.link(node_obj)
-
-        # Save custom properties.
-        node_obj["worldnode"] = node["worldnode"]
-        node_obj["normal"]      = [-normal[0], -normal[1], -normal[2]]
-        node_obj["d"]           = -d
-        node_obj["region_tag"] = node["region_tag"]
-        node_obj["front_tree"] = node["front_tree"]
-        node_obj["back_tree"] = node["back_tree"]
-
-        node_objects[node["worldnode"]] = node_obj
-
-    bpy.context.view_layer.update()
-
-    # Re-parent child nodes while preserving their world transforms.
-    for node in worldtree_data["nodes"]:
-        parent_obj = node_objects[node["worldnode"]]
-        if node["front_tree"] > 0:
-            front_child = node_objects.get(node["front_tree"])
-            if front_child:
-                wm = front_child.matrix_world.copy()
-                front_child.parent = parent_obj
-                front_child.matrix_parent_inverse = parent_obj.matrix_world.inverted()
-                front_child.matrix_world = wm
-                parent_obj.hide_set(True)
-        if node["back_tree"] > 0:
-            back_child = node_objects.get(node["back_tree"])
-            if back_child:
-                wm = back_child.matrix_world.copy()
-                back_child.parent = parent_obj
-                back_child.matrix_parent_inverse = parent_obj.matrix_world.inverted()
-                back_child.matrix_world = wm
-                parent_obj.hide_set(True)
-
-    for node_obj in node_objects.values():
-        if not node_obj.parent:
-            wm = node_obj.matrix_world.copy()
-            node_obj.parent = root_obj
-            node_obj.matrix_parent_inverse = root_obj.matrix_world.inverted()
-            node_obj.matrix_world = wm
-
-    print(f"Created WorldTree with {len(worldtree_data['nodes'])} nodes as meshes (leaf nodes have zero rotation).")
-    return root_obj
 
 # ------------------------------------------------------------
 # --- Helper: AABB Intersection
@@ -311,59 +116,27 @@ def copy_point_domain_color_attrs(original_obj, me):
             _, idx, _ = tree.find(co)
             dst_attr.data[i].color = src_attr.data[idx].color
 
-def create_region_empty(center, sphere_radius, index):
+def create_region_empty(center, sphere_radius, index, pending_objects):
     """
     Create an empty (for labeling/visualization) at the given center.
     The empty is set up as a sphere with display size equal to the computed sphere radius.
     """
-    bpy.ops.object.empty_add(type='SPHERE', location=center)
-    empty = bpy.context.active_object
-    empty.name = f"R{index:06d}"
+    empty = bpy.data.objects.new(f"R{index:06d}", None)
+    empty.location = center
+    empty.empty_display_type = 'SPHERE'
     empty.empty_display_size = sphere_radius
     
     empty["VISLISTBYTES"] = True
     empty["VISLIST_01"] = ""
+    empty["SPRITE"] = ""
+
+    region_empty = bpy.data.objects.get("REGION")
+    if region_empty:
+        empty.parent = region_empty
+
+    pending_objects.append(empty)
     
     return empty
-
-def parent_regions_to_empties():
-    # build a dict: region_index (int) → mesh object
-    mesh_pat = re.compile(r"^R(\d+)_DMSPRITEDEF$")
-    meshes_by_idx = {}
-    for obj in bpy.data.objects:
-        if obj.type != 'MESH':
-            continue
-        m = mesh_pat.match(obj.name)
-        if m:
-            idx = int(m.group(1))     # e.g. "00012" → 12, "12" → 12
-            meshes_by_idx[idx] = obj
-
-    # now walk your empties
-    empty_pat = re.compile(r"^R(\d+)$")
-    for empty in bpy.data.objects:
-        if empty.type != 'EMPTY':
-            continue
-        m = empty_pat.match(empty.name)
-        if not m:
-            continue
-        idx = int(m.group(1))       # same integer
-        mesh = meshes_by_idx.get(idx)
-        if not mesh:
-            #print(f"[WARN] no mesh found for empty {empty.name}")
-            continue
-
-        # make sure we’re in object mode
-        if bpy.ops.object.mode_set.poll():
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-        # parent via the operator to preserve transforms
-        bpy.ops.object.select_all(action='DESELECT')
-        empty.select_set(True)
-        mesh.select_set(True)
-        bpy.context.view_layer.objects.active = empty
-        bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
-
-        #print(f"Parented {mesh.name} → {empty.name}")
 
 def duplicate_faces_by_tag(bm, tag_value):
     """
@@ -446,7 +219,7 @@ def duplicate_faces_by_tag(bm, tag_value):
     new_bm.normal_update()
     return new_bm
 
-def create_mesh_object_from_bmesh(bm, name, original_obj):
+def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
     """
     Create a new mesh object from bm:
      1) copy original materials & custom props
@@ -469,7 +242,7 @@ def create_mesh_object_from_bmesh(bm, name, original_obj):
 
     # create the object
     new_obj = bpy.data.objects.new(name, me)
-    bpy.context.collection.objects.link(new_obj)
+    pending_objects.append(new_obj)
 
     # copy materials
     for mat in original_obj.data.materials:
@@ -522,6 +295,10 @@ def create_mesh_object_from_bmesh(bm, name, original_obj):
     # --- finally, add the bounding sphere ---
     bounding_sphere = create_bounding_sphere(new_obj, radius)
     bounding_sphere.hide_set(True)
+
+    region_meshes_empty = bpy.data.objects.get("REGION_MESHES")
+    if region_meshes_empty:
+        new_obj.parent = region_meshes_empty
 
     return new_obj
 
@@ -687,7 +464,7 @@ def zone_bsp_split(bm, zone_obj, source_obj, region_min, region_max, tol=1e-4, m
 # --- Primary Recursive BSP Split (with Zone Splitting)
 # ------------------------------------------------------------
 
-def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, depth=0):
+def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth=0):
     """
     Recursively subdivide the normalized volume using axis–aligned splits.
     When a region is small enough, attempt to further split it using zone-based splits.
@@ -713,14 +490,14 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
             split_result = zone_bsp_split(bm, zone_obj, source_obj, vol_min, vol_max, tol=1e-4, min_diag=0.1)
             if split_result is not None:
                 bm_inside, bm_outside, plane_no, d = split_result
-                node_data["normal"] = [plane_no.x, plane_no.y, plane_no.z, float(d)]
+                node_data["normal"] = [-plane_no.x, -plane_no.y, -plane_no.z, -float(d)]
                 node_data["front_tree"] = worldnode_idx[0]
                 #print(f"Zone-based split succeeded with zone '{zone_obj.name}'.")
                 # Compute bounding boxes from the resulting sub-BMeshes.
                 bmin_i, bmax_i = calculate_bounds_for_bmesh(bm_inside)
                 bmin_o, bmax_o = calculate_bounds_for_bmesh(bm_outside)
-                recursive_bsp_split(bm_inside, bmin_i, bmax_i, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, depth+1)
-                recursive_bsp_split(bm_outside, bmin_o, bmax_o, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, depth+1)
+                recursive_bsp_split(bm_inside, bmin_i, bmax_i, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
+                recursive_bsp_split(bm_outside, bmin_o, bmax_o, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
                 return  # Stop after a successful zone split.
         # No zone candidate split succeeded → finalize this leaf region.
         region_index = region_counter[0]
@@ -741,7 +518,7 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
         # Compute the sphere radius that encloses this region.
         sphere_radius = (ws_max - ws_min).length / 2.0
         #print(f"Finalizing leaf region {region_index} with sphere radius {sphere_radius:.4f} (world-space).")
-        empty_obj = create_region_empty(center, sphere_radius, region_index)
+        empty_obj = create_region_empty(center, sphere_radius, region_index, pending_objects)
         node_data["region_tag"] = empty_obj.name
         node_data["back_tree"] = 0
         if bm.faces:
@@ -749,7 +526,8 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
                 f.tag = True
             new_bm = duplicate_faces_by_tag(bm, True)
             if new_bm.faces:
-                create_mesh_object_from_bmesh(new_bm, f"R{region_index}_DMSPRITEDEF", source_obj)
+                empty_obj["SPRITE"] = f"R{region_index}_DMSPRITEDEF"
+                create_mesh_object_from_bmesh(new_bm, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
         return
 
     # If bm has no faces, subdivide the volume anyway.
@@ -762,7 +540,7 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
             #print(f"Empty region at depth {depth}; finalizing as leaf region {region_index}.")
             # Compute sphere radius from volume dimensions.
             sphere_radius = (size).length / 2.0
-            empty_obj = create_region_empty(center, sphere_radius, region_index)
+            empty_obj = create_region_empty(center, sphere_radius, region_index, pending_objects)
             node_data["region_tag"] = empty_obj.name
             node_data["back_tree"] = 0
             return
@@ -773,13 +551,13 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
         plane_no[axis] = 1.0
         d_value = -plane_no.dot(plane_co)
         
-        node_data["normal"] = [plane_no.x, plane_no.y, plane_no.z, float(d_value)]
+        node_data["normal"] = [-plane_no.x, -plane_no.y, -plane_no.z, -float(d_value)]
         node_data["front_tree"] = worldnode_idx[0]
         
         vol_lower_max = vol_max.copy(); vol_lower_max[axis] = split_pos
         vol_upper_min = vol_min.copy(); vol_upper_min[axis] = split_pos
-        recursive_bsp_split(bmesh.new(), vol_min, vol_lower_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, depth+1)
-        recursive_bsp_split(bmesh.new(), vol_upper_min, vol_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, depth+1)
+        recursive_bsp_split(bmesh.new(), vol_min, vol_lower_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
+        recursive_bsp_split(bmesh.new(), vol_upper_min, vol_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
         return
 
     # Otherwise, perform an axis-aligned split.
@@ -790,14 +568,15 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
         center = (vol_min + vol_max)*0.5
         print(f"Finalizing leaf region {region_index} (by grid split).")
         sphere_radius = (size).length / 2.0
-        empty_obj = create_region_empty(center, sphere_radius, region_index)
+        empty_obj = create_region_empty(center, sphere_radius, region_index, pending_objects)
         node_data["region_tag"] = empty_obj.name
         node_data["back_tree"] = 0
         for f in bm.faces:
             f.tag = True
         new_bm = duplicate_faces_by_tag(bm, True)
         if new_bm.faces:
-            create_mesh_object_from_bmesh(new_bm, f"R{region_index}_DMSPRITEDEF", source_obj)
+            empty_obj["SPRITE"] = f"R{region_index}_DMSPRITEDEF"
+            create_mesh_object_from_bmesh(new_bm, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
         return
 
     axis, _ = max(valid_axes, key=lambda x: x[1])
@@ -812,7 +591,7 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
     
     d_value = -plane_no.dot(plane_co)
     # Update our worldnode dictionary (node_data) for this non‐leaf node:
-    node_data["normal"] = [plane_no.x, plane_no.y, plane_no.z, float(d_value)]
+    node_data["normal"] = [-plane_no.x, -plane_no.y, -plane_no.z, -float(d_value)]
     node_data["front_tree"] = worldnode_idx[0]
     
     bmesh.ops.bisect_plane(
@@ -842,19 +621,32 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
     vol_upper_min = vol_min.copy()
     vol_upper_min[axis] = split_pos
     #print(f"Axis–aligned split at axis {axis} at position {split_pos}")
-    recursive_bsp_split(bm_lower, vol_min, vol_lower_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, depth+1)
-    recursive_bsp_split(bm_upper, vol_upper_min, vol_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, depth+1)
+    recursive_bsp_split(bm_lower, vol_min, vol_lower_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
+    recursive_bsp_split(bm_upper, vol_upper_min, vol_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
 
 # ------------------------------------------------------------
 # --- Main Runner
 # ------------------------------------------------------------
 
 def run_outdoor_bsp_split(target_size=282.0):
+    bpy.context.preferences.view.show_splash = False
+    bpy.context.scene.render.use_lock_interface = True
+    bpy.context.view_layer.depsgraph.update()  # make sure scene is up-to-date
+    bpy.context.window_manager.progress_begin(0, 100)
+
     selected_objs = [obj for obj in bpy.context.selected_objects 
                      if obj.type == 'MESH' and not obj.name.endswith('_ZONE')]
     if not selected_objs:
         print("No valid mesh selected. Please select a mesh object (not a _ZONE).")
         return
+    
+    region_empty = bpy.data.objects.new("REGION", None)
+    bpy.context.collection.objects.link(region_empty)
+
+    region_meshes_empty = bpy.data.objects.new("REGION_MESHES", None)
+    bpy.context.collection.objects.link(region_meshes_empty)
+    
+    pending_objects = []
 
     zone_volumes = [obj for obj in bpy.data.objects 
                     if obj.type == 'MESH' and obj.name.endswith('_ZONE')]
@@ -878,16 +670,16 @@ def run_outdoor_bsp_split(target_size=282.0):
         region_counter = [1]; world_nodes = []; worldnode_idx = [1]
         recursive_bsp_split(bm, vol_min, vol_max, target_size,
                             region_counter, src, zone_volumes,
-                            world_nodes, worldnode_idx, depth=0)
+                            world_nodes, worldnode_idx, pending_objects, depth=0)
         assign_back_trees(world_nodes)
         worldtree = {"nodes": world_nodes, "total_nodes": len(world_nodes)}
 
         # --- 3) Create & parent the WorldTree root ---
-        root_obj = create_worldtree(worldtree)
-        wm = root_obj.matrix_world.copy()
+        root_obj = create_worldtree(worldtree, pending_objects)
         root_obj.parent = container
-        root_obj.matrix_parent_inverse = container.matrix_world.inverted()
-        root_obj.matrix_world = wm
+
+        for obj in pending_objects:
+            bpy.context.collection.objects.link(obj)
         
         for zone_obj in zone_volumes:
             region_idxs = []
@@ -901,16 +693,20 @@ def run_outdoor_bsp_split(target_size=282.0):
 
         # --- 4) Parent any existing _ZONE meshes ---
         for zone in zone_volumes:
-            wm = zone.matrix_world.copy()
             zone.parent = container
-            zone.matrix_parent_inverse = container.matrix_world.inverted()
-            zone.matrix_world = wm
 
-        parent_regions_to_empties()
+        region_empty.parent = container
+        region_meshes_empty.parent = container
 
-        parent_regions_to_worldtree()
+        create_bounding_volume_for_region_empties()
+
+        modify_regions_and_worldtree()
 
         finalize_regions()
+    
+    bpy.context.scene.render.use_lock_interface = False
+    bpy.context.window_manager.progress_end()
+    bpy.context.view_layer.update()  # Force final update
 
     print("BSP splitting complete.")
 
