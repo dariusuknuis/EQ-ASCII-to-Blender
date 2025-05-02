@@ -32,6 +32,9 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
     mesh.from_pydata(mesh_data['vertices'], [], faces_for_creation)
     mesh.update()
 
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+
     # == UV mapping ==
     if 'uvs' in mesh_data and mesh_data['uvs']:  # Check if UV data is present
         uvlayer = mesh.uv_layers.new(name=mesh_data['name'] + "_uv")
@@ -42,8 +45,13 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
 
     # == Apply Custom Normals ==
     if 'normals' in mesh_data and len(mesh_data['normals']) == len(mesh_data['vertices']):
-        mesh.use_auto_smooth = True  # Enable auto smooth for custom normals
-        mesh.normals_split_custom_set_from_vertices(mesh_data['normals'])
+        loop_normals = []
+        for loop in mesh.loops:
+            v_index = loop.vertex_index
+            normal = mathutils.Vector(mesh_data['normals'][v_index])
+            loop_normals.append(normal.normalized())
+        mesh.normals_split_custom_set(loop_normals)
+        mesh.use_auto_smooth = True
 
     # == Color Attribute (Vertex Colors per Vertex) ==
     if 'colors' in mesh_data and len(mesh_data['colors']) == len(mesh_data['vertices']):

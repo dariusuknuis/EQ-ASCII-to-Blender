@@ -62,10 +62,24 @@ def write_dmspritedef(mesh, file):
             na = normal_accum[idx]
             na[0] += n.x; na[1] += n.y; na[2] += n.z
             normal_count[idx] += 1
+
         for i in range(len(verts)):
             if normal_count[i]:
-                avg = [c/normal_count[i] for c in normal_accum[i]]
-                file.write(f'\t\tNXYZ {avg[0]:.8e} {avg[1]:.8e} {avg[2]:.8e}\n')
+                # Compute average
+                avg = [c / normal_count[i] for c in normal_accum[i]]
+                # Normalize the average to unit vector
+                length = sum(c*c for c in avg) ** 0.5
+                if length == 0:
+                    nx, ny, nz = 0.0, 0.0, 0.0
+                else:
+                    nx, ny, nz = (c / length for c in avg)
+
+                # Scale to 128 and round to nearest int, then back to float
+                nx = round(nx * 128) / 128
+                ny = round(ny * 128) / 128
+                nz = round(nz * 128) / 128
+
+                file.write(f'\t\tNXYZ {nx:.8e} {ny:.8e} {nz:.8e}\n')
             else:
                 file.write('\t\tNXYZ 0.00000000e+00 0.00000000e+00 0.00000000e+00\n')
     else:

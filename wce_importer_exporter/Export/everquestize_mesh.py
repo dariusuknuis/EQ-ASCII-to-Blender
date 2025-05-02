@@ -1,5 +1,6 @@
 import bmesh
 import bpy
+from mathutils import Vector
 
 def update_vertex_material_indices(mesh_obj):
     """
@@ -60,58 +61,70 @@ def print_uvs_per_vertex(bm, uv_layer):
     return uv_map
 
 def split_vertices_by_uv(mesh_obj):
-    # Get the mesh data and create a bmesh instance
     mesh = mesh_obj.data
     bm = bmesh.new()
     bm.from_mesh(mesh)
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
 
-    # Ensure UV layer exists
     uv_layer = bm.loops.layers.uv.active
     if not uv_layer:
         print("No UV layer found.")
         bm.free()
         return
 
-    # Step 1: Print UVs before splitting
-    # print("Before Splitting UVs:")
-    uv_map = print_uvs_per_vertex(bm, uv_layer)
+    # Make sure split normals are available
+    mesh.calc_normals_split()
+    custom_normals = [loop.normal.copy() for loop in mesh.loops]
 
-    # Step 2: Check for vertices with multiple different UVs and split them
-    vertices_to_split = []
-    for vertex_index, uvs in uv_map.items():
-        # If there's more than one UV associated with a vertex, check if they are different
-        if len(uvs) > 1:
-            first_uv = uvs[0]
-            if any(uv != first_uv for uv in uvs):
-                # Ensure lookup table before accessing verts by index
-                bm.verts.ensure_lookup_table()
-                vertices_to_split.append(bm.verts[vertex_index])
+    uv_tolerance = 1e-6
 
-    if vertices_to_split:
-        # Perform the split operation on each vertex explicitly using bmesh's split_edges()
-        for v in vertices_to_split:
-            bmesh.ops.split_edges(bm, edges=[e for e in v.link_edges])
-        
-        # print(f"Split {len(vertices_to_split)} vertices with different UV values.")
+    def uv_key(uv):
+        return (round(uv.x / uv_tolerance) * uv_tolerance,
+                round(uv.y / uv_tolerance) * uv_tolerance)
 
-    # Step 3: Update the mesh after the split
+    # Map each loop to its loop index for normal reassignment
+    loop_to_index = {}
+    for poly in mesh.polygons:
+        for loop_index in poly.loop_indices:
+            loop = mesh.loops[loop_index]
+            loop_to_index[id(loop)] = loop_index
+
+    # Step 1: Group loops per vertex by UV key
+    vert_uv_groups = {}  # {vert: {uv_key: [loops]}}
+    for face in bm.faces:
+        for loop in face.loops:
+            v = loop.vert
+            uv = loop[uv_layer].uv
+            key = uv_key(uv)
+            if v not in vert_uv_groups:
+                vert_uv_groups[v] = {}
+            vert_uv_groups[v].setdefault(key, []).append(loop)
+
+    # Step 2: For each vertex with multiple UVs, split and remap
+    for vert, uv_groups in vert_uv_groups.items():
+        if len(uv_groups) <= 1:
+            continue
+
+        uv_group_items = list(uv_groups.items())
+        # Keep the original vertex for the first group
+        for uv_key_val, loops in uv_group_items[1:]:
+            new_vert = bm.verts.new(vert.co)
+            new_vert.normal = vert.normal.copy()
+
+            for loop in loops:
+                loop.vert = new_vert
+
+    # Step 3: Write mesh and assign normals
     bm.to_mesh(mesh)
     bm.free()
+    mesh.use_auto_smooth = True
 
-    # Step 4: Reload the bmesh after the split and reassign the UV layer
-    bm = bmesh.new()
-    bm.from_mesh(mesh)
-    bm.verts.ensure_lookup_table()
+    # Reassign split normals (loop order is preserved)
+    mesh.calc_normals_split()
+    mesh.normals_split_custom_set(custom_normals)
 
-    uv_layer = bm.loops.layers.uv.active  # Reassign the UV layer after reloading the bmesh
-
-    # Step 5: Print UVs after splitting
-    # print("After Splitting UVs:")
-    # print_uvs_per_vertex(bm, uv_layer)
-    bm.free()
-
-    print(f"Finished splitting vertices by UVs for object: {mesh_obj.name}")
-
+    print(f"Finished UV-aware vertex splitting (with normals) for: {mesh_obj.name}")
 
 def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
     # Check if the mesh has any vertex groups; skip if not
@@ -265,6 +278,9 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
     new_vertices = [mesh_data['vertices'][i] for i in sorted_vertex_indices]
     mesh.from_pydata(new_vertices, [], mesh_data['faces'])
     mesh.update()
+
+    for poly in mesh.polygons:
+        poly.use_smooth = True
 
     # Step 6: Reapply UVs, normals, vertex materials, material index, and passable flags
     if has_uvs and 'uvs' in mesh_data and mesh_data['uvs']:
