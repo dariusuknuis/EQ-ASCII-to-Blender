@@ -2,10 +2,16 @@
 
 import bpy
 
+def remove_unused_meshes():
+    for mesh in bpy.data.meshes:
+        if mesh.users == 0:
+            bpy.data.meshes.remove(mesh)
+
 def run_align_uv_maps():
     """
     Rename UV maps of all selected meshes to match the active object.
     """
+    remove_unused_meshes()
     context = bpy.context
     sel = [o for o in context.selected_objects if o.type == 'MESH']
     active = context.active_object

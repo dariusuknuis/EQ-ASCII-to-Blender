@@ -73,11 +73,13 @@ def write_hierarchicalspritedef(armature, file):
     else:
         file.write(f'\tCENTEROFFSET? {armature_loc.x:.8e} {armature_loc.y:.8e} {armature_loc.z:.8e}\n')
     
-    bounding_mesh = next((child for child in armature.children if child.name.endswith("_BR")), None)
-    if bounding_mesh:
-        bounding_radius = max((v.co.length for v in bounding_mesh.data.vertices), default=0)
+    bounding_radius_empty = find_child_empty(armature, '_BR')
+    if bounding_radius_empty:
+        bounding_radius = bounding_radius_empty.empty_display_size
         file.write(f'\tBOUNDINGRADIUS? {bounding_radius:.8e}\n')
-    
+    else:
+        file.write(f'\tBOUNDINGRADIUS? 0.00000000e+00\n')
+
     # Write flag properties
     hex_two_hundred_flag = 1 if armature.get("HEXTWOHUNDREDFLAG", False) else 0
     hex_twenty_thousand_flag = 1 if armature.get("HEXTWENTYTHOUSANDFLAG", False) else 0
@@ -85,3 +87,10 @@ def write_hierarchicalspritedef(armature, file):
     file.write(f'\tHEXTWENTYTHOUSANDFLAG {hex_twenty_thousand_flag}\n')
     
     print(f'HIERARCHICALSPRITEDEF data for "{hs_def_name}" exported.')
+
+def find_child_empty(parent_obj, suffix):
+    """Find a child EMPTY whose name ends with `suffix`."""
+    for child in parent_obj.children:
+        if child.type == 'EMPTY' and child.name.endswith(suffix):
+            return child
+    return None

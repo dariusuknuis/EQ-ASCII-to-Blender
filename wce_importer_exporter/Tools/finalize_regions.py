@@ -44,6 +44,7 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
 def merge_by_distance(objs, dist=0.001):
     """On each mesh in objs, merge any vertices within dist by entering Edit Mode."""
     for ob in objs:
+        print(f"[DEBUG] Merging object: {ob.name}")
         # make this object active
         bpy.context.view_layer.objects.active = ob
         if bpy.ops.object.mode_set.poll():
@@ -125,15 +126,20 @@ def finalize_regions(
     # pick up all of your region meshes by naming convention
     region_objs = [
         o for o in bpy.context.scene.objects
-        if o.type=='MESH' and o.name.startswith('R') and o.name.endswith('_DMSPRITEDEF')
+        if o.type == 'MESH' and o.name.startswith('R') and o.name.endswith('_DMSPRITEDEF')
     ]
     if not region_objs:
         print("⚠️ No region meshes found (Rxxxxx_DMSPRITEDEF).")
         return
+
+    print(f"🔧 Finalizing {len(region_objs)} region meshes:")
+    for obj in region_objs:
+        print(f"   • {obj.name}")
 
     split_edges_to_snap_verts(region_objs, threshold=edge_snap_threshold)
     merge_by_distance(region_objs, dist=merge_dist)
     triangulate_meshes(region_objs)
     collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
     merge_by_distance(region_objs, dist=merge_dist)
+
     print("🎉 All region meshes finalized.")

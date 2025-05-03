@@ -169,7 +169,6 @@ def export_dmspritedef(obj, file):
         reindex_vertices_and_faces(mesh)
         write_dmspritedef(mesh, file)
 
-
 # def export_pos_animation(armature, file):
 #     print("Running POS action export...")
 #     export_animation_data(armature, file, include_pos=True)
@@ -178,7 +177,6 @@ def export_dmspritedef(obj, file):
 # def export_track_animation(armature, file):
 #     print("Running track action export...")
 #     export_animation_data(armature, file, include_pos=False)
-
 
 def find_all_child_meshes(parent_obj):
     meshes = []
