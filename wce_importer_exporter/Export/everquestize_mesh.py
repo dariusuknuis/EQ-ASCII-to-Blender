@@ -61,71 +61,55 @@ def print_uvs_per_vertex(bm, uv_layer):
     return uv_map
 
 def split_vertices_by_uv(mesh_obj):
+    """
+    Splits only those loops whose UV differs on the same vertex,
+    using bmesh.ops.split_loops so loop count/order stays constant.
+    """
     mesh = mesh_obj.data
-    bm = bmesh.new()
+    bm   = bmesh.new()
     bm.from_mesh(mesh)
-    bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
+
+    # remember existing custom normals per loop
+    mesh.calc_normals_split()
+    saved_normals = [loop.normal.copy() for loop in mesh.loops]
 
     uv_layer = bm.loops.layers.uv.active
     if not uv_layer:
-        print("No UV layer found.")
+        print("⚠️ No UV layer found on", mesh_obj.name)
         bm.free()
         return
 
-    # Make sure split normals are available
-    mesh.calc_normals_split()
-    custom_normals = [loop.normal.copy() for loop in mesh.loops]
+    # group loops by (vert, quantized UV) 
+    uv_tol = 1e-6
+    def key_uv(uv):
+        return (round(uv.x/uv_tol)*uv_tol, round(uv.y/uv_tol)*uv_tol)
 
-    uv_tolerance = 1e-6
-
-    def uv_key(uv):
-        return (round(uv.x / uv_tolerance) * uv_tolerance,
-                round(uv.y / uv_tolerance) * uv_tolerance)
-
-    # Map each loop to its loop index for normal reassignment
-    loop_to_index = {}
-    for poly in mesh.polygons:
-        for loop_index in poly.loop_indices:
-            loop = mesh.loops[loop_index]
-            loop_to_index[id(loop)] = loop_index
-
-    # Step 1: Group loops per vertex by UV key
-    vert_uv_groups = {}  # {vert: {uv_key: [loops]}}
+    loops_to_split = []
     for face in bm.faces:
+        # build per‐vertex UV sets on the fly
+        vert_uv_map = {}
         for loop in face.loops:
             v = loop.vert
-            uv = loop[uv_layer].uv
-            key = uv_key(uv)
-            if v not in vert_uv_groups:
-                vert_uv_groups[v] = {}
-            vert_uv_groups[v].setdefault(key, []).append(loop)
+            k = key_uv(loop[uv_layer].uv)
+            vert_uv_map.setdefault(v, set()).add(k)
+        # for verts in this face that have >1 UV, mark their loops
+        for loop in face.loops:
+            v, k = loop.vert, key_uv(loop[uv_layer].uv)
+            if len(vert_uv_map[v]) > 1:
+                loops_to_split.append(loop)
 
-    # Step 2: For each vertex with multiple UVs, split and remap
-    for vert, uv_groups in vert_uv_groups.items():
-        if len(uv_groups) <= 1:
-            continue
+    if loops_to_split:
+        bmesh.ops.split_loops(bm, loops=loops_to_split)
 
-        uv_group_items = list(uv_groups.items())
-        # Keep the original vertex for the first group
-        for uv_key_val, loops in uv_group_items[1:]:
-            new_vert = bm.verts.new(vert.co)
-            new_vert.normal = vert.normal.copy()
-
-            for loop in loops:
-                loop.vert = new_vert
-
-    # Step 3: Write mesh and assign normals
+    # write back & reapply normals
     bm.to_mesh(mesh)
     bm.free()
     mesh.use_auto_smooth = True
+    mesh.normals_split_custom_set(saved_normals)
 
-    # Reassign split normals (loop order is preserved)
-    mesh.calc_normals_split()
-    mesh.normals_split_custom_set(custom_normals)
-
-    print(f"Finished UV-aware vertex splitting (with normals) for: {mesh_obj.name}")
-
+    print(f"✅ Finished UV‑aware split for: {mesh_obj.name}")
+    
 def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
     # Check if the mesh has any vertex groups; skip if not
     # if not mesh_obj.vertex_groups:
