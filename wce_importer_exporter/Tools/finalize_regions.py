@@ -449,21 +449,31 @@ def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
             continue
 
         mesh = obj.data
-        bm = bmesh.new()
-        bm.from_mesh(mesh)
+        iterations = 0
+        while True:
+            # build a fresh BMesh each pass
+            bm = bmesh.new()
+            bm.from_mesh(mesh)
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
 
-        bm.verts.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
+            # collect all the geometry to delete
+            loose_verts     = [v for v in bm.verts if not v.link_edges]
+            loose_edges     = [e for e in bm.edges if not e.link_faces]
+            degenerate_faces= [f for f in bm.faces if f.calc_area() < area_threshold]
+            geom_to_delete  = loose_verts + loose_edges + degenerate_faces
 
-        loose_verts = [v for v in bm.verts if not v.link_edges]
-        loose_edges = [e for e in bm.edges if not e.link_faces]
-        degenerate_faces = [f for f in bm.faces if f.calc_area() < area_threshold]
+            if not geom_to_delete:
+                bm.free()
+                # if we never deleted anything at all:
+                if iterations == 0:
+                    print(f"✅ No loose/degenerate geometry in: {obj.name}")
+                else:
+                    print(f"🔄 Finished cleaning {obj.name} in {iterations} passes.")
+                break
 
-        geom_to_delete = loose_verts + loose_edges + degenerate_faces
-
-        if geom_to_delete:
-            # Choose best context
+            # pick a deletion context that will remove everything
             if loose_edges or (loose_verts and degenerate_faces):
                 context = 'EDGES'
             elif degenerate_faces:
@@ -474,45 +484,13 @@ def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
             bmesh.ops.delete(bm, geom=geom_to_delete, context=context)
             bm.to_mesh(mesh)
             mesh.update()
+            bm.free()
 
-            print(f"✅ Cleaned {obj.name}: {len(loose_verts)} loose verts, {len(loose_edges)} loose edges, {len(degenerate_faces)} degenerate faces")
-        else:
-            print(f"✅ No loose/degenerate geometry in: {obj.name}")
-
-        bm.free()
-
-
-def fix_split_normal_counts(region_objs):
-    """
-    Ensure each mesh in region_objs has exactly one custom‐split‐normal
-    per loop. Pads with the vertex normal or trims extras as needed.
-    """
-    for obj in region_objs:
-        if obj.type != 'MESH':
-            continue
-        me = obj.data
-        # make sure Blender has up‑to‑date split normals
-        me.calc_normals_split()
-        loop_count = len(me.loops)
-        # read whatever normals exist (custom or auto)
-        current = [loop.normal.copy() for loop in me.loops]
-
-        if len(current) != loop_count:
-            print(f"[FixNormals] {obj.name}: {len(current)} normals vs {loop_count} loops – repairing…")
-            fixed = []
-            for i in range(loop_count):
-                if i < len(current):
-                    fixed.append(current[i])
-                else:
-                    # pad missing with the corresponding vertex normal
-                    vi = me.loops[i].vertex_index
-                    fixed.append(me.vertices[vi].normal.copy())
-            # apply exactly the right number of normals
-            me.use_auto_smooth = True
-            me.normals_split_custom_set(fixed[:loop_count])
-            print(f" → now {len(fixed[:loop_count])} normals")
-        else:
-            print(f"[FixNormals] {obj.name}: OK ({loop_count} loops)")
+            iterations += 1
+            print(f"  • {obj.name} pass {iterations}: "
+                  f"{len(loose_verts)} loose verts, "
+                  f"{len(loose_edges)} loose edges, "
+                  f"{len(degenerate_faces)} degenerate faces")
 
 def finalize_regions(
         edge_snap_threshold=0.03,
@@ -540,12 +518,12 @@ def finalize_regions(
     split_edges_to_snap_verts(region_objs, threshold=edge_snap_threshold)
     collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
     merge_near_zero_edges(region_objs)
+    delete_loose_and_degenerate(region_objs)
     for obj in region_objs:
         merge_by_distance(obj, dist=merge_dist)
     delete_loose_and_degenerate(region_objs)
     triangulate_meshes(region_objs)
     average_vertex_colors_globally(region_objs, threshold=0.1)
     delete_loose_and_degenerate(region_objs)
-    fix_split_normal_counts(region_objs)
 
     print("🎉 All region meshes finalized.")

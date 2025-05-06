@@ -724,7 +724,7 @@ def run_outdoor_bsp_split(target_size=282.0):
 
         modify_regions_and_worldtree()
 
-        #finalize_regions()
+        finalize_regions()
     
     bpy.context.scene.render.use_lock_interface = False
     bpy.context.window_manager.progress_end()
