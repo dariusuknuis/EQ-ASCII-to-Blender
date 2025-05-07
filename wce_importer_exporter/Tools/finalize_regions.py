@@ -1,6 +1,7 @@
 import bpy, bmesh, math
 from mathutils import Vector, kdtree
 from mathutils.kdtree import KDTree
+import time
 
 def angle_between_normals(n1, n2):
     """Compute angle between two vectors in degrees."""
@@ -23,77 +24,111 @@ def aabb_intersects(minA, maxA, minB, maxB, epsilon=0.001):
     )
 
 def split_edges_to_snap_verts(objs, threshold=1e-4):
-    """For each pair A,B in objs, split edges of B where a vertex of A projects onto it."""
-    world_verts = {ob: [ob.matrix_world @ v.co for v in ob.data.vertices] for ob in objs}
+    """
+    For each pair A,B in objs, split B's edges wherever any A-vertex projects onto them.
+    Preserves *all* splits and interpolates normals.
+    """
+    # 1) cache all world‐space vertex positions for quick lookup
+    world_verts = {
+        ob: [ob.matrix_world @ v.co for v in ob.data.vertices]
+        for ob in objs
+    }
 
     for ob_B in objs:
         me = ob_B.data
         me.calc_normals_split()
+
         bm = bmesh.new()
         bm.from_mesh(me)
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
 
         minB, maxB = object_world_aabb(ob_B)
-        changed = False
-        normal_map = {}
+        # collect all hits per edge: {edge: [(t, interp_normal), ...]}
+        edge_hits = {}
 
         for ob_A in objs:
-            if ob_A == ob_B:
+            if ob_A is ob_B:
                 continue
-
             minA, maxA = object_world_aabb(ob_A)
             if not aabb_intersects(minA, maxA, minB, maxB):
                 continue
 
-            verts_A = world_verts[ob_A]
-
-            for edge in list(bm.edges):
-                v1 = edge.verts[0]
-                v2 = edge.verts[1]
-                v1_ws = ob_B.matrix_world @ v1.co
-                v2_ws = ob_B.matrix_world @ v2.co
-                seg = v2_ws - v1_ws
+            for edge in bm.edges:
+                v1, v2 = edge.verts
+                w1 = ob_B.matrix_world @ v1.co
+                w2 = ob_B.matrix_world @ v2.co
+                seg = w2 - w1
                 seg_len2 = seg.length_squared
                 if seg_len2 == 0.0:
                     continue
 
-                for p_ws in verts_A:
-                    t = (p_ws - v1_ws).dot(seg) / seg_len2
+                for p in world_verts[ob_A]:
+                    t = (p - w1).dot(seg) / seg_len2
                     if 0.0 < t < 1.0:
-                        proj = v1_ws + seg * t
-                        if (proj - p_ws).length <= threshold:
-                            # ⛏️ Cache the interpolated normal BEFORE subdivision
-                            interp_normal = (v1.normal * (1 - t) + v2.normal * t).normalized()
+                        proj = w1 + seg * t
+                        if (proj - p).length <= threshold:
+                            interp_n = (v1.normal * (1 - t) + v2.normal * t).normalized()
+                            edge_hits.setdefault(edge, []).append((t, interp_n))
 
-                            result = bmesh.ops.subdivide_edges(
-                                bm,
-                                edges=[edge],
-                                cuts=1,
-                                edge_percents={edge: t}
-                            )
-                            new_verts = [e for e in result["geom_split"] if isinstance(e, bmesh.types.BMVert)]
-                            if new_verts:
-                                nv = new_verts[0]
-                                normal_map[nv.index] = interp_normal
-                            changed = True
+        if not edge_hits:
+            bm.free()
+            continue
+
+        # 2) For each edge, sort its hits and subdivide *sequentially*
+        normal_map = {}
+        for edge, hits in edge_hits.items():
+            # skip degenerate
+            if not edge.is_valid:
+                continue
+
+            # sort along the original edge
+            hits.sort(key=lambda x: x[0])
+            v1, v2 = edge.verts
+            orig_v2 = v2  # we'll always split towards v2
+            current_edge = edge
+            offset = 0.0
+
+            for t, interp_n in hits:
+                # adjust t to the remaining segment
+                local_t = (t - offset) / (1.0 - offset)
+                # cut it once at local_t
+                result = bmesh.ops.subdivide_edges(
+                    bm,
+                    edges=[current_edge],
+                    cuts=1,
+                    edge_percents={current_edge: local_t},
+                )
+                # grab the newly made vertex
+                new_vert = next(
+                    (g for g in result["geom_split"] if isinstance(g, bmesh.types.BMVert)),
+                    None
+                )
+                if new_vert:
+                    normal_map[new_vert.index] = interp_n
+
+                    # find the segment from new_vert to the original v2
+                    # so next subdivision happens on that piece
+                    for e_next in new_vert.link_edges:
+                        if orig_v2 in e_next.verts:
+                            current_edge = e_next
                             break
 
-        if changed:
-            bm.to_mesh(me)
-            me.use_auto_smooth = True
+                offset = t
 
-            loop_normals = []
-            for loop in me.loops:
-                vi = loop.vertex_index
-                normal = normal_map.get(vi, me.vertices[vi].normal)
-                loop_normals.append(normal)
-
-            me.normals_split_custom_set(loop_normals)
-
+        # 3) write mesh & reapply custom normals
+        bm.to_mesh(me)
         bm.free()
+        me.use_auto_smooth = True
 
-    print("✅ split_edges_to_snap_verts: edges split and normals interpolated.")
+        loop_normals = []
+        for loop in me.loops:
+            loop_normals.append(
+                normal_map.get(loop.vertex_index, me.vertices[loop.vertex_index].normal)
+            )
+        me.normals_split_custom_set(loop_normals)
+
+    print("✅ split_edges_to_snap_verts: done, all splits & normals preserved.")
 
 def _material_uv_normal_match(v1, v2, uv_layer, normal_angle_limit=45):
     """Check if v1 and v2 share the same materials, UVs, and all loop normals are within angle limit."""
@@ -126,108 +161,118 @@ def _material_uv_normal_match(v1, v2, uv_layer, normal_angle_limit=45):
     return True
 
 def merge_by_distance(obj, dist=0.001, normal_angle_limit=45):
+    """
+    Merges vertices that are within `dist` of each other AND whose
+    UV/material/normal sets all match within `normal_angle_limit`.
+    """
     me = obj.data
     bm = bmesh.new()
     bm.from_mesh(me)
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
 
-    uv_layer = bm.loops.layers.uv.active  # Can be None
+    uv_layer = bm.loops.layers.uv.active  # may be None
 
-    visited = set()
+    # 1) Snapshot verts into a list and build KDTree once
+    verts = list(bm.verts)
+    N = len(verts)
+    kd = KDTree(N)
+    for i, v in enumerate(verts):
+        kd.insert(v.co, i)
+    kd.balance()
 
-    for v in list(bm.verts):
-        if v in visited or not v.is_valid:
-            continue
+    # 2) Union‑find data structure
+    parent = list(range(N))
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    def union(i, j):
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[rj] = ri
 
-        group = [v]
-        visited.add(v)
-
-        # Build fresh KDTree per vertex due to possible mesh mutation
-        kd = KDTree(len(bm.verts))
-        for i, vtest in enumerate(bm.verts):
-            if vtest.is_valid:
-                kd.insert(vtest.co, i)
-        kd.balance()
-
-        for (_, idx, _) in kd.find_range(v.co, dist):
-            try:
-                v2 = bm.verts[idx]
-            except IndexError:
+    # 3) For each vert, merge with every neighbor in range if they match
+    for i, v in enumerate(verts):
+        for (_, j, _) in kd.find_range(v.co, dist):
+            if i == j:
                 continue
-            if v2 in visited or not v2.is_valid:
-                continue
+            v2 = verts[j]
+            # only union if material, UVs and normals all line up
             if _material_uv_normal_match(v, v2, uv_layer, normal_angle_limit):
-                group.append(v2)
-                visited.add(v2)
+                union(i, j)
 
-        if len(group) > 1:
-            bmesh.ops.remove_doubles(bm, verts=group, dist=dist)
-            bm.verts.ensure_lookup_table()
-            bm.verts.index_update()
+    # 4) Gather clusters by their root
+    clusters = {}
+    for i in range(N):
+        root = find(i)
+        clusters.setdefault(root, []).append(verts[i])
 
+    # 5) Perform a pointmerge on each cluster of size>1
+    merged = 0
+    for cl in clusters.values():
+        if len(cl) > 1:
+            # merge all in cl into the first one’s location
+            bmesh.ops.pointmerge(bm, verts=cl, merge_co=cl[0].co)
+            merged += len(cl) - 1
+
+    # write back
     bm.to_mesh(me)
     bm.free()
-    print(f"✅ Merged with normal check (angle < {normal_angle_limit}°)")
+
+    print(f"✅ Merged {merged} vertices in {len(clusters)} cluster(s) "
+          f"(threshold={dist}, angle<{normal_angle_limit}°)")
 
 def triangulate_meshes(objs):
-    """Triangulate faces and preserve/reconstruct custom split normals."""
-
+    """Triangulate faces and very quickly preserve custom split normals."""
     for ob in objs:
         me = ob.data
         me.use_auto_smooth = True
         me.calc_normals_split()
-        
-        # Cache existing loop normals and loop-to-face/vertex mappings
+
+        # 1) Cache old loop normals and build direct lookup tables
         old_loop_normals = [loop.normal.copy() for loop in me.loops]
+        old_loop_to_face = [0] * len(me.loops)
         old_loop_to_vert = [loop.vertex_index for loop in me.loops]
 
-        # Build face-to-loop mapping (pre-triangulation)
-        face_to_loop_indices = {}
+        # build loop→face index mapping
         for face in me.polygons:
-            face_to_loop_indices[face.index] = list(face.loop_indices)
+            for li in face.loop_indices:
+                old_loop_to_face[li] = face.index
 
-        # Triangulate using BMesh
+        # build quick (face, vert) → normal dict
+        normal_map = {
+            (old_loop_to_face[i], old_loop_to_vert[i]) : old_loop_normals[i]
+            for i in range(len(old_loop_normals))
+        }
+
+        # 2) Triangulate via BMesh
         bm = bmesh.new()
         bm.from_mesh(me)
         bmesh.ops.triangulate(bm, faces=bm.faces[:])
         bm.to_mesh(me)
         bm.free()
 
+        # 3) Recompute split normals and build a new loop→face map
         me.calc_normals_split()
+        new_loop_to_face = [0] * len(me.loops)
+        for face in me.polygons:
+            for li in face.loop_indices:
+                new_loop_to_face[li] = face.index
 
-        # Rebuild mapping of new loops (post-triangulation)
-        new_loop_normals = []
-        for loop_idx, loop in enumerate(me.loops):
-            vi = loop.vertex_index
-            face = next((f for f in me.polygons if loop_idx in f.loop_indices), None)
-            replacement = None
+        # 4) Fill new normals in one pass
+        new_normals = []
+        loops = me.loops
+        verts = me.vertices
+        for li, loop in enumerate(loops):
+            key = (new_loop_to_face[li], loop.vertex_index)
+            n = normal_map.get(key, verts[loop.vertex_index].normal)
+            new_normals.append(n)
 
-            if face:
-                # Try to find a previous loop on this face with same vertex
-                original_loops = face_to_loop_indices.get(face.index, [])
-                for old_li in original_loops:
-                    if old_li < len(old_loop_normals) and old_loop_to_vert[old_li] == vi:
-                        replacement = old_loop_normals[old_li]
-                        break
+        me.normals_split_custom_set(new_normals)
 
-                # Otherwise, use the first valid loop on that face
-                if not replacement:
-                    for old_li in original_loops:
-                        if old_li < len(old_loop_normals):
-                            replacement = old_loop_normals[old_li]
-                            break
-
-            # If still nothing, fallback to vertex normal
-            if not replacement:
-                replacement = me.vertices[vi].normal
-
-            new_loop_normals.append(replacement)
-
-        # Apply the rebuilt loop normals
-        me.normals_split_custom_set(new_loop_normals)
-
-        print(f"✅ {ob.name}: triangulated and normals preserved/repaired.")
+        print(f"✅ {ob.name}: triangulated and normals preserved.")
 
 def collapse_vertices_across_objects(objs, threshold=0.05):
     """
@@ -496,6 +541,7 @@ def finalize_regions(
         edge_snap_threshold=0.03,
         merge_dist=0.001,
         collapse_thresh=0.05):
+    start = time.perf_counter()
     # pick up all of your region meshes by naming convention
     region_objs = [
         o for o in bpy.context.scene.objects
@@ -525,5 +571,7 @@ def finalize_regions(
     triangulate_meshes(region_objs)
     average_vertex_colors_globally(region_objs, threshold=0.1)
     delete_loose_and_degenerate(region_objs)
+    
+    elapsed = time.perf_counter() - start
 
-    print("🎉 All region meshes finalized.")
+    print(f"🎉 All region meshes finalized in {elapsed:.2f} seconds.")
