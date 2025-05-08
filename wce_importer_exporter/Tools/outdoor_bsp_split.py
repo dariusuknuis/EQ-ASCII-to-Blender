@@ -270,6 +270,7 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, normal_map, pending_ob
     if "PASSABLE" in bpy.data.node_groups:
         gn_mod = new_obj.modifiers.new(name="PASSABLE", type='NODES')
         gn_mod.node_group = bpy.data.node_groups["PASSABLE"]
+        gn_mod.show_viewport = False
 
     # --- bake original_obj's world matrix into the mesh data ---
     me.transform(original_obj.matrix_world)
