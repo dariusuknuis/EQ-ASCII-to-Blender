@@ -6,7 +6,7 @@ from mathutils.kdtree import KDTree
 from create_bounding_sphere import create_bounding_sphere
 from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
 from create_worldtree import create_worldtree
-from .finalize_regions import finalize_regions
+from .finalize_region_meshes import finalize_region_meshes
 import math
 import re
 
@@ -85,36 +85,6 @@ def normalize_bounds(min_bound, max_bound, target_size):
     new_min = center - adjusted_size * 0.5
     new_max = center + adjusted_size * 0.5
     return new_min, new_max
-
-def copy_point_domain_color_attrs(original_obj, me):
-    src = original_obj.data
-    if not src.color_attributes:
-        return
-
-    # build a KDTree on the *local* verts of the source
-    size = len(src.vertices)
-    tree = kdtree.KDTree(size)
-    for i, v in enumerate(src.vertices):
-        tree.insert(v.co, i)
-    tree.balance()
-
-    # for each point‑domain colour layer on the source:
-    for src_attr in src.color_attributes:
-        if src_attr.domain != 'POINT':
-            continue
-
-        # create a matching colour attribute on the new mesh
-        dst_attr = me.color_attributes.new(
-            name=src_attr.name,
-            type=src_attr.data_type,   # 'FLOAT_COLOR' or 'BYTE_COLOR'
-            domain='POINT',
-        )
-
-        # copy by nearest‐vertex lookup
-        for i, v in enumerate(me.vertices):
-            co = v.co
-            _, idx, _ = tree.find(co)
-            dst_attr.data[i].color = src_attr.data[idx].color
 
 def create_region_empty(center, sphere_radius, index, pending_objects):
     """
@@ -235,8 +205,6 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, normal_map, pending_ob
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
-
-    copy_point_domain_color_attrs(original_obj, me)
 
     # rename first UV layer if present
     if me.uv_layers:
@@ -681,6 +649,13 @@ def run_outdoor_bsp_split(target_size=282.0):
         bounds_min, bounds_max = calculate_bounds(src)
         vol_min, vol_max = normalize_bounds(bounds_min, bounds_max, target_size)
 
+        vcol_attr = next((a for a in src.data.color_attributes if a.domain == 'POINT'), None)
+        if vcol_attr:
+            # use slicing to copy the array into a tuple
+            vertex_colors = [c.color[:] for c in vcol_attr.data]
+        else:
+            vertex_colors = None
+
         # --- Collect custom split normals from source mesh ---
         src.data.calc_normals_split()
         src.data.use_auto_smooth = True
@@ -690,6 +665,15 @@ def run_outdoor_bsp_split(target_size=282.0):
             normal_map.setdefault(vidx, []).append(loop.normal.copy())
 
         bm = bmesh.new(); bm.from_mesh(src.data)
+
+        if vertex_colors:
+            # make a fresh corner‑domain layer in the BMesh
+            loop_col = bm.loops.layers.color.new(vcol_attr.name + "_loop")
+            # copy per‑vertex → per‑loop
+            loops = (l for f in bm.faces for l in f.loops)
+            for loop in loops:
+                loop[loop_col] = vertex_colors[loop.vert.index]
+
         region_counter = [1]; world_nodes = []; worldnode_idx = [1]
         recursive_bsp_split(bm, vol_min, vol_max, target_size,
                             region_counter, src, zone_volumes,
@@ -725,7 +709,7 @@ def run_outdoor_bsp_split(target_size=282.0):
 
         modify_regions_and_worldtree()
 
-        finalize_regions()
+        finalize_region_meshes()
     
     bpy.context.scene.render.use_lock_interface = False
     bpy.context.window_manager.progress_end()

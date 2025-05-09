@@ -426,6 +426,45 @@ def merge_near_zero_edges(region_objs, threshold=1e-6, max_iterations=10):
 def average_vertex_colors_globally(region_objs, threshold=0.001):
     print(f"🎨 Globally averaging vertex colors between {len(region_objs)} region meshes...")
 
+    # ─── 0) Convert any per‑loop (corner) "_loop" attrs back to point‑domain ─────────────────────
+    for obj in region_objs:
+        me = obj.data
+
+        # find all corner‑domain attrs whose names end with "_loop"
+        loop_attrs = [attr for attr in me.color_attributes
+                      if attr.domain == 'CORNER' and attr.name.endswith('_loop')]
+        if not loop_attrs:
+            continue
+
+        for loop_attr in loop_attrs:
+            # target point‑domain name
+            point_name = loop_attr.name[:-5]  # strip "_loop"
+            # create (or reuse) a point‑domain attribute
+            dst = me.color_attributes.get(point_name)
+            if not dst:
+                dst = me.color_attributes.new(
+                    name=point_name,
+                    type=loop_attr.data_type,
+                    domain='POINT'
+                )
+
+            # accumulate loop colors per vertex
+            accum = [Vector((0.0,0.0,0.0,0.0)) for _ in me.vertices]
+            counts = [0] * len(me.vertices)
+            for li, loop in enumerate(me.loops):
+                vi = loop.vertex_index
+                accum[vi]  += Vector(loop_attr.data[li].color)
+                counts[vi] += 1
+
+            # write averaged back into the point‑domain attr
+            for vi, v in enumerate(me.vertices):
+                if counts[vi] > 0:
+                    dst.data[vi].color = accum[vi] / counts[vi]
+            
+            me.color_attributes.remove(loop_attr)
+
+    # ─── 1) Build KD‑tree on world‑space vertex positions ───────────────────────────────────
+    
     vertex_data = []
     tree = KDTree(sum(len(obj.data.vertices) for obj in region_objs))
 
@@ -444,6 +483,7 @@ def average_vertex_colors_globally(region_objs, threshold=0.001):
 
     tree.balance()
 
+    # ─── 2) Cluster nearby verts ───────────────────────────────────────────────────────────
     clusters = []
     visited = set()
 
@@ -459,13 +499,14 @@ def average_vertex_colors_globally(region_objs, threshold=0.001):
         if len(group) > 1:
             clusters.append(group)
 
-    # Collect all color attributes
+    # ─── 3) Find all point‑domain attrs to average ─────────────────────────────────────────
     attr_names = set()
     for obj in region_objs:
         for attr in obj.data.color_attributes:
             if attr.domain == 'POINT':
                 attr_names.add(attr.name)
 
+    # ─── 4) Average each attr over each cluster ────────────────────────────────────────────
     for attr_name in attr_names:
         for cluster in clusters:
             accum = Vector((0.0, 0.0, 0.0, 0.0))
@@ -537,7 +578,7 @@ def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
                   f"{len(loose_edges)} loose edges, "
                   f"{len(degenerate_faces)} degenerate faces")
 
-def finalize_regions(
+def finalize_region_meshes(
         edge_snap_threshold=0.03,
         merge_dist=0.001,
         collapse_thresh=0.05):
