@@ -11,6 +11,8 @@ def object_world_aabb(obj):
     """Return min/max world-space AABB of a mesh object."""
     mat = obj.matrix_world
     verts = [mat @ v.co for v in obj.data.vertices]
+    if not verts:
+        return Vector((0,0,0)), Vector((0,0,0))
     minb = Vector((min(v.x for v in verts), min(v.y for v in verts), min(v.z for v in verts)))
     maxb = Vector((max(v.x for v in verts), max(v.y for v in verts), max(v.z for v in verts)))
     return minb, maxb
