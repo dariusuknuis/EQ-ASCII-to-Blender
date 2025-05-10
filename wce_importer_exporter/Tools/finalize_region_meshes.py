@@ -223,8 +223,8 @@ def merge_by_distance(obj, dist=0.001, normal_angle_limit=45):
     bm.to_mesh(me)
     bm.free()
 
-    print(f"✅ Merged {merged} vertices in {len(clusters)} cluster(s) "
-          f"(threshold={dist}, angle<{normal_angle_limit}°)")
+    # print(f"✅ Merged {merged} vertices in {len(clusters)} cluster(s) "
+    #       f"(threshold={dist}, angle<{normal_angle_limit}°)")
 
 def triangulate_meshes(objs):
     """Triangulate faces and very quickly preserve custom split normals."""
@@ -274,7 +274,7 @@ def triangulate_meshes(objs):
 
         me.normals_split_custom_set(new_normals)
 
-        print(f"✅ {ob.name}: triangulated and normals preserved.")
+        # print(f"✅ {ob.name}: triangulated and normals preserved.")
 
 def collapse_vertices_across_objects(objs, threshold=0.05):
     """
@@ -380,7 +380,7 @@ def fix_invalid_split_normals(region_objs):
                 print(f"⚠️ Could not fix invalid normal at loop {li} (vertex {vert_index}) in {obj.name}")
 
         me.normals_split_custom_set(loop_normals)
-        print(f"🔧 Completed normal fix for {obj.name}")
+        # print(f"🔧 Completed normal fix for {obj.name}")
 
 def merge_near_zero_edges(region_objs, threshold=1e-6, max_iterations=10):
     print(f"🔧 Merging near-zero-length edges (≤ {threshold}) across {len(region_objs)} region meshes...")
@@ -423,111 +423,65 @@ def merge_near_zero_edges(region_objs, threshold=1e-6, max_iterations=10):
             merged_total += collapse_count
             iterations += 1
 
-        print(f"✅ {obj.name}: {merged_total} edge(s) collapsed in {iterations} iteration(s)")
+        # print(f"✅ {obj.name}: {merged_total} edge(s) collapsed in {iterations} iteration(s)")
 
-def average_vertex_colors_globally(region_objs, threshold=0.001):
-    print(f"🎨 Globally averaging vertex colors between {len(region_objs)} region meshes...")
+def reapply_vertex_colors(region_objs, threshold=0.001):
+    print(f"🎨 Reapplying vertex colors to {len(region_objs)} region meshes...")
 
-    # ─── 0) Convert any per‑loop (corner) "_loop" attrs back to point‑domain ─────────────────────
+    def linear_to_srgb(c: float) -> float:
+        """
+        Convert a linear-light value to sRGB‑encoded.
+        """
+        if c <= 0.0031308:
+            return c * 12.92
+        else:
+            return 1.055 * (c ** (1/2.4)) - 0.055
+
     for obj in region_objs:
         me = obj.data
 
         # find all corner‑domain attrs whose names end with "_loop"
-        loop_attrs = [attr for attr in me.color_attributes
-                      if attr.domain == 'CORNER' and attr.name.endswith('_loop')]
+        loop_attrs = [
+            attr for attr in me.color_attributes
+            if attr.domain == 'CORNER' and attr.name.endswith('_loop')
+        ]
         if not loop_attrs:
             continue
 
         for loop_attr in loop_attrs:
-            # target point‑domain name
             point_name = loop_attr.name[:-5]  # strip "_loop"
-            # create (or reuse) a point‑domain attribute
             dst = me.color_attributes.get(point_name)
             if not dst:
                 dst = me.color_attributes.new(
                     name=point_name,
-                    type=loop_attr.data_type,
+                    type='FLOAT_COLOR',
                     domain='POINT'
                 )
 
             # accumulate loop colors per vertex
-            accum = [Vector((0.0,0.0,0.0,0.0)) for _ in me.vertices]
+            accum  = [Vector((0.0, 0.0, 0.0, 0.0)) for _ in me.vertices]
             counts = [0] * len(me.vertices)
+
             for li, loop in enumerate(me.loops):
-                vi = loop.vertex_index
-                accum[vi]  += Vector(loop_attr.data[li].color)
+                vi  = loop.vertex_index
+                col = Vector(loop_attr.data[li].color)
+                accum[vi]  += col
                 counts[vi] += 1
 
-            # write averaged back into the point‑domain attr
-            for vi, v in enumerate(me.vertices):
+            # write averaged (with gamma correction) back into the point‑domain attr
+            for vi in range(len(me.vertices)):
                 if counts[vi] > 0:
-                    dst.data[vi].color = accum[vi] / counts[vi]
-            
+                    avg = accum[vi] / counts[vi]
+                    lin = Vector((
+                        linear_to_srgb(avg.x),
+                        linear_to_srgb(avg.y),
+                        linear_to_srgb(avg.z),
+                        avg[3]  # leave alpha unchanged
+                    ))
+                    dst.data[vi].color = lin
+
+            # remove the corner‑domain layer when done
             me.color_attributes.remove(loop_attr)
-
-    # ─── 1) Build KD‑tree on world‑space vertex positions ───────────────────────────────────
-    
-    vertex_data = []
-    tree = KDTree(sum(len(obj.data.vertices) for obj in region_objs))
-
-    index = 0
-    for obj in region_objs:
-        src = obj.data
-        if not src.color_attributes:
-            continue
-
-        wm = obj.matrix_world
-        for i, v in enumerate(src.vertices):
-            co = wm @ v.co
-            tree.insert(co, index)
-            vertex_data.append((obj, i, co))
-            index += 1
-
-    tree.balance()
-
-    # ─── 2) Cluster nearby verts ───────────────────────────────────────────────────────────
-    clusters = []
-    visited = set()
-
-    for i, (_, _, co) in enumerate(vertex_data):
-        if i in visited:
-            continue
-        group = [i]
-        visited.add(i)
-        for (_, idx, _) in tree.find_range(co, threshold):
-            if idx not in visited:
-                group.append(idx)
-                visited.add(idx)
-        if len(group) > 1:
-            clusters.append(group)
-
-    # ─── 3) Find all point‑domain attrs to average ─────────────────────────────────────────
-    attr_names = set()
-    for obj in region_objs:
-        for attr in obj.data.color_attributes:
-            if attr.domain == 'POINT':
-                attr_names.add(attr.name)
-
-    # ─── 4) Average each attr over each cluster ────────────────────────────────────────────
-    for attr_name in attr_names:
-        for cluster in clusters:
-            accum = Vector((0.0, 0.0, 0.0, 0.0))
-            count = 0
-            for idx in cluster:
-                obj, vi, _ = vertex_data[idx]
-                attr = obj.data.color_attributes.get(attr_name)
-                if attr:
-                    accum += Vector(attr.data[vi].color)
-                    count += 1
-            if count > 0:
-                avg = accum / count
-                for idx in cluster:
-                    obj, vi, _ = vertex_data[idx]
-                    attr = obj.data.color_attributes.get(attr_name)
-                    if attr:
-                        attr.data[vi].color = avg
-
-    print(f"✅ Averaged colors globally across {len(clusters)} vertex clusters.")
 
 def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
     print("🧹 Deleting loose and degenerate geometry in region meshes...")
@@ -575,10 +529,10 @@ def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
             bm.free()
 
             iterations += 1
-            print(f"  • {obj.name} pass {iterations}: "
-                  f"{len(loose_verts)} loose verts, "
-                  f"{len(loose_edges)} loose edges, "
-                  f"{len(degenerate_faces)} degenerate faces")
+            # print(f"  • {obj.name} pass {iterations}: "
+            #       f"{len(loose_verts)} loose verts, "
+            #       f"{len(loose_edges)} loose edges, "
+            #       f"{len(degenerate_faces)} degenerate faces")
 
 def finalize_region_meshes(
         edge_snap_threshold=0.03,
@@ -595,8 +549,8 @@ def finalize_region_meshes(
         return
 
     print(f"🔧 Finalizing {len(region_objs)} region meshes:")
-    for obj in region_objs:
-        print(f"   • {obj.name}")
+    # for obj in region_objs:
+        # print(f"   • {obj.name}")
 
     merge_near_zero_edges(region_objs)
     delete_loose_and_degenerate(region_objs)
@@ -612,7 +566,7 @@ def finalize_region_meshes(
         merge_by_distance(obj, dist=merge_dist)
     delete_loose_and_degenerate(region_objs)
     triangulate_meshes(region_objs)
-    average_vertex_colors_globally(region_objs, threshold=0.1)
+    reapply_vertex_colors(region_objs, threshold=0.1)
     delete_loose_and_degenerate(region_objs)
     
     elapsed = time.perf_counter() - start

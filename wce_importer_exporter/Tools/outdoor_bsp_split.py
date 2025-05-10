@@ -206,6 +206,16 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, normal_map, pending_ob
     bm.to_mesh(me)
     bm.free()
 
+    if name == "R332_DMSPRITEDEF":
+        dst = me.color_attributes["Color_loop"]
+        # pull out the raw RGBA values into a tuple
+        pt_col = tuple(dst.data[79].color)
+        print(f"🛠️  R332 pre‑finalize point color @ v79 = {pt_col}")
+        for li, loop in enumerate(me.loops):
+            if loop.vertex_index == 79:
+                corner_col = tuple(dst.data[li].color)
+                print(f"    Loop {li} on v79 has corner‑color = {corner_col}")
+
     # rename first UV layer if present
     if me.uv_layers:
         me.uv_layers[0].name = f"{name}_uv"
@@ -673,6 +683,10 @@ def run_outdoor_bsp_split(target_size=282.0):
             loops = (l for f in bm.faces for l in f.loops)
             for loop in loops:
                 loop[loop_col] = vertex_colors[loop.vert.index]
+            loops = (l for f in bm.faces for l in f.loops)
+            for li, loop in enumerate(loops):
+                if loop.vert.index == 1335:
+                    print(f"    Loop {li} for v1335 got color = {loop[loop_col]}")
 
         region_counter = [1]; world_nodes = []; worldnode_idx = [1]
         recursive_bsp_split(bm, vol_min, vol_max, target_size,
@@ -716,9 +730,3 @@ def run_outdoor_bsp_split(target_size=282.0):
     bpy.context.view_layer.update()  # Force final update
 
     print("BSP splitting complete.")
-
-# ------------------------------------------------------------
-# --- Run the Script
-# ------------------------------------------------------------
-
-#run_outdoor_bsp_split(target_size=282.0)
