@@ -39,11 +39,17 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
     for ob_B in objs:
         me = ob_B.data
         me.calc_normals_split()
+        me.use_auto_smooth = True
 
         bm = bmesh.new()
         bm.from_mesh(me)
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
+
+        ln_layer = bm.loops.layers.float_vector.new("orig_normals")
+        loops = (l for f in bm.faces for l in f.loops)
+        for loop in loops:
+            loop[ln_layer] = me.loops[loop.index].normal
 
         minB, maxB = object_world_aabb(ob_B)
         # collect all hits per edge: {edge: [(t, interp_normal), ...]}
@@ -78,7 +84,6 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
             continue
 
         # 2) For each edge, sort its hits and subdivide *sequentially*
-        normal_map = {}
         for edge, hits in edge_hits.items():
             # skip degenerate
             if not edge.is_valid:
@@ -107,7 +112,6 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
                     None
                 )
                 if new_vert:
-                    normal_map[new_vert.index] = interp_n
 
                     # find the segment from new_vert to the original v2
                     # so next subdivision happens on that piece
@@ -117,22 +121,22 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
                             break
 
                 offset = t
-
+            
         # 3) write mesh & reapply custom normals
         bm.to_mesh(me)
         bm.free()
-        me.use_auto_smooth = True
 
-        loop_normals = []
-        for loop in me.loops:
-            loop_normals.append(
-                normal_map.get(loop.vertex_index, me.vertices[loop.vertex_index].normal)
-            )
-        me.normals_split_custom_set(loop_normals)
+        for poly in me.polygons:
+            poly.use_smooth = True
+
+        me.use_auto_smooth = True
+        custom_nors = [Vector(cd.vector) for cd in me.attributes["orig_normals"].data]
+        me.normals_split_custom_set(custom_nors)
+        me.attributes.remove(me.attributes["orig_normals"])
 
     print("✅ split_edges_to_snap_verts: done, all splits & normals preserved.")
 
-def _material_uv_normal_match(v1, v2, uv_layer, normal_angle_limit=45):
+def _material_uv_normal_match(v1, v2, uv_layer, normal_angle_limit=45, ln_layer=None):
     """Check if v1 and v2 share the same materials, UVs, and all loop normals are within angle limit."""
     def loop_data(v):
         uv_set = set()
@@ -143,7 +147,12 @@ def _material_uv_normal_match(v1, v2, uv_layer, normal_angle_limit=45):
                 mat_set.add(loop.face.material_index)
                 if uv_layer:
                     uv_set.add(tuple(loop[uv_layer].uv))
-                normals.append(loop.calc_normal())
+                if ln_layer is not None:
+                    # our pre–baked corner normals
+                    normals.append(loop[ln_layer].copy())
+                else:
+                    # fallback to fresh split normals
+                    normals.append(loop.calc_normal())
         return mat_set, uv_set, normals
 
     mats1, uvs1, normals1 = loop_data(v1)
@@ -164,14 +173,22 @@ def _material_uv_normal_match(v1, v2, uv_layer, normal_angle_limit=45):
 
 def merge_by_distance(obj, dist=0.001, normal_angle_limit=45):
     """
-    Merges vertices that are within `dist` of each other AND whose
-    UV/material/normal sets all match within `normal_angle_limit`.
+    Merges vertices that are within dist of each other AND whose
+    UV/material/normal sets all match within normal_angle_limit.
     """
     me = obj.data
     bm = bmesh.new()
     bm.from_mesh(me)
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
+
+    me.calc_normals_split()
+    me.use_auto_smooth = True
+
+    ln_layer = bm.loops.layers.float_vector.new("orig_normals")
+    loops = (l for f in bm.faces for l in f.loops)
+    for loop in loops:
+        loop[ln_layer] = me.loops[loop.index].normal
 
     uv_layer = bm.loops.layers.uv.active  # may be None
 
@@ -202,7 +219,7 @@ def merge_by_distance(obj, dist=0.001, normal_angle_limit=45):
                 continue
             v2 = verts[j]
             # only union if material, UVs and normals all line up
-            if _material_uv_normal_match(v, v2, uv_layer, normal_angle_limit):
+            if _material_uv_normal_match(v, verts[j], uv_layer, normal_angle_limit, ln_layer):
                 union(i, j)
 
     # 4) Gather clusters by their root
@@ -223,6 +240,26 @@ def merge_by_distance(obj, dist=0.001, normal_angle_limit=45):
     bm.to_mesh(me)
     bm.free()
 
+    for poly in me.polygons:
+        poly.use_smooth = True
+
+    for e in me.edges:
+        e.use_edge_sharp = False
+
+    me.use_auto_smooth = True
+    me.auto_smooth_angle = math.pi
+
+    ln_attr = me.attributes.get("orig_normals")
+    if ln_attr:
+        # build flat list of normals in loop order
+        custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
+        me.normals_split_custom_set(custom_nors)
+        me.attributes.remove(me.attributes.get("orig_normals"))
+
+    # clear any sharp‑edge flags
+    for e in me.edges:
+        e.use_edge_sharp = False
+
     # print(f"✅ Merged {merged} vertices in {len(clusters)} cluster(s) "
     #       f"(threshold={dist}, angle<{normal_angle_limit}°)")
 
@@ -230,49 +267,42 @@ def triangulate_meshes(objs):
     """Triangulate faces and very quickly preserve custom split normals."""
     for ob in objs:
         me = ob.data
-        me.use_auto_smooth = True
-        me.calc_normals_split()
-
-        # 1) Cache old loop normals and build direct lookup tables
-        old_loop_normals = [loop.normal.copy() for loop in me.loops]
-        old_loop_to_face = [0] * len(me.loops)
-        old_loop_to_vert = [loop.vertex_index for loop in me.loops]
-
-        # build loop→face index mapping
-        for face in me.polygons:
-            for li in face.loop_indices:
-                old_loop_to_face[li] = face.index
-
-        # build quick (face, vert) → normal dict
-        normal_map = {
-            (old_loop_to_face[i], old_loop_to_vert[i]) : old_loop_normals[i]
-            for i in range(len(old_loop_normals))
-        }
-
+        
         # 2) Triangulate via BMesh
         bm = bmesh.new()
         bm.from_mesh(me)
+
+        me.calc_normals_split()
+        me.use_auto_smooth = True
+
+        ln_layer = bm.loops.layers.float_vector.new("orig_normals")
+        loops = (l for f in bm.faces for l in f.loops)
+        for loop in loops:
+            loop[ln_layer] = me.loops[loop.index].normal
+        
         bmesh.ops.triangulate(bm, faces=bm.faces[:])
         bm.to_mesh(me)
         bm.free()
 
-        # 3) Recompute split normals and build a new loop→face map
-        me.calc_normals_split()
-        new_loop_to_face = [0] * len(me.loops)
-        for face in me.polygons:
-            for li in face.loop_indices:
-                new_loop_to_face[li] = face.index
+        for poly in me.polygons:
+            poly.use_smooth = True
 
-        # 4) Fill new normals in one pass
-        new_normals = []
-        loops = me.loops
-        verts = me.vertices
-        for li, loop in enumerate(loops):
-            key = (new_loop_to_face[li], loop.vertex_index)
-            n = normal_map.get(key, verts[loop.vertex_index].normal)
-            new_normals.append(n)
+        for e in me.edges:
+            e.use_edge_sharp = False
 
-        me.normals_split_custom_set(new_normals)
+        me.use_auto_smooth = True
+        me.auto_smooth_angle = math.pi
+
+        ln_attr = me.attributes.get("orig_normals")
+        if ln_attr:
+            # build flat list of normals in loop order
+            custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
+            me.normals_split_custom_set(custom_nors)
+            me.attributes.remove(me.attributes.get("orig_normals"))
+
+        # clear any sharp‑edge flags
+        for e in me.edges:
+            e.use_edge_sharp = False
 
         # print(f"✅ {ob.name}: triangulated and normals preserved.")
 
@@ -425,7 +455,7 @@ def merge_near_zero_edges(region_objs, threshold=1e-6, max_iterations=10):
 
         # print(f"✅ {obj.name}: {merged_total} edge(s) collapsed in {iterations} iteration(s)")
 
-def reapply_vertex_colors(region_objs, threshold=0.001):
+def average_vertex_colors_globally(region_objs, threshold=0.001):
     print(f"🎨 Reapplying vertex colors to {len(region_objs)} region meshes...")
 
     def linear_to_srgb(c: float) -> float:
@@ -436,7 +466,8 @@ def reapply_vertex_colors(region_objs, threshold=0.001):
             return c * 12.92
         else:
             return 1.055 * (c ** (1/2.4)) - 0.055
-
+        
+    # ─── 0) Convert any per‑loop (corner) "_loop" attrs back to point‑domain ─────────────────────
     for obj in region_objs:
         me = obj.data
 
@@ -482,6 +513,69 @@ def reapply_vertex_colors(region_objs, threshold=0.001):
 
             # remove the corner‑domain layer when done
             me.color_attributes.remove(loop_attr)
+
+    # # ─── 1) Build KD‑tree on world‑space vertex positions ───────────────────────────────────
+    # vertex_data = []
+    # tree = KDTree(sum(len(obj.data.vertices) for obj in region_objs))
+    # index = 0
+
+    # for obj in region_objs:
+    #     src = obj.data
+    #     if not src.color_attributes:
+    #         continue
+
+    #     wm = obj.matrix_world
+
+    #     for i, v in enumerate(src.vertices):
+    #         co = wm @ v.co
+    #         tree.insert(co, index)
+    #         vertex_data.append((obj, i, co))
+    #         index += 1
+
+    # tree.balance()
+
+    # # ─── 2) Cluster nearby verts ───────────────────────────────────────────────────────────
+    # clusters = []
+    # visited = set()
+    # for i, (_, _, co) in enumerate(vertex_data):
+    #     if i in visited:
+    #         continue
+    #     group = [i]
+    #     visited.add(i)
+    #     for (_, idx, _) in tree.find_range(co, threshold):
+    #         if idx not in visited:
+    #             group.append(idx)
+    #             visited.add(idx)
+    #     if len(group) > 1:
+    #         clusters.append(group)
+
+    # # ─── 3) Find all point‑domain attrs to average ─────────────────────────────────────────
+    # attr_names = set()
+    # for obj in region_objs:
+    #     for attr in obj.data.color_attributes:
+    #         if attr.domain == 'POINT':
+    #             attr_names.add(attr.name)
+
+    # # ─── 4) Average each attr over each cluster ────────────────────────────────────────────
+    # for attr_name in attr_names:
+    #     for cluster in clusters:
+    #         accum = Vector((0.0, 0.0, 0.0, 0.0))
+    #         count = 0
+    #         for idx in cluster:
+    #             obj, vi, _ = vertex_data[idx]
+    #             attr = obj.data.color_attributes.get(attr_name)
+    #             if attr:
+    #                 accum += Vector(attr.data[vi].color)
+    #                 count += 1
+    #         if count > 0:
+    #             avg = accum / count
+    #             for idx in cluster:
+    #                 obj, vi, _ = vertex_data[idx]
+    #                 attr = obj.data.color_attributes.get(attr_name)
+    #                 if attr:
+    #                     attr.data[vi].color = avg
+
+    # print(f"✅ Averaged colors globally across {len(clusters)} vertex clusters.")
 
 def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
     print("🧹 Deleting loose and degenerate geometry in region meshes...")
@@ -566,7 +660,7 @@ def finalize_region_meshes(
         merge_by_distance(obj, dist=merge_dist)
     delete_loose_and_degenerate(region_objs)
     triangulate_meshes(region_objs)
-    reapply_vertex_colors(region_objs, threshold=0.1)
+    average_vertex_colors_globally(region_objs, threshold=0.1)
     delete_loose_and_degenerate(region_objs)
     
     elapsed = time.perf_counter() - start

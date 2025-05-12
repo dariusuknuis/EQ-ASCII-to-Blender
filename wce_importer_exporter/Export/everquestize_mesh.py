@@ -288,8 +288,9 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
 
     if mesh_data['vertex_colors']:
         dst = mesh.attributes.new(name="Color", type='FLOAT_COLOR', domain='POINT')
-        for i, col in enumerate(mesh_data['vertex_colors']):
-            dst.data[i].color = col
+        # write in sorted order:
+        for new_i, old_i in enumerate(sorted_vertex_indices):
+            dst.data[new_i].color = mesh_data['vertex_colors'][old_i]
 
     if 'vertex_materials' in mesh_data:
         vertex_material_attribute = mesh.attributes.new(name="Vertex_Material_Index", type='INT', domain='POINT')
