@@ -151,10 +151,10 @@ def create_materials(materials, textures, file_path, node_group_cache):
 
         # Add custom properties from simplespritedef_parse
         mat["NUMFRAMES"] = texture_info.get('num_frames', 1)
-        mat["SLEEP"] = texture_info.get('sleep', 0)
-        mat["SKIPFRAMES"] = bool(texture_info.get('skipframes', 0))
-        mat["ANIMATED"] = bool(texture_info.get('animated_flag', 0))
-        mat["CURRENTFRAME"] = texture_info.get('current_frame', 0)
+        mat["SLEEP"] = texture_info.get('sleep', "NULL")
+        mat["SKIPFRAMES"] = texture_info.get('skipframes', "NULL")
+        mat["ANIMATED"] = texture_info.get('animated_flag', "NULL")
+        mat["CURRENTFRAME"] = texture_info.get('current_frame', "NULL")
         
         # Process overlay nodes regardless of animation
         if 'frames' in texture_info and texture_info['frames']:

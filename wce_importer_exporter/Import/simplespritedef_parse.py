@@ -18,27 +18,31 @@ def simplespritedef_parse(r, parse_property, current_line):
     
     # Parse SKIPFRAMES? (nullable)
     records = parse_property(r, "SKIPFRAMES?", 1)
-    if records[1] != "NULL":
+    if records[1] == "NULL":
+        texture['skipframes'] = records[1]
+    else:  
         texture['skipframes'] = int(records[1])
 
     # Parse ANIMATED? (nullable)
     records = parse_property(r, "ANIMATED?", 1)
-    if records[1] != "NULL":
+    if records[1] == "NULL":
+        texture['animated_flag'] = records[1]
+    else:  
         texture['animated_flag'] = int(records[1])
     
-    # Parse SLEEP?
+    # Parse SLEEP? (nullable)
     records = parse_property(r, "SLEEP?", 1)
     if records[1] == "NULL":
-        texture['sleep'] = None
-        texture['animated'] = False
+        texture['sleep'] = records[1]
     else:
         sleep_value = int(records[1])
         texture['sleep'] = sleep_value
-        texture['animated'] = sleep_value > 0
 
     # Parse CURRENTFRAME? (nullable)
     records = parse_property(r, "CURRENTFRAME?", 1)
-    if records[1] != "NULL":
+    if records[1] == "NULL":
+        texture['current_frame'] = records[1]
+    else:
         texture['current_frame'] = int(records[1])
 
     # Parse NUMFRAMES
