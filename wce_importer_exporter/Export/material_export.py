@@ -65,10 +65,10 @@ def write_materials_and_sprites(mesh, file, written_sprites=set(), written_mater
             primary_node, layer_node, detail_node, palette_mask_node, palette_nodes = identify_nodes(material)
             tag_index = material.get("TAGINDEX", 0)
             variation = material.get("VARIATION", 0)
-            skipframes = "NULL" if not material.get("SKIPFRAMES", False) else 1
-            animated = 1 if material.get("ANIMATED", False) else "NULL"
+            skipframes = material.get("SKIPFRAMES", "NULL")
+            animated = material.get("ANIMATED", "NULL")
             sleep = material.get("SLEEP", 0)
-            currentframe = material.get("CURRENTFRAME", "NULL") if material.get("CURRENTFRAME", 0) else "NULL"
+            currentframe = material.get("CURRENTFRAME", "NULL")
             simple_sprite_tag_index = material.get("SIMPLESPRITETAGINDEX", 0)
 
             # Determine sprite tag for the SIMPLESPRITEDEF header.

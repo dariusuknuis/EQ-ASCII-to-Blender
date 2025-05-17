@@ -1,7 +1,9 @@
-import bpy
+import bpy, bmesh
 import json
 import numpy as np
 import mathutils
+from mathutils import Vector
+from math import pi
 
 EPSILON = 1e-6
 
@@ -263,118 +265,140 @@ def create_zone(zone):
     regions  = zone['region_list']
     userdata = zone.get('userdata', "")
 
-    # 1) gather meshes named R<idx+1>_DMSPRITEDEF
-    mesh_objs = []
+    # 1) gather region empties named "R{index:06d}"
+    empties = []
     for r in regions:
-        nm = f"R{r+1}_DMSPRITEDEF"
-        o  = bpy.data.objects.get(nm)
-        if o and o.type=='MESH':
-            mesh_objs.append(o)
+        nm = f"R{r+1:06d}"
+        e  = bpy.data.objects.get(nm)
+        if e and e.type=='EMPTY':
+            empties.append(e)
         else:
-            print(f"[create_zone] warning: '{nm}' not found")
-
-    if not mesh_objs:
-        print(f"[create_zone] no meshes for {name}")
+            print(f"[create_zone] warning: empty '{nm}' not found")
+    if not empties:
+        print(f"[create_zone] no empties for {name!r}")
         return None
 
-    # 2) collect verts
-    verts = []
-    for o in mesh_objs:
-        M = o.matrix_world
-        for v in o.data.vertices:
-            co = M @ v.co
-            verts.append((co.x,co.y,co.z))
-    verts   = np.array(verts)
-    aabb_min= verts.min(axis=0)
-    aabb_max= verts.max(axis=0)
-    dims    = aabb_max - aabb_min
-    center  = (aabb_min + aabb_max)/2.0
-    center_xy = center[:2]
+    # 2) compute AABB including each empty’s empty_display_size
+    min_x = min(e.location.x - e.empty_display_size for e in empties)
+    max_x = max(e.location.x + e.empty_display_size for e in empties)
+    min_y = min(e.location.y - e.empty_display_size for e in empties)
+    max_y = max(e.location.y + e.empty_display_size for e in empties)
+    min_z = min(e.location.z - e.empty_display_size for e in empties)
+    max_z = max(e.location.z + e.empty_display_size for e in empties)
 
-    # 3) candidates…
-    cands = []
-    # cube
-    vol = dims.prod()
-    cands.append({'type':'cube','dims':dims,'min':aabb_min,'max':aabb_max,'volume':vol})
-    # sphere
-    d = np.linalg.norm(verts - center,axis=1).max()
-    cands.append({'type':'sphere','center':center,'radius':d,'volume':4/3*np.pi*d**3})
-    # cylinder
-    h = dims[2]
-    r_ = max(np.linalg.norm(v[:2]-center_xy) for v in verts)
-    cands.append({'type':'cylinder','radius':r_,'height':h,
-                  'z_min':aabb_min[2],'z_max':aabb_max[2],
-                  'center_xy':center_xy,'volume':np.pi*r_**2*h})
-    # cone
-    h2 = max(h, EPSILON)
-    rr = 0.0
-    for v in verts:
-        dz = aabb_max[2]-v[2]
-        if dz< EPSILON: continue
-        rr = max(rr, np.linalg.norm(v[:2]-center_xy)*h2/dz)
-    cands.append({'type':'cone','base_radius':rr,'height':h2,
-                  'apex_z':aabb_max[2],'base_z':aabb_min[2],
-                  'center_xy':center_xy,'volume':1/3*np.pi*rr**2*h2})
+    # center & full dims
+    center = Vector((
+        (min_x + max_x) * 0.5,
+        (min_y + max_y) * 0.5,
+        (min_z + max_z) * 0.5,
+    ))
+    dims = Vector((
+        (max_x - min_x),
+        (max_y - min_y),
+        (max_z - min_z),
+    ))
 
-    # 4) filter + pick
-    valid = []
-    for c in cands:
-        ok = True
-        t = c['type']
-        if t=='sphere':
-            ok = all(np.linalg.norm(v-c['center']) <= c['radius']+EPSILON for v in verts)
-        elif t=='cylinder':
-            ok = all(c['z_min']-EPSILON <= v[2] <= c['z_max']+EPSILON and
-                     np.linalg.norm(v[:2]-c['center_xy']) <= c['radius']+EPSILON
-                     for v in verts)
-        elif t=='cone':
-            ok = all(c['base_z']-EPSILON <= v[2] <= c['apex_z']+EPSILON and
-                     np.linalg.norm(v[:2]-c['center_xy']) <=
-                     c['base_radius']*((c['apex_z']-v[2])/c['height'])+EPSILON
-                     for v in verts)
-        if ok or t=='cube':
-            valid.append(c)
+    # 3) build initial BMesh cube covering that box
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    bmesh.ops.scale(    bm, vec=dims,   verts=bm.verts)
+    bmesh.ops.translate(bm, vec=center, verts=bm.verts)
 
-    best = min(valid, key=lambda x: x['volume'])
+    # 4) collect splitting planes by BFS from each LeafMesh_* whose region_tag matches
+    region_tags = { f"R{r+1:06d}" for r in regions }
+    visited_ids = set()
+    frontier    = []
 
-    # 5) add primitive
-    if best['type']=='cube':
-        bpy.ops.mesh.primitive_cube_add(size=2, location=center.tolist())
-        obj = bpy.context.active_object
-        obj.scale = best['dims']/2.0
+    # seed with worldnode IDs from leaf meshes
+    for o in bpy.data.objects:
+        if o.type=='MESH' and o.data.name.startswith("LeafMesh_"):
+            if o.get("region_tag") in region_tags:
+                wid = o.get("worldnode")
+                if wid is not None:
+                    visited_ids.add(wid)
+                    frontier.append(wid)
 
-    elif best['type']=='sphere':
-        bpy.ops.mesh.primitive_uv_sphere_add(radius=1, location=best['center'].tolist())
-        obj = bpy.context.active_object
-        obj.scale = (best['radius'],)*3
+    # climb up to all BSPPlaneMesh parents
+    planes = []
+    while frontier:
+        cur = frontier.pop(0)
+        for o in bpy.data.objects:
+            if o.type=='MESH' and o.data.name=="BSPPlaneMesh":
+                ft, bt = o.get("front_tree"), o.get("back_tree")
+                if ft==cur or bt==cur:
+                    pid = o.get("worldnode")
+                    if pid not in visited_ids:
+                        visited_ids.add(pid)
+                        frontier.append(pid)
+                    n = Vector(o["normal"]).normalized()
+                    d = -(float(o["d"]))
+                    planes.append((n,d))
 
-    elif best['type']=='cylinder':
-        cx,cy = best['center_xy']
-        zc = (best['z_min']+best['z_max'])/2.0
-        bpy.ops.mesh.primitive_cylinder_add(radius=1, depth=2, location=(cx,cy,zc))
-        obj = bpy.context.active_object
-        obj.scale = (best['radius'],best['radius'],best['height']/2.0)
+    # 5) dedupe planes by rounded (nx,ny,nz,d)
+    uniq = []
+    seen = set()
+    for n,d in planes:
+        key = (round(n.x,6), round(n.y,6), round(n.z,6), round(d,6))
+        if key not in seen:
+            seen.add(key)
+            uniq.append((n,d))
 
-    else:  # cone
-        cx,cy = best['center_xy']
-        h    = best['height']
-        zc   = best['base_z']+h/2.0
-        bpy.ops.mesh.primitive_cone_add(radius1=best['base_radius'],
-                                        radius2=0, depth=h,
-                                        location=(cx,cy,zc))
-        obj = bpy.context.active_object
+    # precompute box corners & empty centers
+    corners   = [ Vector((x,y,z)) 
+                  for x in (min_x,max_x)
+                  for y in (min_y,max_y)
+                  for z in (min_z,max_z) ]
+    empty_pts = [ e.matrix_world.to_translation() for e in empties ]
 
-    obj.name = name
+    # 6) bisect the BMesh cube by each valid plane
+    geom_all = bm.faces[:] + bm.edges[:] + bm.verts[:]
+    for n,d in uniq:
+        # plane eq: n·X = d
+        ds = [ c.dot(n) - d for c in corners ]
+        # skip if plane doesn't intersect the box at all
+        if max(ds) < -EPSILON or min(ds) > EPSILON:
+            continue
 
-    # 6) custom props
+        # check empty-safety: all on one side?
+        es = [ p.dot(n) - d for p in empty_pts ]
+        if   all(s >= -EPSILON for s in es):
+            clear_outer, clear_inner = False, True   # keep + side
+        elif all(s <=  EPSILON for s in es):
+            clear_outer, clear_inner = True, False   # keep – side
+        else:
+            continue
+
+        bmesh.ops.bisect_plane(
+            bm,
+            geom        = geom_all,
+            plane_co    = n * d,
+            plane_no    = n,
+            clear_outer = clear_outer,
+            clear_inner = clear_inner,
+            use_snap_center=False,
+        )
+
+        boundary_edges = [e for e in bm.edges if len(e.link_faces) == 1]
+        if boundary_edges:
+            bmesh.ops.holes_fill(bm, edges=boundary_edges)
+
+        geom_all = bm.faces[:] + bm.edges[:] + bm.verts[:]
+
+    # 7) write mesh & link object
+    me  = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(obj)
+
+    # 5) custom props
     obj["REGIONLIST"] = json.dumps(regions)
     obj["USERDATA"]   = userdata
 
-    # 7) pick zone material
+    # 6) pick zone material & overlays (unchanged)
     prefix = name[:2]
     if prefix not in {"DR","WT","LA","SL","VW","W2","W3"}:
         prefix = userdata[:2]
-
     mat_map = {
       "DR":("DRY_ZONE",     0xFFFFFF,0.00),
       "WT":("WATER_ZONE",   0x0F2417,0.75),
@@ -385,72 +409,51 @@ def create_zone(zone):
       "W3":("WATER3_ZONE",  0xFFFFFF,0.10),
     }
     base_name, hexcol, alpha = mat_map.get(prefix, (None,None,None))
-    if not base_name:
-        return obj
+    if base_name:
+        do_pvp = (len(name)>=3 and name[2]=="P") or (len(userdata)>=3 and userdata[2]=="P")
+        do_tp  = (len(name)>=5 and name[3:5]=="TP") or (len(userdata)>=5 and userdata[3:5]=="TP")
+        do_slp = "_S_" in name or "_S_" in userdata
 
-    # detect which overlays apply
-    do_pvp = len(name)>=3  and name[2:3]=="P"  or len(userdata)>=3  and userdata[2:3]=="P"
-    do_tp  = len(name)>=5  and name[3:5]=="TP" or len(userdata)>=5 and userdata[3:5]=="TP"
-    do_slp = "_S_" in name or "_S_" in userdata
+        overlay_codes = []
+        if do_pvp: overlay_codes.append("PVP")
+        if do_tp:  overlay_codes.append("TP")
+        if do_slp: overlay_codes.append("SLP")
 
-    overlay_codes = []
-    if do_pvp: overlay_codes.append("PVP")
-    if do_tp:  overlay_codes.append("TP")
-    if do_slp: overlay_codes.append("SLP")
+        base_key = base_name[:-5]
+        suffix   = "".join(f"_{c}" for c in overlay_codes)
+        final_name = f"{base_key}{suffix}_ZONE"
 
-    # build final material name
-    base_key = base_name[:-5]  # strip "_ZONE"
-    suffix   = "".join(f"_{code}" for code in overlay_codes)
-    final_name = f"{base_key}{suffix}_ZONE"
-
-    # get or create/duplicate
-    mat = bpy.data.materials.get(final_name)
-    if not mat:
-        # if no overlays, reuse or create the plain base
-        if not overlay_codes:
-            mat = bpy.data.materials.get(base_name)
-            if not mat:
-                mat = bpy.data.materials.new(base_name)
+        mat = bpy.data.materials.get(final_name)
+        if not mat:
+            if not overlay_codes:
+                mat = bpy.data.materials.get(base_name) or bpy.data.materials.new(base_name)
                 mat.use_nodes = True
-        else:
-            # overlays needed: if base already exists, copy it; otherwise new
-            src = bpy.data.materials.get(base_name)
-            if src:
-                mat = src.copy()
             else:
-                mat = bpy.data.materials.new(base_name)
+                src = bpy.data.materials.get(base_name)
+                mat = src.copy() if src else bpy.data.materials.new(base_name)
                 mat.use_nodes = True
-            mat.name = final_name
+                mat.name = final_name
+            mat.blend_method         = 'BLEND'
+            mat.use_backface_culling = True
+            bsdf = mat.node_tree.nodes.get("Principled BSDF")
+            if bsdf:
+                r = ((hexcol>>16)&0xFF)/255
+                g = ((hexcol>>8 )&0xFF)/255
+                b = ( hexcol     &0xFF)/255
+                bsdf.inputs["Base Color"].default_value = (r,g,b,1)
+                bsdf.inputs["Alpha"].default_value      = alpha
 
-        # initialize nodes on brand‑new materials
-        if mat.use_nodes is False:
-            mat.use_nodes = True
-        mat.blend_method = 'BLEND'
-        mat.use_backface_culling = True
+        if obj.data.materials:
+            obj.data.materials[0] = mat
+        else:
+            obj.data.materials.append(mat)
 
-        # configure the Principled BSDF
-        bsdf = mat.node_tree.nodes.get("Principled BSDF")
-        if bsdf:
-            r = ((hexcol>>16)&0xFF)/255
-            g = ((hexcol>>8)&0xFF)/255
-            b = ( hexcol    &0xFF)/255
-            bsdf.inputs["Base Color"].default_value = (r,g,b,1)
-            bsdf.inputs["Alpha"].default_value      = alpha
-
-    # assign to the object
-    if obj.data.materials:
-        obj.data.materials[0] = mat
-    else:
-        obj.data.materials.append(mat)
-
-    # ─── 8) apply overlays ─────────────────────────────────────────────────────
-    # find the BSDF node in this material
-    bsdf_node = next((n for n in mat.node_tree.nodes if n.type=="BSDF_PRINCIPLED"), None)
-    if bsdf_node:
-        overlays = []
-        if do_pvp: overlays.append((ensure_pvp_node_group(),   "PVP"))
-        if do_tp:  overlays.append((ensure_tp_node_group(),    "TP"))
-        if do_slp: overlays.append((ensure_slippery_node_group(),"SLP"))
-        apply_overlays(mat, bsdf_node, overlays)
+        bsdf_node = next((n for n in mat.node_tree.nodes if n.type=="BSDF_PRINCIPLED"), None)
+        if bsdf_node:
+            overlays = []
+            if do_pvp: overlays.append((ensure_pvp_node_group(),   "PVP"))
+            if do_tp:  overlays.append((ensure_tp_node_group(),    "TP"))
+            if do_slp: overlays.append((ensure_slippery_node_group(),"SLP"))
+            apply_overlays(mat, bsdf_node, overlays)
 
     return obj
