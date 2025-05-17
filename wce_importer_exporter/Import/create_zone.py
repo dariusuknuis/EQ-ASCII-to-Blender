@@ -350,6 +350,41 @@ def create_zone(zone):
                   for z in (min_z,max_z) ]
     empty_pts = [ e.matrix_world.to_translation() for e in empties ]
 
+    # --- 5b) filter out any plane that truly bisects one of the region meshes ---
+    sprite_meshes = []
+    for e in empties:
+        sprite = e.get("SPRITE")
+        o = bpy.data.objects.get(sprite)
+        if o and o.type=='MESH':
+            sprite_meshes.append(o)
+
+    # cache world‐space coords
+    mesh_verts = {
+        o: [o.matrix_world @ v.co for v in o.data.vertices]
+        for o in sprite_meshes
+    }
+
+    # parameters you can tweak:
+    MESH_EPS       = 0.02    # how close to zero counts as “on the plane”
+    MIN_SLICE_FRAC = 0.05    # must have at least 5% of verts on each side to reject
+
+    filtered = []
+    for n,d in uniq:
+        keep = True
+        for verts in mesh_verts.values():
+            vals = [n.dot(co) - d for co in verts]
+            # count how many verts are well on the positive vs negative side
+            neg = sum(1 for v in vals if v < -MESH_EPS)
+            pos = sum(1 for v in vals if v > +MESH_EPS)
+            total = len(vals)
+            # if both sides have at least MIN_SLICE_FRAC fraction, we really bisected it → reject
+            if neg/total > MIN_SLICE_FRAC and pos/total > MIN_SLICE_FRAC:
+                keep = False
+                break
+        if keep:
+            filtered.append((n,d))
+    uniq = filtered
+
     # 6) bisect the BMesh cube by each valid plane
     geom_all = bm.faces[:] + bm.edges[:] + bm.verts[:]
     for n,d in uniq:
