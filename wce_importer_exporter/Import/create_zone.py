@@ -5,7 +5,7 @@ import mathutils
 from mathutils import Vector
 from math import pi
 
-EPSILON = 1e-6
+EPSILON = 1e-1
 
 # ─── OVERLAY NODE‑GROUP BUILDERS ────────────────────────────────────────────
 
@@ -343,12 +343,11 @@ def create_zone(zone):
             seen.add(key)
             uniq.append((n,d))
 
-    # precompute box corners & empty centers
+    # precompute box corners
     corners   = [ Vector((x,y,z)) 
                   for x in (min_x,max_x)
                   for y in (min_y,max_y)
                   for z in (min_z,max_z) ]
-    empty_pts = [ e.matrix_world.to_translation() for e in empties ]
 
     # --- 5b) filter out any plane that truly bisects one of the region meshes ---
     sprite_meshes = []
@@ -358,51 +357,63 @@ def create_zone(zone):
         if o and o.type=='MESH':
             sprite_meshes.append(o)
 
+    mesh_centers = []
+    for o in sprite_meshes:
+        # Blender gives you 8 box corners in object‑local space:
+        bbox_corners = [o.matrix_world @ Vector(c) for c in o.bound_box]
+        center = sum(bbox_corners, Vector()) / len(bbox_corners)
+        mesh_centers.append(center)
+
+    empty_pts = [e.matrix_world.to_translation() for e in empties]
+    empty_pts.extend(mesh_centers)
+
     # cache world‐space coords
     mesh_verts = {
         o: [o.matrix_world @ v.co for v in o.data.vertices]
         for o in sprite_meshes
     }
 
+    all_verts = []
+    for verts in mesh_verts.values():
+        all_verts.extend(verts)
+
     # parameters you can tweak:
-    MESH_EPS       = 0.02    # how close to zero counts as “on the plane”
+    MESH_EPS       = 0.05    # how close to zero counts as “on the plane”
     MIN_SLICE_FRAC = 0.05    # must have at least 5% of verts on each side to reject
 
-    filtered = []
-    for n,d in uniq:
-        keep = True
-        for verts in mesh_verts.values():
-            vals = [n.dot(co) - d for co in verts]
-            # count how many verts are well on the positive vs negative side
-            neg = sum(1 for v in vals if v < -MESH_EPS)
-            pos = sum(1 for v in vals if v > +MESH_EPS)
-            total = len(vals)
-            # if both sides have at least MIN_SLICE_FRAC fraction, we really bisected it → reject
-            if neg/total > MIN_SLICE_FRAC and pos/total > MIN_SLICE_FRAC:
-                keep = False
-                break
-        if keep:
-            filtered.append((n,d))
-    uniq = filtered
+    empty_pts = [e.matrix_world.to_translation() for e in empties]
+    empty_pts.extend(mesh_centers)
+    empty_pts.extend(all_verts)
 
-    # 6) bisect the BMesh cube by each valid plane
-    geom_all = bm.faces[:] + bm.edges[:] + bm.verts[:]
-    for n,d in uniq:
-        # plane eq: n·X = d
-        ds = [ c.dot(n) - d for c in corners ]
-        # skip if plane doesn't intersect the box at all
+    good_planes = []
+    for n, d in uniq:
+        # (a) skip if it misses the zone-box
+        ds = [c.dot(n) - d for c in corners]
         if max(ds) < -EPSILON or min(ds) > EPSILON:
             continue
 
-        # check empty-safety: all on one side?
-        es = [ p.dot(n) - d for p in empty_pts ]
+        # (b) decide which side to keep
+        es = [p.dot(n) - d for p in empty_pts]
         if   all(s >= -EPSILON for s in es):
-            clear_outer, clear_inner = False, True   # keep + side
+            clear_outer, clear_inner = False, True
         elif all(s <=  EPSILON for s in es):
-            clear_outer, clear_inner = True, False   # keep – side
+            clear_outer, clear_inner = True, False
         else:
             continue
 
+        # (c) reject if it bisects the combined vertex cloud
+        vals  = [n.dot(co) - d for co in all_verts]
+        neg   = sum(1 for v in vals if v < -MESH_EPS)
+        pos   = sum(1 for v in vals if v > +MESH_EPS)
+        total = len(vals)
+        if neg/total > MIN_SLICE_FRAC and pos/total > MIN_SLICE_FRAC:
+            continue
+
+        good_planes.append((n, d, clear_outer, clear_inner))
+
+    # 2) Now do your bisects in one pass, using the precomputed flags
+    geom_all = bm.faces[:] + bm.edges[:] + bm.verts[:]
+    for n, d, clear_outer, clear_inner in good_planes:
         bmesh.ops.bisect_plane(
             bm,
             geom        = geom_all,
