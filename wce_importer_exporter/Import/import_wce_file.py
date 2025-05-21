@@ -128,7 +128,7 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
     for obj in pending_objects:
         bpy.context.collection.objects.link(obj)
 
-    if bpy.data.objects.get("WorldTree_Root") and bpy.data.objects.get("REGION") and not bpy.data.objects.get("ZONE_BOUNDS"):
+    if bpy.data.objects.get("WorldTree_Root") and bpy.data.objects.get("REGION") and not bpy.data.objects.get("WORLD_BOUNDS"):
         create_bounding_volume_for_region_empties()
         modify_regions_and_worldtree()
     else:
@@ -148,7 +148,7 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         if obj.name.upper().endswith("_WORLDDEF"):
             worlddef_obj = obj
             for obj in bpy.data.objects:
-                if obj.name.upper().endswith("_ZONE") or obj.name == "WorldTree_Root" or obj.name == "REGION" or obj.name == "REGION_MESHES":
+                if "_ZONE" in obj.name or obj.name == "WorldTree_Root" or obj.name == "REGION" or obj.name == "REGION_MESHES":
                     # Parent without changing world transform:
                     obj.parent = worlddef_obj  
 

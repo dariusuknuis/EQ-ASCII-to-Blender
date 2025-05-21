@@ -33,7 +33,7 @@ def create_bounding_volume_for_region_empties():
     ))
     
     # Create an empty object with a cube display type
-    bounding_empty = bpy.data.objects.new("ZONE_BOUNDS", None)
+    bounding_empty = bpy.data.objects.new("WORLD_BOUNDS", None)
     bounding_empty.empty_display_type = 'CUBE'
     bounding_empty.location = center
     # Set the empty's display size to 1 so that its base geometry remains unit sized
@@ -102,14 +102,14 @@ def create_zone_bounds_intersect_geometry_node():
     group_output.location = (200, 0)
     gn_tree.outputs.new("NodeSocketGeometry", "Geometry")
     
-    # Create the Object Info node (points to the ZONE_BOUNDS empty)
-    zone_bounds_obj = bpy.data.objects.get("ZONE_BOUNDS")
+    # Create the Object Info node (points to the WORLD_BOUNDS empty)
+    zone_bounds_obj = bpy.data.objects.get("WORLD_BOUNDS")
     object_info_node = gn_tree.nodes.new("GeometryNodeObjectInfo")
     object_info_node.location = (-600, -200)
     if object_info_node and "Object" in object_info_node.inputs:
             object_info_node.inputs["Object"].default_value = zone_bounds_obj
     else:
-        print("Could not set the Object Info node to reference 'ZONE_BOUNDS'.")
+        print("Could not set the Object Info node to reference 'WORLD_BOUNDS'.")
     object_info_node.transform_space = 'RELATIVE'
     
     # Create the Mesh Cube node (2 m in each dimension)

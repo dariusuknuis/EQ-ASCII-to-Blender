@@ -3,6 +3,7 @@ import bmesh
 import mathutils
 from mathutils import Vector, Matrix, kdtree
 from mathutils.kdtree import KDTree
+from mathutils.bvhtree import BVHTree
 from create_bounding_sphere import create_bounding_sphere
 from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
 from create_worldtree import create_worldtree
@@ -317,24 +318,46 @@ def assign_back_trees(world_nodes):
 # --- Zone BVH and Point–in–Mesh Test (Using closest_point_on_mesh)
 # ------------------------------------------------------------
 
-def world_point_inside_zone(point, zone_obj):
+AABB_EPS  = 1e-1
+PLANE_EPS = 1e-4
+
+def build_zone_planes(zone_obj):
     """
-    Determine if a world-space point is inside a _ZONE volume using the mesh's
-    closest point routine. (Assumes zone normals point outwards.)
+    Returns a list of (world_normal, world_d) where
+        normal·X + d = 0
+    defines each face,
+    with normals pointing outward.
     """
-    # Convert the point into the zone's local space.
-    inv_mat = zone_obj.matrix_world.inverted()
-    local_point = inv_mat @ point
-    # Use the built-in method: closest_point_on_mesh returns (result, location, normal, index)
-    result, location, normal, index = zone_obj.closest_point_on_mesh(local_point)
-    if not result:
-        return False
-    # Transform the face center and normal back to world space.
-    poly = zone_obj.data.polygons[index]
-    poly_center = zone_obj.matrix_world @ poly.center
-    poly_normal = (zone_obj.matrix_world.to_3x3() @ poly.normal).normalized()
-    # A point is inside if (point - poly_center) dot (poly_normal) is negative.
-    return (point - poly_center).dot(poly_normal) < 0
+    wm3 = zone_obj.matrix_world.to_3x3()
+    wm4 = zone_obj.matrix_world
+
+    raw = []
+    for poly in zone_obj.data.polygons:
+        n_world = (wm3 @ poly.normal).normalized()
+        p_world = wm4 @ poly.center
+        d_world = -n_world.dot(p_world)
+        raw.append([n_world, d_world])
+
+    # interior test point: mesh centroid in world‐space
+    verts_ws = [wm4 @ v.co for v in zone_obj.data.vertices]
+    centroid = sum(verts_ws, Vector()) / len(verts_ws)
+
+    # flip any plane whose half‐space does _not_ contain the centroid
+    for i, (n, d) in enumerate(raw):
+        if n.dot(centroid) + d > 0:
+            raw[i][0] = -n
+            raw[i][1] = -d
+
+    return raw
+
+def point_inside_convex_zone(pt, planes):
+    """
+    True if pt satisfies normal·pt + d <= PLANE_EPS for every plane.
+    """
+    for n, d in planes:
+        if n.dot(pt) + d > PLANE_EPS:
+            return False
+    return True
 
 # ------------------------------------------------------------
 # --- Attempt Zone-Based Split
@@ -624,7 +647,7 @@ def run_outdoor_bsp_split(target_size=282.0):
     bpy.context.window_manager.progress_begin(0, 100)
 
     selected_objs = [obj for obj in bpy.context.selected_objects 
-                     if obj.type == 'MESH' and not obj.name.endswith('_ZONE')]
+                     if obj.type == 'MESH' and not "_ZONE" in obj.name]
     if not selected_objs:
         print("No valid mesh selected. Please select a mesh object (not a _ZONE).")
         return
@@ -638,7 +661,7 @@ def run_outdoor_bsp_split(target_size=282.0):
     pending_objects = []
 
     zone_volumes = [obj for obj in bpy.data.objects 
-                    if obj.type == 'MESH' and obj.name.endswith('_ZONE')]
+                    if obj.type == 'MESH' and "_ZONE" in obj.name]
     print(f"Detected {len(zone_volumes)} zone volumes.")
 
     for src in selected_objs:
@@ -697,15 +720,47 @@ def run_outdoor_bsp_split(target_size=282.0):
         for obj in pending_objects:
             bpy.context.collection.objects.link(obj)
         
-        for zone_obj in zone_volumes:
+        zone_boxes = {
+            zone: object_world_aabb(zone)
+            for zone in zone_volumes
+        }
+
+        # 2) Precompute each zone’s face‐plane list once (convex test):
+        zone_planes = {
+            zone: build_zone_planes(zone)
+            for zone in zone_volumes
+        }
+
+        for zone, planes in zone_planes.items():
+            print(f"=== {zone.name}: {len(planes)} planes ===")
+            for i, (n, d) in enumerate(planes):
+                print(f"  Plane {i:03d}: normal = ({n.x:.3f}, {n.y:.3f}, {n.z:.3f}),  d = {d:.3f}")
+
+        # 3) Gather your region empties once:
+        region_empties = [o for o in bpy.data.objects if re.fullmatch(r"R\d{6}", o.name)]
+
+        # 4) Now do the combined test:
+        for zone in zone_volumes:
+            minb, maxb = zone_boxes[zone]
+            planes     = zone_planes[zone]
             region_idxs = []
-            for empty in (o for o in bpy.data.objects if re.fullmatch(r"R\d{6}", o.name)):
-                if world_point_inside_zone(empty.location, zone_obj):
+
+            for empty in region_empties:
+                # grab true world‐space location in case of parenting
+                pt = empty.location.copy()
+
+                # —— A) Cheap AABB cull ——
+                if (pt.x < minb.x - AABB_EPS or pt.x > maxb.x + AABB_EPS or
+                    pt.y < minb.y - AABB_EPS or pt.y > maxb.y + AABB_EPS or
+                    pt.z < minb.z - AABB_EPS or pt.z > maxb.z + AABB_EPS):
+                    continue
+
+                # —— B) Convex half‐space test ——
+                if point_inside_convex_zone(pt, planes):
                     region_idxs.append(int(empty.name[1:]) - 1)
-            # format as a string "[n, n, n]"
-            region_str = "[" + ", ".join(str(i) for i in region_idxs) + "]"
-            zone_obj["REGIONLIST"] = region_str
-            print(f"{zone_obj.name}.REGIONLIST = {region_str}")
+
+            zone["REGIONLIST"] = "[" + ", ".join(map(str, region_idxs)) + "]"
+            print(f"{zone.name}.REGIONLIST = {zone['REGIONLIST']}")
 
         # --- 4) Parent any existing _ZONE meshes ---
         for zone in zone_volumes:

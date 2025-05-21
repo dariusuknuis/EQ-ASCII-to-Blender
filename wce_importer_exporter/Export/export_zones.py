@@ -5,7 +5,7 @@ import bpy
 def find_zones(parent_obj):
     zones = []
     for child in parent_obj.children:
-        if child.type == 'MESH' and child.name.endswith('_ZONE'):
+        if child.type == 'MESH' and "_ZONE" in child.name:
             zones.append(child)
         zones.extend(find_zones(child))
     return zones

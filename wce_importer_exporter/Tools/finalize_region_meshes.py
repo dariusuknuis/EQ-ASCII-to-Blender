@@ -1,4 +1,4 @@
-import bpy, bmesh, math
+import bpy, bmesh, math, re
 from mathutils import Vector, kdtree
 from mathutils.kdtree import KDTree
 import time
@@ -628,6 +628,27 @@ def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
             #       f"{len(loose_edges)} loose edges, "
             #       f"{len(degenerate_faces)} degenerate faces")
 
+def delete_empty_region_meshes_and_clear_sprite(region_objs):
+    """
+    Remove region mesh objects that have no vertices and clear the SPRITE property
+    on the corresponding region empty.
+    """
+    for obj in list(region_objs):
+        if obj.type != 'MESH':
+            continue
+        if len(obj.data.vertices) == 0:
+            # Determine matching empty name R###### from mesh name
+            m = re.match(r"R(\d+)_DMSPRITEDEF", obj.name)
+            if m:
+                idx = int(m.group(1))
+                empty_name = f"R{idx:06d}"
+                empty = bpy.data.objects.get(empty_name)
+                if empty and "SPRITE" in empty:
+                    empty["SPRITE"] = ""
+            # Remove the mesh object
+            bpy.data.objects.remove(obj, do_unlink=True)
+            region_objs.remove(obj)
+
 def finalize_region_meshes(
         edge_snap_threshold=0.03,
         merge_dist=0.001,
@@ -662,6 +683,7 @@ def finalize_region_meshes(
     triangulate_meshes(region_objs)
     average_vertex_colors_globally(region_objs, threshold=0.1)
     delete_loose_and_degenerate(region_objs)
+    delete_empty_region_meshes_and_clear_sprite(region_objs)
     
     elapsed = time.perf_counter() - start
 
