@@ -62,6 +62,18 @@ def calculate_bounds(obj):
         max_bound.z = max(max_bound.z, co.z)
     return min_bound, max_bound
 
+def build_region_volume_bmesh(vol_min, vol_max):
+    """
+    Make a unit cube, then scale & translate it so its corners match vol_min/vol_max.
+    """
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    center = (vol_min + vol_max) * 0.5
+    dims   = vol_max - vol_min
+    bmesh.ops.scale(   bm, vec=dims,   verts=bm.verts)
+    bmesh.ops.translate(bm, vec=center, verts=bm.verts)
+    return bm
+
 def calculate_bounds_for_bmesh(bm):
     """Compute the bounding box of the bmesh geometry (object-space)."""
     minb = Vector((float('inf'), float('inf'), float('inf')))
@@ -476,11 +488,12 @@ def zone_bsp_split(bm, zone_obj, source_obj, region_min, region_max, tol=1e-4, m
 # --- Primary Recursive BSP Split (with Zone Splitting)
 # ------------------------------------------------------------
 
-def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth=0):
+def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth=0):
     """
     Recursively subdivide the normalized volume using axis–aligned splits.
     When a region is small enough, attempt to further split it using zone-based splits.
     """
+    vol_min, vol_max = calculate_bounds_for_bmesh(bm_vol)
     size = vol_max - vol_min
     #print(f"\nRecursive call at depth {depth}: volume from {vol_min} to {vol_max} (size {size})")
     
@@ -499,7 +512,7 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
     if all(size[i] <= target_size + 1e-6 for i in range(3)):
         # If zone splits apply for any zone, attempt them:
         for zone_obj in zone_volumes:
-            split_result = zone_bsp_split(bm, zone_obj, source_obj, vol_min, vol_max, tol=1e-4, min_diag=0.1)
+            split_result = zone_bsp_split(bm_geo, zone_obj, source_obj, vol_min, vol_max, tol=1e-4, min_diag=0.1)
             if split_result is not None:
                 bm_inside, bm_outside, plane_no, d = split_result
                 node_data["normal"] = [-plane_no.x, -plane_no.y, -plane_no.z, -float(d)]
@@ -533,17 +546,17 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
         empty_obj = create_region_empty(center, sphere_radius, region_index, pending_objects)
         node_data["region_tag"] = empty_obj.name
         node_data["back_tree"] = 0
-        if bm.faces:
-            for f in bm.faces:
+        if bm_geo.faces:
+            for f in bm_geo.faces:
                 f.tag = True
-            new_bm = duplicate_faces_by_tag(bm, True)
+            new_bm = duplicate_faces_by_tag(bm_geo, True)
             if new_bm.faces:
                 empty_obj["SPRITE"] = f"R{region_index}_DMSPRITEDEF"
                 create_mesh_object_from_bmesh(new_bm, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
         return
 
     # If bm has no faces, subdivide the volume anyway.
-    if not bm.faces:
+    if not bm_geo.faces:
         axis, length = max(enumerate(size), key=lambda x: x[1])
         if length <= target_size:
             region_index = region_counter[0]
@@ -583,9 +596,9 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
         empty_obj = create_region_empty(center, sphere_radius, region_index, pending_objects)
         node_data["region_tag"] = empty_obj.name
         node_data["back_tree"] = 0
-        for f in bm.faces:
+        for f in bm_geo.faces:
             f.tag = True
-        new_bm = duplicate_faces_by_tag(bm, True)
+        new_bm = duplicate_faces_by_tag(bm_geo, True)
         if new_bm.faces:
             empty_obj["SPRITE"] = f"R{region_index}_DMSPRITEDEF"
             create_mesh_object_from_bmesh(new_bm, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
@@ -607,27 +620,27 @@ def recursive_bsp_split(bm, vol_min, vol_max, target_size, region_counter, sourc
     node_data["front_tree"] = worldnode_idx[0]
     
     bmesh.ops.bisect_plane(
-        bm,
-        geom=list(bm.faces)+list(bm.edges)+list(bm.verts),
+        bm_geo,
+        geom=list(bm_geo.faces)+list(bm_geo.edges)+list(bm_geo.verts),
         plane_co=plane_co,
         plane_no=plane_no,
         use_snap_center=False,
         clear_inner=False,
         clear_outer=False
     )
-    bm.faces.ensure_lookup_table()
-    lower_faces = [f for f in bm.faces if f.calc_center_median()[axis] <= split_pos + 1e-6]
-    upper_faces = [f for f in bm.faces if f.calc_center_median()[axis] > split_pos + 1e-6]
-    for f in bm.faces:
+    bm_geo.faces.ensure_lookup_table()
+    lower_faces = [f for f in bm_geo.faces if f.calc_center_median()[axis] <= split_pos + 1e-6]
+    upper_faces = [f for f in bm_geo.faces if f.calc_center_median()[axis] > split_pos + 1e-6]
+    for f in bm_geo.faces:
         f.tag = False
     for f in lower_faces:
         f.tag = True
-    bm_lower = duplicate_faces_by_tag(bm, True)
-    for f in bm.faces:
+    bm_lower = duplicate_faces_by_tag(bm_geo, True)
+    for f in bm_geo.faces:
         f.tag = False
     for f in upper_faces:
         f.tag = True
-    bm_upper = duplicate_faces_by_tag(bm, True)
+    bm_upper = duplicate_faces_by_tag(bm_geo, True)
     vol_lower_max = vol_max.copy()
     vol_lower_max[axis] = split_pos
     vol_upper_min = vol_min.copy()
@@ -687,6 +700,7 @@ def run_outdoor_bsp_split(target_size=282.0):
             vertex_colors = None
 
         bm = bmesh.new(); bm.from_mesh(src.data)
+        bm_vol = build_region_volume_bmesh(vol_min, vol_max)
 
         # --- Collect custom split normals from source mesh ---
         src.data.calc_normals_split()
@@ -707,7 +721,7 @@ def run_outdoor_bsp_split(target_size=282.0):
                 loop[loop_col] = vertex_colors[loop.vert.index]
 
         region_counter = [1]; world_nodes = []; worldnode_idx = [1]
-        recursive_bsp_split(bm, vol_min, vol_max, target_size,
+        recursive_bsp_split(bm, bm_vol, target_size,
                             region_counter, src, zone_volumes,
                             world_nodes, worldnode_idx, pending_objects, depth=0)
         assign_back_trees(world_nodes)
