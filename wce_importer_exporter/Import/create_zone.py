@@ -429,6 +429,62 @@ def create_zone(zone):
             bmesh.ops.holes_fill(bm, edges=boundary_edges)
 
         geom_all = bm.faces[:] + bm.edges[:] + bm.verts[:]
+    
+    # --- CLAMP ZONE VERTS TO ENCLOSE ALL SPRITE VERTICES  ---
+    # 1) compute bmesh’s current AABB
+    zone_min = Vector((
+        min(v.co.x for v in bm.verts),
+        min(v.co.y for v in bm.verts),
+        min(v.co.z for v in bm.verts),
+    ))
+    zone_max = Vector((
+        max(v.co.x for v in bm.verts),
+        max(v.co.y for v in bm.verts),
+        max(v.co.z for v in bm.verts),
+    ))
+
+    # 2) compute region‐cloud AABB
+    region_min = Vector((
+        min(co.x for co in all_verts),
+        min(co.y for co in all_verts),
+        min(co.z for co in all_verts),
+    ))
+    region_max = Vector((
+        max(co.x for co in all_verts),
+        max(co.y for co in all_verts),
+        max(co.z for co in all_verts),
+    ))
+
+    # 3) decide new extents (never shrink)
+    new_min = Vector((
+        min(zone_min.x, region_min.x),
+        min(zone_min.y, region_min.y),
+        min(zone_min.z, region_min.z),
+    ))
+    new_max = Vector((
+        max(zone_max.x, region_max.x),
+        max(zone_max.y, region_max.y),
+        max(zone_max.z, region_max.z),
+    ))
+
+    # 4) only move those verts that sit on the original box‐extents
+    eps = 1e-3
+    for v in bm.verts:
+        # X axis
+        if abs(v.co.x - zone_min.x) < eps:
+            v.co.x = new_min.x
+        elif abs(v.co.x - zone_max.x) < eps:
+            v.co.x = new_max.x
+        # Y axis
+        if abs(v.co.y - zone_min.y) < eps:
+            v.co.y = new_min.y
+        elif abs(v.co.y - zone_max.y) < eps:
+            v.co.y = new_max.y
+        # Z axis
+        if abs(v.co.z - zone_min.z) < eps:
+            v.co.z = new_min.z
+        elif abs(v.co.z - zone_max.z) < eps:
+            v.co.z = new_max.z
 
     # 7) write mesh & link object
     me  = bpy.data.meshes.new(name)

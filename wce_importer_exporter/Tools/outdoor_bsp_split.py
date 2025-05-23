@@ -318,8 +318,8 @@ def assign_back_trees(world_nodes):
 # --- Zone BVH and Point–in–Mesh Test (Using closest_point_on_mesh)
 # ------------------------------------------------------------
 
-AABB_EPS  = 1e-1
-PLANE_EPS = 1e-4
+AABB_EPS  = 1e-6
+PLANE_EPS = 1e-9
 
 def build_zone_planes(zone_obj):
     """

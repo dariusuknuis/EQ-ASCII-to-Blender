@@ -630,22 +630,30 @@ def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
 
 def delete_empty_region_meshes_and_clear_sprite(region_objs):
     """
-    Remove region mesh objects that have no vertices and clear the SPRITE property
-    on the corresponding region empty.
+    Remove region mesh objects that have no vertices, delete any *_BR empties
+    parented to them, and clear the SPRITE property on the corresponding region empty.
     """
     for obj in list(region_objs):
         if obj.type != 'MESH':
             continue
+        # if no verts, we want to nuke it
         if len(obj.data.vertices) == 0:
-            # Determine matching empty name R###### from mesh name
+            # 1) clear the SPRITE field on R###### empty
             m = re.match(r"R(\d+)_DMSPRITEDEF", obj.name)
             if m:
                 idx = int(m.group(1))
-                empty_name = f"R{idx:06d}"
-                empty = bpy.data.objects.get(empty_name)
-                if empty and "SPRITE" in empty:
-                    empty["SPRITE"] = ""
-            # Remove the mesh object
+                region_empty_name = f"R{idx:06d}"
+                region_empty = bpy.data.objects.get(region_empty_name)
+                if region_empty and "SPRITE" in region_empty:
+                    region_empty["SPRITE"] = ""
+
+            # 2) delete any direct children named "<mesh_name>_BR"
+            for child in list(obj.children):
+                if (child.type == 'EMPTY' 
+                    and child.name == obj.name + "_BR"):
+                    bpy.data.objects.remove(child, do_unlink=True)
+
+            # 3) delete the mesh itself
             bpy.data.objects.remove(obj, do_unlink=True)
             region_objs.remove(obj)
 
