@@ -134,7 +134,7 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
         me.normals_split_custom_set(custom_nors)
         me.attributes.remove(me.attributes["orig_normals"])
 
-    print("✅ split_edges_to_snap_verts: done, all splits & normals preserved.")
+    #print("✅ split_edges_to_snap_verts: done, all splits & normals preserved.")
 
 def _material_uv_normal_match(v1, v2, uv_layer, normal_angle_limit=45, ln_layer=None):
     """Check if v1 and v2 share the same materials, UVs, and all loop normals are within angle limit."""

@@ -62,16 +62,20 @@ def calculate_bounds(obj):
         max_bound.z = max(max_bound.z, co.z)
     return min_bound, max_bound
 
-def build_region_volume_bmesh(vol_min, vol_max):
+def build_region_volume_bmesh(obj):
     """
-    Make a unit cube, then scale & translate it so its corners match vol_min/vol_max.
+    Loads obj.data into a BMesh, then bakes in obj.matrix_world on every vert,
+    so that bm_vol lives entirely in world‐space coordinates.
     """
     bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1.0)
-    center = (vol_min + vol_max) * 0.5
-    dims   = vol_max - vol_min
-    bmesh.ops.scale(   bm, vec=dims,   verts=bm.verts)
-    bmesh.ops.translate(bm, vec=center, verts=bm.verts)
+    bm.from_mesh(obj.data)
+
+    # bake the transform into every vertex
+    M = obj.matrix_world
+    for v in bm.verts:
+        v.co = M @ v.co
+
+    bm.normal_update()
     return bm
 
 def calculate_bounds_for_bmesh(bm):
@@ -100,6 +104,43 @@ def normalize_bounds(min_bound, max_bound, target_size):
     new_max = center + adjusted_size * 0.5
     return new_min, new_max
 
+def create_world_volume(vol_min, vol_max):
+    """
+    Create a new mesh object named `name` whose geometry is 
+    the rectangular prism spanning vol_min→vol_max.
+    Returns the new Object (already linked to the active collection).
+    """
+    # 8 corners
+    verts = [
+        (vol_min.x, vol_min.y, vol_min.z),
+        (vol_max.x, vol_min.y, vol_min.z),
+        (vol_max.x, vol_max.y, vol_min.z),
+        (vol_min.x, vol_max.y, vol_min.z),
+        (vol_min.x, vol_min.y, vol_max.z),
+        (vol_max.x, vol_min.y, vol_max.z),
+        (vol_max.x, vol_max.y, vol_max.z),
+        (vol_min.x, vol_max.y, vol_max.z),
+    ]
+    # each face as a quad of those verts
+    faces = [
+        (0, 1, 2, 3),  # bottom
+        (4, 5, 6, 7),  # top
+        (0, 4, 5, 1),  # front
+        (1, 5, 6, 2),  # right
+        (2, 6, 7, 3),  # back
+        (3, 7, 4, 0),  # left
+    ]
+
+    # make mesh datablock & fill it
+    mesh = bpy.data.meshes.new("WorldVolume")
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+
+    # create object, link to scene
+    obj = bpy.data.objects.new("WorldVolume", mesh)
+    bpy.context.collection.objects.link(obj)
+    return obj
+
 def create_region_empty(center, sphere_radius, index, pending_objects):
     """
     Create an empty (for labeling/visualization) at the given center.
@@ -121,6 +162,56 @@ def create_region_empty(center, sphere_radius, index, pending_objects):
     pending_objects.append(empty)
     
     return empty
+
+def volume_split(bm_vol, plane_co, plane_no, tol=0.0):
+    """
+    Splits the convex BMesh `bm_vol` by the plane (plane_co, plane_no) into
+    two capped halves, and returns (bm_lower, bm_upper).
+
+      - the “lower” half keeps the inside side (n·X + d <= 0)
+      - the “upper” half keeps the outside side (n·X + d >= 0)
+
+    Both outputs are new BMesh instances with their open boundaries filled.
+    """
+    # copy for lower half
+    bm_lower = bm_vol.copy()
+    geom_l   = list(bm_lower.verts) + list(bm_lower.edges) + list(bm_lower.faces)
+    bmesh.ops.bisect_plane(
+        bm_lower,
+        geom       = geom_l,
+        plane_co   = plane_co,
+        plane_no   = plane_no,
+        dist       = tol,
+        clear_inner=False,   # keep the “inside” half
+        clear_outer=True     # discard the outside
+    )
+    # cap the cut
+    boundary = [e for e in bm_lower.edges if len(e.link_faces)==1]
+    if boundary:
+        bmesh.ops.holes_fill(bm_lower, edges=boundary, sides=0)
+    # fix normals
+    bmesh.ops.recalc_face_normals(bm_lower, faces=bm_lower.faces)
+    bm_lower.normal_update()
+
+    # copy for upper half
+    bm_upper = bm_vol.copy()
+    geom_u   = list(bm_upper.verts) + list(bm_upper.edges) + list(bm_upper.faces)
+    bmesh.ops.bisect_plane(
+        bm_upper,
+        geom       = geom_u,
+        plane_co   = plane_co,
+        plane_no   = plane_no,
+        dist       = tol,
+        clear_inner=True,    # discard the inside
+        clear_outer=False    # keep the outside half
+    )
+    boundary = [e for e in bm_upper.edges if len(e.link_faces)==1]
+    if boundary:
+        bmesh.ops.holes_fill(bm_upper, edges=boundary, sides=0)
+    bmesh.ops.recalc_face_normals(bm_upper, faces=bm_upper.faces)
+    bm_upper.normal_update()
+
+    return bm_lower, bm_upper
 
 def duplicate_faces_by_tag(bm, tag_value):
     """
@@ -333,34 +424,64 @@ def assign_back_trees(world_nodes):
 AABB_EPS  = 1e-6
 PLANE_EPS = 1e-9
 
-def build_zone_planes(zone_obj):
+def build_volume_planes(source, source_obj=None):
     """
-    Returns a list of (world_normal, world_d) where
-        normal·X + d = 0
-    defines each face,
-    with normals pointing outward.
+    Given either:
+      - a bmesh.types.BMesh (optionally with source_obj to reproject it),
+      - a bpy.types.Object (type=='MESH'),
+      - or a bpy.types.Mesh (must pass source_obj),
+    returns a list of (world_normal, world_d) for each face of the convex mesh,
+    with normals flipped so that n·X + d <= 0 is the “inside” half-space.
+    
+    If `source` is a BMesh and `source_obj` is None, it is assumed already in world space.
     """
-    wm3 = zone_obj.matrix_world.to_3x3()
-    wm4 = zone_obj.matrix_world
+    # — determine the BMesh we’ll work on —
+    temp_bm = False
+    if isinstance(source, bmesh.types.BMesh):
+        bm = source
+        # now optional: if no source_obj, we assume bm verts are already world‐space
+    elif isinstance(source, bpy.types.Object) and source.type == 'MESH':
+        source_obj = source
+        bm = bmesh.new()
+        bm.from_mesh(source.data)
+        temp_bm = True
+    elif isinstance(source, bpy.types.Mesh):
+        if source_obj is None:
+            raise ValueError("When passing a Mesh you must also pass source_obj for its transform")
+        bm = bmesh.new()
+        bm.from_mesh(source)
+        temp_bm = True
+    else:
+        raise TypeError("`source` must be a BMesh, a MESH Object, or a Mesh datablock")
 
-    raw = []
-    for poly in zone_obj.data.polygons:
-        n_world = (wm3 @ poly.normal).normalized()
-        p_world = wm4 @ poly.center
-        d_world = -n_world.dot(p_world)
-        raw.append([n_world, d_world])
+    # — grab transforms (or identity if none) —
+    if source_obj is not None:
+        wm3 = source_obj.matrix_world.to_3x3()
+        wm4 = source_obj.matrix_world
+    else:
+        wm3 = Matrix.Identity(3)
+        wm4 = Matrix.Identity(4)
 
-    # interior test point: mesh centroid in world‐space
-    verts_ws = [wm4 @ v.co for v in zone_obj.data.vertices]
-    centroid = sum(verts_ws, Vector()) / len(verts_ws)
+    # — build raw planes —
+    planes = []
+    for f in bm.faces:
+        n_world = (wm3 @ f.normal).normalized()
+        p_world = wm4 @ f.calc_center_median()
+        planes.append((n_world, -n_world.dot(p_world)))
 
-    # flip any plane whose half‐space does _not_ contain the centroid
-    for i, (n, d) in enumerate(raw):
-        if n.dot(centroid) + d > 0:
-            raw[i][0] = -n
-            raw[i][1] = -d
+    # — flip any plane whose outside‐half contains the mesh centroid —
+    verts_ws = [wm4 @ v.co for v in bm.verts]
+    if verts_ws:
+        centroid = sum(verts_ws, Vector()) / len(verts_ws)
+        for i, (n, d) in enumerate(planes):
+            if n.dot(centroid) + d > 0:
+                planes[i] = (-n, -d)
 
-    return raw
+    # — clean up if we made a temporary BMesh —
+    if temp_bm:
+        bm.free()
+
+    return planes
 
 def point_inside_convex_zone(pt, planes):
     """
@@ -371,128 +492,255 @@ def point_inside_convex_zone(pt, planes):
             return False
     return True
 
+# ——— Helper routines ——————————————————————————————
+def point_in_convex(pt, planes, eps=1e-6):
+    for n, d in planes:
+        if n.dot(pt) + d > eps:
+            return False
+    return True
+
+def point_in_poly_2d(x, y, poly2d):
+    inside = False
+    n = len(poly2d)
+    for i in range(n):
+        xi, yi = poly2d[i]
+        xj, yj = poly2d[(i-1) % n]
+        if (yi > y) != (yj > y):
+            t = (y - yi) / (yj - yi)
+            if xi + t*(xj - xi) > x:
+                inside = not inside
+    return inside
+
+def point_in_face_polygon(pt, ws_verts, normal):
+    origin = ws_verts[0]
+    u      = (ws_verts[1] - origin).normalized()
+    v      = normal.cross(u).normalized()
+    poly2d = [(((vv - origin).dot(u)),
+                ((vv - origin).dot(v)))
+                for vv in ws_verts]
+    x, y   = ((pt - origin).dot(u), (pt - origin).dot(v))
+    return point_in_poly_2d(x, y, poly2d)
+
+def volume_intersection_tests(zone_face, region_planes, bvh_vol, region_edges, zone_wm3, zone_wm4):
+    """
+    Returns True if this DRP_ZONE face truly intersects the region volume.
+    Prints only the initial region_planes and the Step 1 vertex‐inside results.
+    """
+    face_idx = zone_face.index
+
+    # — print the region‐planes once —
+    print(f"[DEBUG] zone_face {face_idx}: testing against region_planes:")
+    for i, (n, d) in enumerate(region_planes):
+        print(f"    Plane {i:2d}: normal=({n.x:.3f}, {n.y:.3f}, {n.z:.3f}), d={d:.3f}")
+
+    # compute world‐space verts of this face
+    ws_verts = [zone_wm4 @ v.co for v in zone_face.verts]
+
+    # — Step 1: any vertex inside? —
+    for i, v in enumerate(ws_verts):
+        inside = point_in_convex(v, region_planes)
+        print(f"[DEBUG]   Step 1: vert {i} at {v} inside region? {inside}")
+        if inside:
+            return True
+
+    # — Step 2 & 3: perform intersection tests silently —
+
+    # Step 2: edge ray‐casts
+    for i in range(len(ws_verts)):
+        p0, p1 = ws_verts[i], ws_verts[(i+1) % len(ws_verts)]
+        seg = p1 - p0
+        if seg.length < 1e-6:
+            continue
+        _, _, tri, _ = bvh_vol.ray_cast(p0, seg.normalized(), seg.length)
+        if tri is not None:
+            return True
+
+    # Step 3: region‐edge puncture test
+    n_ws  = (zone_wm3 @ zone_face.normal).normalized()
+    p_ctr = zone_wm4 @ zone_face.calc_center_median()
+    d_ws  = -n_ws.dot(p_ctr)
+    for ce0, ce1 in region_edges:
+        seg = ce1 - ce0
+        denom = n_ws.dot(seg)
+        if abs(denom) < 1e-8:
+            continue
+        t = -(n_ws.dot(ce0) + d_ws) / denom
+        if 0.0 <= t <= 1.0:
+            P = ce0 + seg * t
+            if point_in_face_polygon(P, ws_verts, n_ws):
+                return True
+
+    return False
+
 # ------------------------------------------------------------
 # --- Attempt Zone-Based Split
 # ------------------------------------------------------------
 
-def zone_bsp_split(bm, zone_obj, source_obj, region_min, region_max, tol=1e-4, min_diag=0.1):
+def zone_bsp_split(bm_geo, zone_obj, source_obj, bm_vol, tol=1e-4, min_diag=0.1, used_planes=None):
     """
-    Attempt to split bm along one of zone_obj’s face planes, but only if the region
-    (given by region_min, region_max in source_obj's object space) actually overlaps
-    the zone's bounding box in world space.
+    Attempt to split bm_geo and bm_vol by the first zone‐face that truly
+    penetrates the region volume.  Returns
 
-    Returns (bm_inside, bm_outside) or None if no valid candidate produces a meaningful split.
+        (geo_in, geo_out, vol_in, vol_out, world_normal, world_d, face_index)
+
+    or None on failure.
     """
-    if not bm.faces:
+
+    # 1) AABB cull
+    # --------------------------------
+    vol_verts = list(bm_vol.verts)
+    vol_ws    = [v.co for v in vol_verts]
+    if not vol_ws:
         return None
 
-    # Compute the world-space AABB for the zone.
+    rmin = Vector((min(v.x for v in vol_ws),
+                   min(v.y for v in vol_ws),
+                   min(v.z for v in vol_ws)))
+    rmax = Vector((max(v.x for v in vol_ws),
+                   max(v.y for v in vol_ws),
+                   max(v.z for v in vol_ws)))
     zmin, zmax = object_world_aabb(zone_obj)
-    # Compute the region’s world AABB from region_min, region_max.
-    mat = source_obj.matrix_world
-    corners = []
-    for dx in (0, 1):
-        for dy in (0, 1):
-            for dz in (0, 1):
-                x = region_min.x if dx == 0 else region_max.x
-                y = region_min.y if dy == 0 else region_max.y
-                z = region_min.z if dz == 0 else region_max.z
-                corners.append(mat @ Vector((x, y, z)))
-    rmin = Vector((float('inf'), float('inf'), float('inf')))
-    rmax = Vector((-float('inf'), -float('inf'), -float('inf')))
-    for c in corners:
-        rmin.x = min(rmin.x, c.x); rmax.x = max(rmax.x, c.x)
-        rmin.y = min(rmin.y, c.y); rmax.y = max(rmax.y, c.y)
-        rmin.z = min(rmin.z, c.z); rmax.z = max(rmax.z, c.z)
-
     if not aabb_intersects(rmin, rmax, zmin, zmax):
-        return None  # No overlap between zone and region.
+        return None
 
-    # Make a copy of bm to try candidate splits.
-    bm_copy = bm.copy()
+    # 2) Build BVH on the region‐volume triangles, plus collect its edges
+    # --------------------------------------------------------------------
+    bvh_vol = BVHTree.FromBMesh(bm_vol, epsilon=0.0)
 
-    # Try each polygon of zone_obj as a potential splitting plane.
-    for poly in zone_obj.data.polygons:
-        plane_co = zone_obj.matrix_world @ poly.center
-        plane_no = (zone_obj.matrix_world.to_3x3() @ poly.normal).normalized()
+    region_edges = [
+        (e.verts[0].co, e.verts[1].co)
+        for e in bm_vol.edges
+    ]
+    
 
-        inside_count = 0
-        outside_count = 0
-        # Classify each face by its center (converted to world space).
-        for f in bm_copy.faces:
-            world_center = source_obj.matrix_world @ f.calc_center_median()
-            d = (world_center - plane_co).dot(plane_no)
-            if d < -tol:
-                inside_count += 1
-            elif d > tol:
-                outside_count += 1
+    # 3) Build half‐spaces for the convex region‐volume
+    # -------------------------------------------------
+    region_planes = build_volume_planes(bm_vol)
 
-        if inside_count > 0 and outside_count > 0:
-            d = -plane_no.dot(plane_co)
-            # Bisect bm_copy along this candidate plane.
-            bmesh.ops.bisect_plane(
-                bm_copy,
-                geom=list(bm_copy.faces) + list(bm_copy.edges) + list(bm_copy.verts),
-                plane_co=plane_co,
-                plane_no=plane_no,
-                use_snap_center=False,
-                clear_inner=False,
-                clear_outer=False,
-                dist=tol
-            )
-            # Classify resulting faces.
-            inside_faces = []
-            outside_faces = []
-            for f in bm_copy.faces:
-                wc = source_obj.matrix_world @ f.calc_center_median()
-                dd = (wc - plane_co).dot(plane_no)
-                if dd < -tol:
-                    inside_faces.append(f)
-                elif dd > tol:
-                    outside_faces.append(f)
-                else:
-                    inside_faces.append(f)  # On the plane → treat as inside.
-            if not inside_faces or not outside_faces:
-                bm_copy.free()
-                bm_copy = bm.copy()
-                continue
+    # zone BMesh once
+    bm_zon = bmesh.new(); bm_zon.from_mesh(zone_obj.data)
+    bm_zon.faces.ensure_lookup_table()
+    zone_wm3 = zone_obj.matrix_world.to_3x3()
+    zone_wm4 = zone_obj.matrix_world
 
-            for f in bm_copy.faces:
-                f.tag = False
-            for f in inside_faces:
-                f.tag = True
-            bm_inside = duplicate_faces_by_tag(bm_copy, True)
-            for f in bm_copy.faces:
-                f.tag = False
-            for f in outside_faces:
-                f.tag = True
-            bm_outside = duplicate_faces_by_tag(bm_copy, True)
 
-            # Check if one side is too tiny.
-            bmin_i, bmax_i = calculate_bounds_for_bmesh(bm_inside)
-            diag_i = (bmax_i - bmin_i).length
-            bmin_o, bmax_o = calculate_bounds_for_bmesh(bm_outside)
-            diag_o = (bmax_o - bmin_o).length
-            if diag_i < min_diag or diag_o < min_diag:
-                bm_copy.free()
-                bm_copy = bm.copy()
-                continue
+    # 4) Scan each zone‐face until we find one that really penetrates
+    # ---------------------------------------------------------------
+    splitter = None
+    for face in bm_zon.faces:
+        if not volume_intersection_tests(face, region_planes, bvh_vol, region_edges, zone_wm3, zone_wm4):
+            continue
 
-            bm_copy.free()
-            return (bm_inside, bm_outside, plane_no.copy(), d)
+        # build world‐space plane
+        n_ws = (zone_wm3 @ face.normal).normalized()
+        p_ws = zone_wm4 @ face.calc_center_median()
+        d_ws = -n_ws.dot(p_ws)
 
-    bm_copy.free()
-    return None
+        # **dedupe against used_planes**:
+        too_similar = False
+        for (n0, d0) in used_planes:
+            if n0.dot(n_ws) > 1.0 - 1e-4 and abs(d0 - d_ws) < tol:
+                too_similar = True
+                break
+        if too_similar:
+            continue
+
+        splitter = face
+        break
+
+    if not splitter:
+        bm_zon.free()
+        return None
+
+    # 5) Build the split plane in both world and local space
+    # ------------------------------------------------------
+    plane_co_ws = zone_wm4 @ face.calc_center_median()
+    plane_no_ws = (zone_wm3 @ face.normal).normalized()
+    plane_d     = -plane_no_ws.dot(plane_co_ws)
+
+    plane_co_l  = plane_co_ws.copy()
+    plane_no_l  = plane_no_ws.copy()
+
+    # 6) Dry‑run bisect on the *original* mesh to skip no‑ops
+    # --------------------------------------------------------
+    # bm_test = bm_vol.copy()
+    # geom   = list(bm_test.verts) + list(bm_test.edges) + list(bm_test.faces)
+    # before = len(bm_test.edges)
+    # bmesh.ops.bisect_plane(
+    #     bm_test, geom=geom,
+    #     plane_co=plane_co_l, plane_no=plane_no_l,
+    #     use_snap_center=False,
+    #     clear_inner=False, clear_outer=False,
+    #     dist=0.0
+    # )
+    # after = len(bm_test.edges)
+    # bm_test.free()
+    # if after == before:
+    #     return None
+
+    # 7) Do the real bisect on bm_geo & bm_vol
+    # ----------------------------------------
+    def _split(bm_src, fill_holes=False):
+        bm2 = bm_src.copy()
+        geom2 = list(bm2.verts) + list(bm2.edges) + list(bm2.faces)
+        bmesh.ops.bisect_plane(
+            bm2, geom=geom2,
+            plane_co=plane_co_l, plane_no=plane_no_l,
+            dist=tol,
+            clear_inner=False, clear_outer=False
+        )
+        if fill_holes:
+            boundary = [e for e in bm2.edges if len(e.link_faces) == 1]
+            if boundary:
+                bmesh.ops.holes_fill(bm2, edges=boundary, sides=0)
+            bmesh.ops.recalc_face_normals(bm2, faces=bm2.faces)
+            bm2.normal_update()
+        inside, outside = [], []
+        for f in bm2.faces:
+            wctr = f.calc_center_median()
+            dval = (wctr - plane_co_ws).dot(plane_no_ws)
+            if   dval < -tol: inside.append(f)
+            elif dval > +tol: outside.append(f)
+            else:              inside.append(f)
+        for f in bm2.faces: f.tag = False
+        for f in inside:   f.tag = True
+        bm_in = duplicate_faces_by_tag(bm2, True)
+        for f in bm2.faces: f.tag = False
+        for f in outside:  f.tag = True
+        bm_out = duplicate_faces_by_tag(bm2, True)
+        bm2.free()
+        return bm_in, bm_out
+    
+    bm_zon.free()
+
+    geo_in, geo_out = _split(bm_geo, fill_holes=False)
+    vol_in, vol_out = volume_split(bm_vol, plane_co_l, plane_no_l, tol)
+
+    # 8) Sanity‐check
+    # ---------------
+    bi_min, bi_max = calculate_bounds_for_bmesh(geo_in)
+    bo_min, bo_max = calculate_bounds_for_bmesh(geo_out)
+    if (bi_max - bi_min).length < min_diag or (bo_max - bo_min).length < min_diag:
+        return None
+
+    # 9) Return exactly what recursive_bsp_split expects
+    # -------------------------------------------------
+    used_planes.append((plane_no_ws.copy(), plane_d))
+    return geo_in, geo_out, vol_in, vol_out, plane_no_ws.copy(), plane_d
 
 # ------------------------------------------------------------
 # --- Primary Recursive BSP Split (with Zone Splitting)
 # ------------------------------------------------------------
 
-def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth=0):
+def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=None, depth=0):
     """
     Recursively subdivide the normalized volume using axis–aligned splits.
     When a region is small enough, attempt to further split it using zone-based splits.
     """
+
+    if used_planes is None:
+        used_planes = []
+
     vol_min, vol_max = calculate_bounds_for_bmesh(bm_vol)
     size = vol_max - vol_min
     #print(f"\nRecursive call at depth {depth}: volume from {vol_min} to {vol_max} (size {size})")
@@ -509,20 +757,17 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
     worldnode_idx[0] += 1
 
     # Base case: region is small enough.
-    if all(size[i] <= target_size + 1e-6 for i in range(3)):
+    if all(size[i] <= target_size + 1e-4 for i in range(3)):
         # If zone splits apply for any zone, attempt them:
         for zone_obj in zone_volumes:
-            split_result = zone_bsp_split(bm_geo, zone_obj, source_obj, vol_min, vol_max, tol=1e-4, min_diag=0.1)
+            split_result = zone_bsp_split(bm_geo, zone_obj, source_obj, bm_vol, tol=1e-4, min_diag=0.1, used_planes=used_planes)
             if split_result is not None:
-                bm_inside, bm_outside, plane_no, d = split_result
+                bm_geo_in, bm_geo_out, bm_vol_in, bm_vol_out, plane_no, d = split_result
                 node_data["normal"] = [-plane_no.x, -plane_no.y, -plane_no.z, -float(d)]
                 node_data["front_tree"] = worldnode_idx[0]
                 #print(f"Zone-based split succeeded with zone '{zone_obj.name}'.")
-                # Compute bounding boxes from the resulting sub-BMeshes.
-                bmin_i, bmax_i = calculate_bounds_for_bmesh(bm_inside)
-                bmin_o, bmax_o = calculate_bounds_for_bmesh(bm_outside)
-                recursive_bsp_split(bm_inside, bmin_i, bmax_i, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
-                recursive_bsp_split(bm_outside, bmin_o, bmax_o, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
+                recursive_bsp_split(bm_geo_in, bm_vol_in, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=used_planes, depth=depth+1)
+                recursive_bsp_split(bm_geo_out, bm_vol_out, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=used_planes, depth=depth+1)
                 return  # Stop after a successful zone split.
         # No zone candidate split succeeded → finalize this leaf region.
         region_index = region_counter[0]
@@ -579,14 +824,42 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
         node_data["normal"] = [-plane_no.x, -plane_no.y, -plane_no.z, -float(d_value)]
         node_data["front_tree"] = worldnode_idx[0]
         
-        vol_lower_max = vol_max.copy(); vol_lower_max[axis] = split_pos
-        vol_upper_min = vol_min.copy(); vol_upper_min[axis] = split_pos
-        recursive_bsp_split(bmesh.new(), vol_min, vol_lower_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
-        recursive_bsp_split(bmesh.new(), vol_upper_min, vol_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
+        bm_vol_lower = bm_vol.copy()
+        bmesh.ops.bisect_plane(
+            bm_vol_lower,
+            geom=list(bm_vol_lower.faces) + list(bm_vol_lower.edges) + list(bm_vol_lower.verts),
+            plane_co=plane_co,
+            plane_no=plane_no,
+            clear_inner=False,  # keep the “inside” side
+            clear_outer=True,   # throw away the “outside” half
+        )
+        boundary_edges = [e for e in bm_vol_lower.edges if len(e.link_faces) == 1]
+        if boundary_edges:
+            bmesh.ops.holes_fill(bm_vol_lower, edges=boundary_edges, sides=0)
+        bmesh.ops.recalc_face_normals(bm_vol_lower, faces=bm_vol_lower.faces)
+        bm_vol_lower.normal_update()
+
+        bm_vol_upper = bm_vol.copy()
+        bmesh.ops.bisect_plane(
+            bm_vol_upper,
+            geom=list(bm_vol_upper.faces) + list(bm_vol_upper.edges) + list(bm_vol_upper.verts),
+            plane_co=plane_co,
+            plane_no=plane_no,
+            clear_inner=True,   # throw away the “inside” half
+            clear_outer=False,  # keep the “outside” side
+        )
+        boundary_edges = [e for e in bm_vol_upper.edges if len(e.link_faces) == 1]
+        if boundary_edges:
+            bmesh.ops.holes_fill(bm_vol_upper, edges=boundary_edges, sides=0)
+        bmesh.ops.recalc_face_normals(bm_vol_upper, faces=bm_vol_upper.faces)
+        bm_vol_upper.normal_update()
+
+        recursive_bsp_split(bm_geo, bm_vol_lower, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=None, depth=depth+1)
+        recursive_bsp_split(bm_geo, bm_vol_upper, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=None, depth=depth+1)
         return
 
     # Otherwise, perform an axis-aligned split.
-    valid_axes = [(i, size[i]) for i in range(3) if size[i] > target_size + 1e-6]
+    valid_axes = [(i, size[i]) for i in range(3) if size[i] > target_size + 1e-4]
     if not valid_axes:
         region_index = region_counter[0]
         region_counter[0] += 1
@@ -635,19 +908,49 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
         f.tag = False
     for f in lower_faces:
         f.tag = True
-    bm_lower = duplicate_faces_by_tag(bm_geo, True)
+    bm_geo_lower = duplicate_faces_by_tag(bm_geo, True)
     for f in bm_geo.faces:
         f.tag = False
     for f in upper_faces:
         f.tag = True
-    bm_upper = duplicate_faces_by_tag(bm_geo, True)
-    vol_lower_max = vol_max.copy()
-    vol_lower_max[axis] = split_pos
-    vol_upper_min = vol_min.copy()
-    vol_upper_min[axis] = split_pos
+    bm_geo_upper = duplicate_faces_by_tag(bm_geo, True)
+
+    bm_vol_lower = bm_vol.copy()
+    geom_lower  = list(bm_vol_lower.faces) + list(bm_vol_lower.edges) + list(bm_vol_lower.verts)
+    bmesh.ops.bisect_plane(
+        bm_vol_lower,
+        geom       = geom_lower,
+        plane_co   = plane_co,
+        plane_no   = plane_no,
+        clear_inner=False,  # keep the “inside” side
+        clear_outer=True,   # throw away the “outside” half
+    )
+    boundary_edges = [e for e in bm_vol_lower.edges if len(e.link_faces) == 1]
+    if boundary_edges:
+        bmesh.ops.holes_fill(bm_vol_lower, edges=boundary_edges, sides=0)
+    bmesh.ops.recalc_face_normals(bm_vol_lower, faces=bm_vol_lower.faces)
+    bm_vol_lower.normal_update()
+
+    # upper half
+    bm_vol_upper = bm_vol.copy()
+    geom_upper   = list(bm_vol_upper.faces) + list(bm_vol_upper.edges) + list(bm_vol_upper.verts)
+    bmesh.ops.bisect_plane(
+        bm_vol_upper,
+        geom       = geom_upper,
+        plane_co   = plane_co,
+        plane_no   = plane_no,
+        clear_inner=True,   # throw away the “inside” half
+        clear_outer=False,  # keep the “outside” side
+    )
+    boundary_edges = [e for e in bm_vol_upper.edges if len(e.link_faces) == 1]
+    if boundary_edges:
+        bmesh.ops.holes_fill(bm_vol_upper, edges=boundary_edges, sides=0)
+    bmesh.ops.recalc_face_normals(bm_vol_upper, faces=bm_vol_upper.faces)
+    bm_vol_upper.normal_update()
+
     #print(f"Axis–aligned split at axis {axis} at position {split_pos}")
-    recursive_bsp_split(bm_lower, vol_min, vol_lower_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
-    recursive_bsp_split(bm_upper, vol_upper_min, vol_max, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, depth+1)
+    recursive_bsp_split(bm_geo_lower, bm_vol_lower, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=None, depth=depth+1)
+    recursive_bsp_split(bm_geo_upper, bm_vol_upper, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=None, depth=depth+1)
 
 # ------------------------------------------------------------
 # --- Main Runner
@@ -691,6 +994,7 @@ def run_outdoor_bsp_split(target_size=282.0):
         # --- 2) Your existing split & worldtree build ---
         bounds_min, bounds_max = calculate_bounds(src)
         vol_min, vol_max = normalize_bounds(bounds_min, bounds_max, target_size)
+        world_volume = create_world_volume(vol_min, vol_max)
 
         vcol_attr = next((a for a in src.data.color_attributes if a.domain == 'POINT'), None)
         if vcol_attr:
@@ -700,7 +1004,7 @@ def run_outdoor_bsp_split(target_size=282.0):
             vertex_colors = None
 
         bm = bmesh.new(); bm.from_mesh(src.data)
-        bm_vol = build_region_volume_bmesh(vol_min, vol_max)
+        bm_vol = build_region_volume_bmesh(world_volume)
 
         # --- Collect custom split normals from source mesh ---
         src.data.calc_normals_split()
@@ -741,7 +1045,7 @@ def run_outdoor_bsp_split(target_size=282.0):
 
         # 2) Precompute each zone’s face‐plane list once (convex test):
         zone_planes = {
-            zone: build_zone_planes(zone)
+            zone: build_volume_planes(zone)
             for zone in zone_volumes
         }
 
