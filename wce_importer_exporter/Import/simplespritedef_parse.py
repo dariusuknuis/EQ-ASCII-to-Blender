@@ -38,7 +38,10 @@ def simplespritedef_parse(r, parse_property, current_line):
     else:
         sleep_value = int(records[1])
         texture['sleep'] = sleep_value
-        texture['animated'] = True
+        if sleep_value == 0:
+            texture['animated'] = False
+        else:
+            texture['animated'] = True
 
     # Parse CURRENTFRAME? (nullable)
     records = parse_property(r, "CURRENTFRAME?", 1)
