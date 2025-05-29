@@ -661,23 +661,6 @@ def zone_bsp_split(bm_geo, zone_obj, source_obj, bm_vol, tol=1e-4, min_diag=0.1,
     plane_co_l  = plane_co_ws.copy()
     plane_no_l  = plane_no_ws.copy()
 
-    # 6) Dry‑run bisect on the *original* mesh to skip no‑ops
-    # --------------------------------------------------------
-    # bm_test = bm_vol.copy()
-    # geom   = list(bm_test.verts) + list(bm_test.edges) + list(bm_test.faces)
-    # before = len(bm_test.edges)
-    # bmesh.ops.bisect_plane(
-    #     bm_test, geom=geom,
-    #     plane_co=plane_co_l, plane_no=plane_no_l,
-    #     use_snap_center=False,
-    #     clear_inner=False, clear_outer=False,
-    #     dist=0.0
-    # )
-    # after = len(bm_test.edges)
-    # bm_test.free()
-    # if after == before:
-    #     return None
-
     # 7) Do the real bisect on bm_geo & bm_vol
     # ----------------------------------------
     def _split(bm_src, fill_holes=False):

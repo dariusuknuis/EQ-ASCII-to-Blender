@@ -3,7 +3,7 @@ import json
 import numpy as np
 import mathutils
 from mathutils import Vector
-from math import pi
+from math import pi, radians
 
 EPSILON = 1e-1
 
@@ -260,17 +260,11 @@ def apply_overlays(mat, base_bsdf, overlays):
 
 # ─── CLEANUP ZONE MESH ───────────────────────────────────────────────────────────
 
-def cleanup_bmesh(bm, 
-                  deg_edge_dist=1e-6, 
-                  coplanar_angle=1e-3, 
-                  vert_colinear_tol=1e-6):
+def cleanup_bmesh(bm, deg_edge_dist=1e-3, angle_limit=radians(5), use_dissolve_boundaries=False, delimit={'NORMAL'}):
     """
     1) Dissolve any edge shorter than deg_edge_dist.
-    2) Dissolve any edge between two faces whose normals differ by < coplanar_angle.
-    3) Dissolve any vertex of valence==2 whose two incident edges are colinear 
-       (i.e. it lies mid‑edge), within vert_colinear_tol.
+    2) BMesh-based equivalent of Blender's limited dissolve operator.
     """
-
     # 1) dissolve truly tiny edges
     tiny_edges = [e for e in bm.edges
                   if (e.verts[0].co - e.verts[1].co).length < deg_edge_dist]
@@ -279,38 +273,21 @@ def cleanup_bmesh(bm,
                                       edges=tiny_edges,
                                       dist=deg_edge_dist)
 
-    # 2) dissolve edges between nearly‑coplanar faces
-    coplanar_edges = []
-    for e in bm.edges:
-        if len(e.link_faces) == 2:
-            n1 = e.link_faces[0].normal
-            n2 = e.link_faces[1].normal
-            if n1.angle(n2) < coplanar_angle:
-                coplanar_edges.append(e)
-    if coplanar_edges:
-        bmesh.ops.dissolve_edges(bm,
-                                 edges=coplanar_edges,
-                                 use_verts=False)
 
     bm.normal_update()
+    
+    # Tag elements like Blender's op does — only keep selected geometry
+    geom_edges = [e for e in bm.edges]
+    geom_verts = [v for v in bm.verts]
 
-    # 3) dissolve any “mid‑edge” vertices (valence==2, perfectly colinear)
-    mid_verts = []
-    for v in bm.verts:
-        # exactly two edges → candidate
-        if len(v.link_edges) == 2:
-            e0, e1 = v.link_edges
-            # get direction vectors from v to the two other endpoints
-            p0 = e0.other_vert(v).co - v.co
-            p1 = e1.other_vert(v).co - v.co
-            # if they’re colinear and opposite, dot ≈ -1
-            if abs(p0.normalized().dot(p1.normalized()) + 1.0) < vert_colinear_tol:
-                mid_verts.append(v)
-
-    if mid_verts:
-        bmesh.ops.dissolve_verts(bm,
-                                 verts=mid_verts,
-                                 use_face_split=False)
+    bmesh.ops.dissolve_limit(
+        bm,
+        angle_limit=angle_limit,
+        use_dissolve_boundaries=use_dissolve_boundaries,
+        delimit=delimit,  # <-- Keep as set of strings
+        edges=geom_edges,
+        verts=geom_verts,
+    )
 
     bm.normal_update()
 
