@@ -323,7 +323,7 @@ def collapse_vertices_across_objects(objs, threshold=0.05):
             mapping.append((ob, vi, factor))
     N = len(coords)
     if N == 0:
-        print("⚠️ no vertices to collapse.")
+        # print("⚠️ no vertices to collapse.")
         return
 
     # build KD-tree
@@ -405,9 +405,9 @@ def fix_invalid_split_normals(region_objs):
 
             if replacement:
                 loop_normals[li] = replacement
-                print(f"✅ Fixed invalid normal at loop {li} (vertex {vert_index}) in {obj.name}")
-            else:
-                print(f"⚠️ Could not fix invalid normal at loop {li} (vertex {vert_index}) in {obj.name}")
+            #     print(f"✅ Fixed invalid normal at loop {li} (vertex {vert_index}) in {obj.name}")
+            # else:
+            #     print(f"⚠️ Could not fix invalid normal at loop {li} (vertex {vert_index}) in {obj.name}")
 
         me.normals_split_custom_set(loop_normals)
         # print(f"🔧 Completed normal fix for {obj.name}")
@@ -603,10 +603,10 @@ def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
             if not geom_to_delete:
                 bm.free()
                 # if we never deleted anything at all:
-                if iterations == 0:
-                    print(f"✅ No loose/degenerate geometry in: {obj.name}")
-                else:
-                    print(f"🔄 Finished cleaning {obj.name} in {iterations} passes.")
+                # if iterations == 0:
+                #     print(f"✅ No loose/degenerate geometry in: {obj.name}")
+                # else:
+                #     print(f"🔄 Finished cleaning {obj.name} in {iterations} passes.")
                 break
 
             # pick a deletion context that will remove everything
