@@ -170,13 +170,11 @@ def create_region_empty(center, sphere_radius, index, pending_objects):
 
 def terrain_split(bm_geo, plane_co, plane_no):
     """
-    Splits the convex BMesh `bm_vol` by the plane (plane_co, plane_no) into
+    Splits the convex BMesh `bm_vgeo` by the plane (plane_co, plane_no) into
     two capped halves, and returns (bm_lower, bm_upper).
 
       - the “lower” half keeps the inside side (n·X + d <= 0)
       - the “upper” half keeps the outside side (n·X + d >= 0)
-
-    Both outputs are new BMesh instances with their open boundaries filled.
     """
     # copy for lower half
     bm_lower = bm_geo.copy()
@@ -190,9 +188,7 @@ def terrain_split(bm_geo, plane_co, plane_no):
         clear_inner=False,   # keep the “inside” half
         clear_outer=True     # discard the outside
     )
-    # fix normals
-    bmesh.ops.recalc_face_normals(bm_lower, faces=bm_lower.faces)
-    bm_lower.normal_update()
+    bm_lower.faces.ensure_lookup_table()
 
     # copy for upper half
     bm_upper = bm_geo.copy()
@@ -206,8 +202,7 @@ def terrain_split(bm_geo, plane_co, plane_no):
         clear_inner=True,    # discard the inside
         clear_outer=False    # keep the outside half
     )
-    bmesh.ops.recalc_face_normals(bm_upper, faces=bm_upper.faces)
-    bm_upper.normal_update()
+    bm_upper.faces.ensure_lookup_table()
 
     return bm_lower, bm_upper
 
@@ -947,28 +942,7 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
     node_data["normal"] = [-plane_no.x, -plane_no.y, -plane_no.z, -float(d_value)]
     node_data["front_tree"] = worldnode_idx[0]
     
-    bmesh.ops.bisect_plane(
-        bm_geo,
-        geom=list(bm_geo.faces)+list(bm_geo.edges)+list(bm_geo.verts),
-        plane_co=plane_co,
-        plane_no=plane_no,
-        use_snap_center=False,
-        clear_inner=False,
-        clear_outer=False
-    )
-    bm_geo.faces.ensure_lookup_table()
-    lower_faces = [f for f in bm_geo.faces if f.calc_center_median()[axis] <= split_pos + 1e-6]
-    upper_faces = [f for f in bm_geo.faces if f.calc_center_median()[axis] > split_pos + 1e-6]
-    for f in bm_geo.faces:
-        f.tag = False
-    for f in lower_faces:
-        f.tag = True
-    bm_geo_lower = duplicate_faces_by_tag(bm_geo, True)
-    for f in bm_geo.faces:
-        f.tag = False
-    for f in upper_faces:
-        f.tag = True
-    bm_geo_upper = duplicate_faces_by_tag(bm_geo, True)
+    bm_geo_lower, bm_geo_upper = terrain_split(bm_geo, plane_co, plane_no)
 
     bm_vol_lower, bm_vol_upper = volume_split(bm_vol, plane_co, plane_no, tol=0.0)
 
