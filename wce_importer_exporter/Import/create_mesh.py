@@ -37,7 +37,7 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
 
     # == UV mapping ==
     if 'uvs' in mesh_data and mesh_data['uvs']:  # Check if UV data is present
-        uvlayer = mesh.uv_layers.new(name=mesh_data['name'] + "_uv")
+        uvlayer = mesh.uv_layers.new(name="UVMap")
         for i, triangle in enumerate(mesh.polygons):
             vertices = list(triangle.vertices)
             for j, vertex in enumerate(vertices):

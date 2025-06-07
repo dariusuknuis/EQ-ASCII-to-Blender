@@ -3,6 +3,7 @@ import bpy
 import re
 from mathutils import Matrix, Vector
 from .align_uv_maps import run_align_uv_maps
+from .limited_dissolve_vcol import limited_dissolve_vcol
 
 def run_format_world():
     """
@@ -29,6 +30,9 @@ def run_format_world():
     if not meshes:
         print(f"[Format World] No region meshes found under '{empty.name}'")
         return {'CANCELLED'}
+    
+    for mesh in meshes:
+        limited_dissolve_vcol(mesh)
 
     # Deselect all, then select region meshes and set first as active
     bpy.ops.object.select_all(action='DESELECT')
@@ -37,10 +41,10 @@ def run_format_world():
     context.view_layer.objects.active = meshes[0]
 
     # Align UVs using existing function
-    result = run_align_uv_maps()
-    if result != {'FINISHED'}:
-        print("[Format World] UV alignment failed or was cancelled")
-        return result
+    # result = run_align_uv_maps()
+    # if result != {'FINISHED'}:
+    #     print("[Format World] UV alignment failed or was cancelled")
+    #     return result
 
     # Join selected meshes into one
     bpy.ops.object.join()
