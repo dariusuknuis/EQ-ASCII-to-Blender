@@ -1,9 +1,9 @@
 # Tools/format_world.py
-import bpy
+import bpy, bmesh
 import re
 from mathutils import Matrix, Vector
-from .align_uv_maps import run_align_uv_maps
 from .limited_dissolve_vcol import limited_dissolve_vcol
+from .format_helpers import rearrange_uvs, merge_verts_by_attrs
 
 def run_format_world():
     """
@@ -40,12 +40,6 @@ def run_format_world():
         m.select_set(True)
     context.view_layer.objects.active = meshes[0]
 
-    # Align UVs using existing function
-    # result = run_align_uv_maps()
-    # if result != {'FINISHED'}:
-    #     print("[Format World] UV alignment failed or was cancelled")
-    #     return result
-
     # Join selected meshes into one
     bpy.ops.object.join()
     joined = context.view_layer.objects.active
@@ -58,15 +52,39 @@ def run_format_world():
     joined.name = new_name
     joined.data.name = new_name
 
-    # Rename UV map layers
-    for uv in joined.data.uv_layers:
-        uv.name = new_name + "_uv"
-
     # Zero out object location by applying that translation into the mesh data
     translation = joined.location.copy()
     if translation.length_squared != 0.0:
         joined.data.transform(Matrix.Translation(translation))
         joined.location = Vector((0.0, 0.0, 0.0))
+
+    bm = bmesh.new(); bm.from_mesh(joined.data)
+    joined.data.calc_normals_split()
+    joined.data.use_auto_smooth = True
+
+    ln_layer = bm.loops.layers.float_vector.new("orig_normals")
+    loops = (l for f in bm.faces for l in f.loops)
+    for loop in loops:
+        loop[ln_layer] = joined.data.loops[loop.index].normal
+
+    rearrange_uvs(bm)
+
+    merge_verts_by_attrs(bm)
+
+    bm.to_mesh(joined.data)
+    joined.data.update()
+    bm.free()
+
+    mesh = joined.data
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+    mesh.use_auto_smooth = True
+
+    ln_attr = mesh.attributes.get("orig_normals")
+    if ln_attr:
+        custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
+        mesh.normals_split_custom_set(custom_nors)
+        mesh.attributes.remove(ln_attr)
 
     # Clean up unwanted objects
     # Delete empty named WORLD_BOUNDS

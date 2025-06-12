@@ -346,15 +346,24 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
      5) set object.matrix_world to put it back at that center
      6) call create_bounding_sphere() with the computed radius
     """
+    tol = 1e-4
+    # keep dissolving until the operator returns None or no edges were removed
+    while True:
+        # always pass the full list of edges
+        res = bmesh.ops.dissolve_degenerate(
+            bm,
+            dist=tol,
+            edges=list(bm.edges),
+        )
+        # if the call returned None, or if it returned an empty list of edges, we’re done
+        if not res or not res.get("edges"):
+            break
+
     # --- build the mesh & object ---
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
-
-    # rename first UV layer if present
-    if me.uv_layers:
-        me.uv_layers[0].name = f"{name}_uv"
-
+    
     for poly in me.polygons:
             poly.use_smooth = True
 

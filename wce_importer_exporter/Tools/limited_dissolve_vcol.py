@@ -8,7 +8,7 @@ def limited_dissolve_vcol(
     color_layer_name="Color",
     minimum_gap=0.1,
     long_edge_factor=0.9,
-    angle_degrees=0.1
+    angle_degrees=5.0
 ):
     """
     Mark edges as “sharp” wherever the color‐difference logic dictates,
@@ -166,20 +166,45 @@ def limited_dissolve_vcol(
     for e in sharp_edges:
         e.smooth = False
 
+    # mark_uv_break_seams(bm)
+
     # 12) Perform limited dissolve, respecting SHARP edges as a delimiter
-    angle_radians = radians(angle_degrees)
-    bmesh.ops.dissolve_limit(
-        bm,
-        angle_limit=angle_radians,
-        use_dissolve_boundaries=False,
-        edges=list(bm.edges),
-        # only dissolve edges that are NOT marked sharp
-        delimit={'SHARP', 'UV', 'NORMAL', 'MATERIAL'}
-    )
+    angle_limit = radians(angle_degrees)
+    while True:
+        found = False
+
+        for e in bm.edges:
+            # only dissolve non-sharp, manifold, small-angle edges
+            if not e.smooth: 
+                continue
+            if len(e.link_faces) != 2:
+                continue
+            if e.calc_face_angle() > angle_limit:
+                continue
+
+            f1, f2 = e.link_faces
+
+            # if merging f1+f2 would give >4 verts, skip
+            if (len(f1.verts) + len(f2.verts) - 2) > 4:
+                continue
+
+            # this edge is safe to dissolve _now_
+            bmesh.ops.dissolve_edges(
+                bm,
+                edges=[e],
+                use_verts=False,
+                use_face_split=False
+            )
+            found = True
+            break
+
+        if not found:
+            break
 
     # After dissolving, restore all edges back to smooth=True
     for e in bm.edges:
         e.smooth = True
+        e.seam = False
 
     # 13) Write BMesh back into the Mesh, free BMesh, update normals
     bm.to_mesh(me)

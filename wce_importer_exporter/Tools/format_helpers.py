@@ -1,0 +1,226 @@
+import bpy
+import bmesh
+from collections import deque
+from mathutils import Vector
+
+def rearrange_uvs(bm, tol=1e-6):
+    """
+    Given a BMesh `bm`, flood‐fill vertex‐based UV chunks and integer‐tile‐align them.
+    If no UV map is present, returns `bm` unmodified.
+    """
+    # 1) Grab active UV layer, bail early if none
+    luv = bm.loops.layers.uv.active
+    if not luv:
+        print("No UV map found; skipping UV stitching.")
+        return bm
+
+    # 2) Helpers
+    def loc_key(v):
+        return (round(v.co.x,6), round(v.co.y,6), round(v.co.z,6))
+    def raw_uv(v):
+        l = next(iter(v.link_loops))
+        u, vv = l[luv].uv
+        return (round(u,3), round(vv,3))
+    def frac_uv(raw):
+        return (raw[0] % 1.0, raw[1] % 1.0)
+
+    # 3) Precompute per-vertex lookups
+    pos_groups = {}   # loc_key → [verts]
+    vert_loc   = {}   # vert → loc_key
+    vert_raw   = {}   # vert → raw_uv
+    vert_mat   = {}   # vert → material_index
+    for v in bm.verts:
+        lk = loc_key(v)
+        pos_groups.setdefault(lk, []).append(v)
+        vert_loc[v] = lk
+        vert_raw[v] = raw_uv(v)
+        vert_mat[v] = v.link_loops[0].face.material_index
+
+    # 4) Phase 1: vertex-seeded BFS chunks
+    seen   = set()
+    chunks = []
+    for seed in bm.verts:
+        if seed in seen:
+            continue
+        chunk_vs = {seed}
+        queue    = deque([seed])
+        while queue:
+            v = queue.popleft()
+            # face-adjacency
+            for f in v.link_faces:
+                for v2 in f.verts:
+                    if v2 not in chunk_vs:
+                        chunk_vs.add(v2)
+                        queue.append(v2)
+            # UV-adjacency at same loc + exact raw + same material
+            u0, m0 = vert_raw[v], vert_mat[v]
+            for v2 in pos_groups[vert_loc[v]]:
+                if (v2 not in chunk_vs
+                    and vert_mat[v2]==m0
+                    and vert_raw[v2]==u0):
+                    chunk_vs.add(v2)
+                    queue.append(v2)
+        # collect loops and loc maps for merging
+        chunk_ls = {l for v in chunk_vs for l in v.link_loops}
+        loc_map  = {vert_loc[v]: v for v in chunk_vs}
+        locs     = set(loc_map)
+        chunks.append({
+            "verts":   chunk_vs,
+            "loops":   chunk_ls,
+            "loc_map": loc_map,
+            "locs":    locs,
+        })
+        seen |= chunk_vs
+
+    # 5) Phase 2: merge & integer-align pairwise
+    i = 0
+    while i < len(chunks):
+        base = chunks[i]
+        merged_any = True
+        while merged_any:
+            merged_any = False
+            for j in range(i+1, len(chunks)):
+                other = chunks[j]
+                common = base["locs"] & other["locs"]
+                if not common:
+                    continue
+                for loc in common:
+                    vb = base["loc_map"][loc]
+                    vo = other["loc_map"][loc]
+                    if vert_mat[vb] != vert_mat[vo]:
+                        continue
+                    fa = frac_uv(vert_raw[vb])
+                    fb = frac_uv(vert_raw[vo])
+                    if abs(fa[0]-fb[0])>tol or abs(fa[1]-fb[1])>tol:
+                        continue
+                    # compute integer offset
+                    ru, rv = vert_raw[vb], vert_raw[vo]
+                    delta  = Vector((ru[0]-rv[0], ru[1]-rv[1]))
+                    di     = Vector((round(delta.x), round(delta.y)))
+                    if di.length_squared:
+                        # shift other chunk UVs
+                        for l in other["loops"]:
+                            l[luv].uv += di
+                        # update raw_uv
+                        for v3 in other["verts"]:
+                            u3, v3y = vert_raw[v3]
+                            vert_raw[v3] = (u3 + di.x, v3y + di.y)
+                    # merge other into base
+                    base["verts"].update(other["verts"])
+                    base["loops"].update(other["loops"])
+                    base["loc_map"].update(other["loc_map"])
+                    base["locs"].update(other["locs"])
+                    del chunks[j]
+                    merged_any = True
+                    break
+                if merged_any:
+                    break
+        i += 1
+
+    return bm
+
+def merge_verts_by_attrs(bm,
+                            vcol_name=None,
+                            float_vec_name=None,
+                            tol=1e-6):
+    """
+    Merge co-located vertices in `bm` that share:
+      • the same material on all loops,
+      • the same UV on all loops (uses active UV map),
+      • the same vertex-color on all loops (per-vertex or per-loop),
+      • the same custom vector attribute on all loops (float_vector layer).
+    Returns the modified BMesh. If no UV map is found, returns `bm` unmodified.
+    """
+    # — UV layer (must exist) —
+    luv = bm.loops.layers.uv.active
+    if not luv:
+        # nothing to do
+        return bm
+
+    # — Vertex-color: try per-vertex first —
+    vcol_vert = None
+    if vcol_name:
+        vcol_vert = (bm.verts.layers.color.get(vcol_name)
+                     or bm.verts.layers.float_color.get(vcol_name))
+    else:
+        # pick any existing per-vert color layer
+        vcol_vert = next(iter(bm.verts.layers.color.values()), None) \
+                 or next(iter(bm.verts.layers.float_color.values()), None)
+
+    # — Fallback to per-loop color —
+    vcol_loop = None
+    if not vcol_vert:
+        if vcol_name:
+            vcol_loop = (bm.loops.layers.color.get(vcol_name)
+                         or bm.loops.layers.float_color.get(vcol_name))
+            if not vcol_loop:
+                raise RuntimeError(f"Vertex-color layer '{vcol_name}' not found")
+        else:
+            vcol_loop = (bm.loops.layers.color.active
+                         or bm.loops.layers.float_color.active)
+        if not vcol_loop:
+            raise RuntimeError("No vertex-color layer found")
+
+    # — Custom float-vector layer (per-loop) —
+    vec_layer = None
+    if float_vec_name:
+        vec_layer = bm.loops.layers.float_vector.get(float_vec_name)
+        if not vec_layer:
+            raise RuntimeError(f"Float-vector layer '{float_vec_name}' not found")
+    else:
+        # pick any existing vector layer
+        vec_layer = next(iter(bm.loops.layers.float_vector.values()), None)
+    if not vec_layer:
+        raise RuntimeError("No float_vector layer found")
+
+    # — Helpers to extract attributes —
+    def pos_key(v):
+        return (round(v.co.x,6), round(v.co.y,6), round(v.co.z,6))
+    def loop_uv(l):
+        return (round(l[luv].uv.x,6), round(l[luv].uv.y,6))
+    def vert_color(v):
+        if vcol_vert:
+            col = v[vcol_vert]
+            return tuple(round(c,6) for c in col)
+        else:
+            col = v.link_loops[0][vcol_loop]
+            return tuple(round(c,6) for c in col)
+    def loop_color(l):
+        col = l[vcol_loop]
+        return tuple(round(c,6) for c in col)
+    def loop_vec(l):
+        vec = l[vec_layer]
+        return tuple(round(c,6) for c in vec)
+
+    # — Build buckets by attribute-tuple —
+    buckets = {}
+    for v in bm.verts:
+        p    = pos_key(v)
+        mats = {l.face.material_index for l in v.link_loops}
+        uvs  = {loop_uv(l)    for l in v.link_loops}
+        cols = ({vert_color(v)}
+                if vcol_vert
+                else {loop_color(l) for l in v.link_loops})
+        vecs = {loop_vec(l)   for l in v.link_loops}
+
+        # require exactly one unique value per attribute
+        if len(mats)!=1 or len(uvs)!=1 or len(cols)!=1 or len(vecs)!=1:
+            continue
+
+        key = (p,
+               mats.pop(),
+               uvs.pop(),
+               cols.pop(),
+               vecs.pop())
+        buckets.setdefault(key, []).append(v)
+
+    # — Merge each group of duplicates —
+    merged = 0
+    for verts in buckets.values():
+        if len(verts) <= 1:
+            continue
+        co = verts[0].co.copy()
+        bmesh.ops.pointmerge(bm, verts=verts, merge_co=co)
+        merged += len(verts) - 1
+
+    return bm
