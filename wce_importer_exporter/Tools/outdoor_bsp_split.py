@@ -334,6 +334,11 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
     for mat in original_obj.data.materials:
         new_obj.data.materials.append(mat)
 
+    # copy custom props
+    for key in original_obj.keys():
+        if key != "_RNA_UI":
+            new_obj[key] = original_obj[key]
+
     # add PASSABLE geo‑node modifier if available
     if "PASSABLE" in bpy.data.node_groups:
         gn_mod = new_obj.modifiers.new(name="PASSABLE", type='NODES')
