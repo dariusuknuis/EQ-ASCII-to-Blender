@@ -734,40 +734,41 @@ def zone_bsp_split(bm_geo, zone_obj, current_node, bm_vol, tol=1e-4, min_diag=0.
 
     # 7) Do the real bisect on bm_geo & bm_vol
     # ----------------------------------------
-    def _split(bm_src, fill_holes=False):
-        bm2 = bm_src.copy()
-        geom2 = list(bm2.verts) + list(bm2.edges) + list(bm2.faces)
-        bmesh.ops.bisect_plane(
-            bm2, geom=geom2,
-            plane_co=plane_co_l, plane_no=plane_no_l,
-            dist=tol,
-            clear_inner=False, clear_outer=False
-        )
-        if fill_holes:
-            boundary = [e for e in bm2.edges if len(e.link_faces) == 1]
-            if boundary:
-                bmesh.ops.holes_fill(bm2, edges=boundary, sides=0)
-            bmesh.ops.recalc_face_normals(bm2, faces=bm2.faces)
-            bm2.normal_update()
-        inside, outside = [], []
-        for f in bm2.faces:
-            wctr = f.calc_center_median()
-            dval = (wctr - plane_co_ws).dot(plane_no_ws)
-            if   dval < -tol: inside.append(f)
-            elif dval > +tol: outside.append(f)
-            else:              inside.append(f)
-        for f in bm2.faces: f.tag = False
-        for f in inside:   f.tag = True
-        bm_in = duplicate_faces_by_tag(bm2, True)
-        for f in bm2.faces: f.tag = False
-        for f in outside:  f.tag = True
-        bm_out = duplicate_faces_by_tag(bm2, True)
-        bm2.free()
-        return bm_in, bm_out
+    # def _split(bm_src, fill_holes=False):
+    #     bm2 = bm_src.copy()
+    #     geom2 = list(bm2.verts) + list(bm2.edges) + list(bm2.faces)
+    #     bmesh.ops.bisect_plane(
+    #         bm2, geom=geom2,
+    #         plane_co=plane_co_l, plane_no=plane_no_l,
+    #         dist=tol,
+    #         clear_inner=False, clear_outer=False
+    #     )
+    #     if fill_holes:
+    #         boundary = [e for e in bm2.edges if len(e.link_faces) == 1]
+    #         if boundary:
+    #             bmesh.ops.holes_fill(bm2, edges=boundary, sides=0)
+    #         bmesh.ops.recalc_face_normals(bm2, faces=bm2.faces)
+    #         bm2.normal_update()
+    #     inside, outside = [], []
+    #     for f in bm2.faces:
+    #         wctr = f.calc_center_median()
+    #         dval = (wctr - plane_co_ws).dot(plane_no_ws)
+    #         if   dval < -tol: inside.append(f)
+    #         elif dval > +tol: outside.append(f)
+    #         else:              inside.append(f)
+    #     for f in bm2.faces: f.tag = False
+    #     for f in inside:   f.tag = True
+    #     bm_in = duplicate_faces_by_tag(bm2, True)
+    #     for f in bm2.faces: f.tag = False
+    #     for f in outside:  f.tag = True
+    #     bm_out = duplicate_faces_by_tag(bm2, True)
+    #     bm2.free()
+    #     return bm_in, bm_out
     
     bm_zon.free()
 
-    geo_in, geo_out = _split(bm_geo, fill_holes=False)
+    # geo_in, geo_out = _split(bm_geo, fill_holes=False)
+    geo_in, geo_out = terrain_split(bm_geo, plane_co_l, plane_no_l)
     vol_in, vol_out = volume_split(bm_vol, plane_co_l, plane_no_l, tol)
 
     # 8) Sanity‐check
@@ -879,12 +880,15 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
         node_data["region_tag"] = empty_obj.name
         node_data["back_tree"] = 0
         if bm_geo.faces:
-            for f in bm_geo.faces:
-                f.tag = True
-            new_bm = duplicate_faces_by_tag(bm_geo, True)
-            if new_bm.faces:
-                empty_obj["SPRITE"] = f"R{region_index}_DMSPRITEDEF"
-                create_mesh_object_from_bmesh(new_bm, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
+            empty_obj["SPRITE"] = f"R{region_index}_DMSPRITEDEF"
+            create_mesh_object_from_bmesh(bm_geo, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
+        # if bm_geo.faces:
+        #     for f in bm_geo.faces:
+        #         f.tag = True
+        #     new_bm = duplicate_faces_by_tag(bm_geo, True)
+        #     if new_bm.faces:
+        #         empty_obj["SPRITE"] = f"R{region_index}_DMSPRITEDEF"
+        #         create_mesh_object_from_bmesh(new_bm, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
         return
 
     # If bm has no faces, subdivide the volume anyway.
@@ -928,12 +932,13 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
         empty_obj = create_region_empty(center, sphere_radius, region_index, pending_objects)
         node_data["region_tag"] = empty_obj.name
         node_data["back_tree"] = 0
-        for f in bm_geo.faces:
-            f.tag = True
-        new_bm = duplicate_faces_by_tag(bm_geo, True)
-        if new_bm.faces:
+        # for f in bm_geo.faces:
+        #     f.tag = True
+        # new_bm = duplicate_faces_by_tag(bm_geo, True)
+        # if new_bm.faces:
+        if bm_geo.faces:
             empty_obj["SPRITE"] = f"R{region_index}_DMSPRITEDEF"
-            create_mesh_object_from_bmesh(new_bm, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
+            create_mesh_object_from_bmesh(bm_geo, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
         return
 
     axis, _ = max(valid_axes, key=lambda x: x[1])
