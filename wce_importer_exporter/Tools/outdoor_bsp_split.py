@@ -669,7 +669,7 @@ def zone_bsp_split(bm_geo, zone_obj, current_node, bm_vol, tol=1e-4, min_diag=0.
     plane_co_l  = plane_co_ws.copy()
     plane_no_l  = plane_no_ws.copy()
 
-    
+    bm_zon.free()
 
     geo_in, geo_out = terrain_split(bm_geo, plane_co_l, plane_no_l)
     vol_in, vol_out = volume_split(bm_vol, plane_co_l, plane_no_l, tol)
