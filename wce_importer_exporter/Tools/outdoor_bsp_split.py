@@ -256,85 +256,32 @@ def volume_split(bm_vol, plane_co, plane_no, tol=0.0):
 
     return bm_lower, bm_upper
 
-def duplicate_faces_by_tag(bm, tag_value):
-    """
-    Duplicate all bm.faces with face.tag==tag_value into a new BMesh,
-    copying across:
-      - all UV (loop) layers
-      - all loop‐color layers
-      - all loop float_vector layers
-      - all vertex int layers
-      - all vertex color layers
-      - all vertex float_vector layers
-      - all face int layers
-    """
-    new_bm = bmesh.new()
-    v_map  = {}
+# def delete_loose_verts_edges(bm):
+#     # Tag and delete wire (loose) edges
+#     for e in bm.edges:
+#         if len(e.link_faces) == 0:
+#             e.tag = True
+#         else:
+#             e.tag = False
+#     bmesh.ops.delete(bm, geom=[e for e in bm.edges if e.tag], context='EDGES')
 
-    # ─── gather all source layers ────────────────────────────────────────
-    uv_srcs        = {lay.name: lay for lay in bm.loops.layers.uv}
-    loop_col_srcs  = {lay.name: lay for lay in bm.loops.layers.color}
-    loop_fvec_srcs = {lay.name: lay for lay in bm.loops.layers.float_vector}
+#     # Tag and delete unconnected vertices
+#     for v in bm.verts:
+#         if not v.link_edges:
+#             v.tag = True
+#         else:
+#             v.tag = False
+#     bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.tag], context='VERTS')
 
-    vert_int_srcs  = {lay.name: lay for lay in bm.verts.layers.int}
-    vert_col_srcs  = {lay.name: lay for lay in bm.verts.layers.color}
-    vert_fvec_srcs = {lay.name: lay for lay in bm.verts.layers.float_vector}
-
-    face_int_srcs  = {lay.name: lay for lay in bm.faces.layers.int}
-
-    # ─── create matching layers in new_bm ───────────────────────────────
-    uv_dsts        = {name: new_bm.loops.layers.uv.new(name)          for name in uv_srcs}
-    loop_col_dsts  = {name: new_bm.loops.layers.color.new(name)       for name in loop_col_srcs}
-    loop_fvec_dsts = {name: new_bm.loops.layers.float_vector.new(name) for name in loop_fvec_srcs}
-
-    vert_int_dsts  = {name: new_bm.verts.layers.int.new(name)           for name in vert_int_srcs}
-    vert_col_dsts  = {name: new_bm.verts.layers.color.new(name)         for name in vert_col_srcs}
-    vert_fvec_dsts = {name: new_bm.verts.layers.float_vector.new(name)  for name in vert_fvec_srcs}
-
-    face_int_dsts  = {name: new_bm.faces.layers.int.new(name)           for name in face_int_srcs}
-
-    # ─── duplicate only tagged faces ────────────────────────────────────
-    for face in bm.faces:
-        if not face.tag:
-            continue
-
-        # copy verts & their attributes
-        new_verts = []
-        for v in face.verts:
-            if v not in v_map:
-                v_new = new_bm.verts.new(v.co)
-                v_map[v] = v_new
-                # copy vertex-domain layers
-                for name, src in vert_int_srcs.items():
-                    v_new[vert_int_dsts[name]] = v[src]
-                for name, src in vert_col_srcs.items():
-                    v_new[vert_col_dsts[name]] = v[src]
-                for name, src in vert_fvec_srcs.items():
-                    v_new[vert_fvec_dsts[name]] = v[src]
-            new_verts.append(v_map[v])
-
-        try:
-            f_new = new_bm.faces.new(new_verts)
-        except ValueError:
-            continue  # degenerate face
-
-        # copy material index
-        f_new.material_index = face.material_index
-
-        # copy face int layers
-        for name, src in face_int_srcs.items():
-            f_new[face_int_dsts[name]] = face[src]
-
-        # copy per-loop data: UVs, loop-colors, loop-float_vectors
-        for loop_old, loop_new in zip(face.loops, f_new.loops):
-            for name, src in uv_srcs.items():
-                loop_new[uv_dsts[name]].uv = loop_old[src].uv
-            for name, src in loop_col_srcs.items():
-                loop_new[loop_col_dsts[name]] = loop_old[src]
-            for name, src in loop_fvec_srcs.items():
-                loop_new[loop_fvec_dsts[name]] = loop_old[src]
-
-    return new_bm
+# def dissolve_degenerate_recursive(bm, dist=1e-4, max_passes=8):
+#     for _ in range(max_passes):
+#         res = bmesh.ops.dissolve_degenerate(bm, dist=dist, edges=list(bm.edges))
+#         if not res:
+#             break
+#         changed = any(res.get(k) for k in ('edges', 'verts', 'faces'))
+#         bm.select_flush(True)
+#         if not changed:
+#             break
 
 def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
     """
@@ -346,24 +293,19 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
      5) set object.matrix_world to put it back at that center
      6) call create_bounding_sphere() with the computed radius
     """
-    tol = 1e-4
-    # keep dissolving until the operator returns None or no edges were removed
-    while True:
-        # always pass the full list of edges
-        res = bmesh.ops.dissolve_degenerate(
-            bm,
-            dist=tol,
-            edges=list(bm.edges),
-        )
-        # if the call returned None, or if it returned an empty list of edges, we’re done
-        if not res or not res.get("edges"):
-            break
+
+    # dissolve_degenerate_recursive(bm)
 
     # --- build the mesh & object ---
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
-    
+
+    # --- Set vertex color layer as active (or it doesn't display automatically) ---
+    col_attr = me.color_attributes.get("Color")
+    if col_attr:
+        me.color_attributes.active_color = col_attr
+
     for poly in me.polygons:
             poly.use_smooth = True
 
@@ -391,11 +333,6 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
     # copy materials
     for mat in original_obj.data.materials:
         new_obj.data.materials.append(mat)
-
-    # copy custom props
-    for key in original_obj.keys():
-        if key != "_RNA_UI":
-            new_obj[key] = original_obj[key]
 
     # add PASSABLE geo‑node modifier if available
     if "PASSABLE" in bpy.data.node_groups:
@@ -732,42 +669,7 @@ def zone_bsp_split(bm_geo, zone_obj, current_node, bm_vol, tol=1e-4, min_diag=0.
     plane_co_l  = plane_co_ws.copy()
     plane_no_l  = plane_no_ws.copy()
 
-    # 7) Do the real bisect on bm_geo & bm_vol
-    # ----------------------------------------
-    def _split(bm_src, fill_holes=False):
-        bm2 = bm_src.copy()
-        geom2 = list(bm2.verts) + list(bm2.edges) + list(bm2.faces)
-        bmesh.ops.bisect_plane(
-            bm2, geom=geom2,
-            plane_co=plane_co_l, plane_no=plane_no_l,
-            dist=tol,
-            clear_inner=False, clear_outer=False
-        )
-        if fill_holes:
-            boundary = [e for e in bm2.edges if len(e.link_faces) == 1]
-            if boundary:
-                bmesh.ops.holes_fill(bm2, edges=boundary, sides=0)
-            bmesh.ops.recalc_face_normals(bm2, faces=bm2.faces)
-            bm2.normal_update()
-        inside, outside = [], []
-        for f in bm2.faces:
-            wctr = f.calc_center_median()
-            dval = (wctr - plane_co_ws).dot(plane_no_ws)
-            if   dval < -tol: inside.append(f)
-            elif dval > +tol: outside.append(f)
-            else:              inside.append(f)
-        for f in bm2.faces: f.tag = False
-        for f in inside:   f.tag = True
-        bm_in = duplicate_faces_by_tag(bm2, True)
-        for f in bm2.faces: f.tag = False
-        for f in outside:  f.tag = True
-        bm_out = duplicate_faces_by_tag(bm2, True)
-        bm2.free()
-        return bm_in, bm_out
-    
-    bm_zon.free()
-
-    geo_in, geo_out = _split(bm_geo, fill_holes=False)
+    geo_in, geo_out = terrain_split(bm_geo, plane_co_l, plane_no_l)
     vol_in, vol_out = volume_split(bm_vol, plane_co_l, plane_no_l, tol)
 
     # 8) Sanity‐check
@@ -879,12 +781,8 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
         node_data["region_tag"] = empty_obj.name
         node_data["back_tree"] = 0
         if bm_geo.faces:
-            for f in bm_geo.faces:
-                f.tag = True
-            new_bm = duplicate_faces_by_tag(bm_geo, True)
-            if new_bm.faces:
-                empty_obj["SPRITE"] = f"R{region_index}_DMSPRITEDEF"
-                create_mesh_object_from_bmesh(new_bm, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
+            empty_obj["SPRITE"] = f"R{region_index}_DMSPRITEDEF"
+            create_mesh_object_from_bmesh(bm_geo, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
         return
 
     # If bm has no faces, subdivide the volume anyway.
@@ -928,12 +826,9 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
         empty_obj = create_region_empty(center, sphere_radius, region_index, pending_objects)
         node_data["region_tag"] = empty_obj.name
         node_data["back_tree"] = 0
-        for f in bm_geo.faces:
-            f.tag = True
-        new_bm = duplicate_faces_by_tag(bm_geo, True)
-        if new_bm.faces:
+        if bm_geo.faces:
             empty_obj["SPRITE"] = f"R{region_index}_DMSPRITEDEF"
-            create_mesh_object_from_bmesh(new_bm, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
+            create_mesh_object_from_bmesh(bm_geo, f"R{region_index}_DMSPRITEDEF", source_obj, pending_objects)
         return
 
     axis, _ = max(valid_axes, key=lambda x: x[1])
@@ -1003,13 +898,6 @@ def run_outdoor_bsp_split(target_size=282.0):
         bounds_min, bounds_max = calculate_bounds(src)
         vol_min, vol_max = normalize_bounds(bounds_min, bounds_max, target_size)
 
-        vcol_attr = next((a for a in src.data.color_attributes if a.domain == 'POINT'), None)
-        if vcol_attr:
-            # use slicing to copy the array into a tuple
-            vertex_colors = [c.color[:] for c in vcol_attr.data]
-        else:
-            vertex_colors = None
-
         bm = bmesh.new(); bm.from_mesh(src.data)
         bm_vol = create_world_volume(vol_min, vol_max)
 
@@ -1022,14 +910,6 @@ def run_outdoor_bsp_split(target_size=282.0):
         loops = (l for f in bm.faces for l in f.loops)
         for loop in loops:
             loop[ln_layer] = src.data.loops[loop.index].normal
-
-        if vertex_colors:
-            # make a fresh corner‑domain layer in the BMesh
-            loop_col = bm.loops.layers.color.new(vcol_attr.name + "_loop")
-            # copy per‑vertex → per‑loop
-            loops = (l for f in bm.faces for l in f.loops)
-            for loop in loops:
-                loop[loop_col] = vertex_colors[loop.vert.index]
 
         region_counter = [1]; world_nodes = []; worldnode_idx = [1]
         recursive_bsp_split(bm, bm_vol, target_size,
