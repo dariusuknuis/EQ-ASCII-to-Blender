@@ -1,16 +1,18 @@
 import bpy
 import bmesh
 import mathutils
-from mathutils import Vector, Matrix, kdtree
+from mathutils import Vector, Matrix, kdtree, bvhtree
 from mathutils.kdtree import KDTree
 from mathutils.bvhtree import BVHTree
 from create_bounding_sphere import create_bounding_sphere
 from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
 from create_worldtree import create_worldtree
 from .finalize_region_meshes import finalize_region_meshes
+from .bsp_split_helpers import mark_color_seams, dissolve_uv_affine_edges
 import math
 from math import pi
 import re
+import numpy as np
 
 # ------------------------------------------------------------
 # --- Helper: AABB Intersection
@@ -168,7 +170,45 @@ def create_region_empty(center, sphere_radius, index, pending_objects):
     
     return empty
 
-def terrain_split(bm_geo, plane_co, plane_no):
+def cleanup_mesh_geometry(bm, area_threshold=1e-10, dissolve_dist=1e-4, max_passes=8):
+    """
+    Iteratively deletes loose verts/edges, degenerate faces,
+    and performs dissolve_degenerate until no more geometry can be removed.
+    Operates in-place on the given mesh.
+    """
+    for _ in range(max_passes):
+        changed = False
+
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+        # 1. Delete loose verts/edges and degenerate faces
+        loose_verts = [v for v in bm.verts if not v.link_edges]
+        loose_edges = [e for e in bm.edges if not e.link_faces]
+        degenerate_faces = [f for f in bm.faces if f.calc_area() < area_threshold]
+
+        geom_to_delete = loose_verts + loose_edges + degenerate_faces
+
+        if geom_to_delete:
+            if loose_edges or (loose_verts and degenerate_faces):
+                context = 'EDGES'
+            elif degenerate_faces:
+                context = 'FACES'
+            else:
+                context = 'VERTS'
+            bmesh.ops.delete(bm, geom=geom_to_delete, context=context)
+            changed = True
+
+        # 2. Dissolve degenerate geometry
+        res = bmesh.ops.dissolve_degenerate(bm, dist=dissolve_dist, edges=list(bm.edges))
+        if res and any(res.get(k) for k in ('edges', 'verts', 'faces')):
+            changed = True
+
+        if not changed:
+            break
+
+def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
     """
     Splits the convex BMesh `bm_vgeo` by the plane (plane_co, plane_no) into
     two capped halves, and returns (bm_lower, bm_upper).
@@ -176,6 +216,7 @@ def terrain_split(bm_geo, plane_co, plane_no):
       - the “lower” half keeps the inside side (n·X + d <= 0)
       - the “upper” half keeps the outside side (n·X + d >= 0)
     """
+    
     # copy for lower half
     bm_lower = bm_geo.copy()
     geom_l   = list(bm_lower.verts) + list(bm_lower.edges) + list(bm_lower.faces)
@@ -184,12 +225,15 @@ def terrain_split(bm_geo, plane_co, plane_no):
         geom       = geom_l,
         plane_co   = plane_co,
         plane_no   = plane_no,
+        dist       = tol,
         use_snap_center=False,
         clear_inner=False,   # keep the “inside” half
         clear_outer=True     # discard the outside
     )
-    bm_lower.faces.ensure_lookup_table()
-
+    cleanup_mesh_geometry(bm_lower)
+    mark_color_seams(bm_lower)
+    dissolve_uv_affine_edges(bm_lower)
+    
     # copy for upper half
     bm_upper = bm_geo.copy()
     geom_u   = list(bm_upper.verts) + list(bm_upper.edges) + list(bm_upper.faces)
@@ -202,11 +246,13 @@ def terrain_split(bm_geo, plane_co, plane_no):
         clear_inner=True,    # discard the inside
         clear_outer=False    # keep the outside half
     )
-    bm_upper.faces.ensure_lookup_table()
+    cleanup_mesh_geometry(bm_upper)
+    mark_color_seams(bm_upper)
+    dissolve_uv_affine_edges(bm_upper)
 
     return bm_lower, bm_upper
 
-def volume_split(bm_vol, plane_co, plane_no, tol=0.0):
+def volume_split(bm_vol, plane_co, plane_no, tol=1e-6):
     """
     Splits the convex BMesh `bm_vol` by the plane (plane_co, plane_no) into
     two capped halves, and returns (bm_lower, bm_upper).
@@ -256,33 +302,6 @@ def volume_split(bm_vol, plane_co, plane_no, tol=0.0):
 
     return bm_lower, bm_upper
 
-# def delete_loose_verts_edges(bm):
-#     # Tag and delete wire (loose) edges
-#     for e in bm.edges:
-#         if len(e.link_faces) == 0:
-#             e.tag = True
-#         else:
-#             e.tag = False
-#     bmesh.ops.delete(bm, geom=[e for e in bm.edges if e.tag], context='EDGES')
-
-#     # Tag and delete unconnected vertices
-#     for v in bm.verts:
-#         if not v.link_edges:
-#             v.tag = True
-#         else:
-#             v.tag = False
-#     bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.tag], context='VERTS')
-
-# def dissolve_degenerate_recursive(bm, dist=1e-4, max_passes=8):
-#     for _ in range(max_passes):
-#         res = bmesh.ops.dissolve_degenerate(bm, dist=dist, edges=list(bm.edges))
-#         if not res:
-#             break
-#         changed = any(res.get(k) for k in ('edges', 'verts', 'faces'))
-#         bm.select_flush(True)
-#         if not changed:
-#             break
-
 def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
     """
     Create a new mesh object from bm:
@@ -294,7 +313,7 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
      6) call create_bounding_sphere() with the computed radius
     """
 
-    # dissolve_degenerate_recursive(bm)
+    cleanup_mesh_geometry(bm)
 
     # --- build the mesh & object ---
     me = bpy.data.meshes.new(name)
@@ -306,15 +325,6 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
     if col_attr:
         me.color_attributes.active_color = col_attr
 
-    for poly in me.polygons:
-            poly.use_smooth = True
-
-    for e in me.edges:
-        e.use_edge_sharp = False
-
-    me.use_auto_smooth = True
-    me.auto_smooth_angle = math.pi
-
     ln_attr = me.attributes.get("orig_normals")
     if ln_attr:
         # build flat list of normals in loop order
@@ -322,9 +332,7 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
         me.normals_split_custom_set(custom_nors)
         me.attributes.remove(me.attributes.get("orig_normals"))
 
-    # clear any sharp‑edge flags
-    for e in me.edges:
-        e.use_edge_sharp = False
+    me.use_auto_smooth = True
 
     # create the object
     new_obj = bpy.data.objects.new(name, me)
@@ -918,6 +926,9 @@ def run_outdoor_bsp_split(target_size=282.0):
         for loop in loops:
             loop[ln_layer] = src.data.loops[loop.index].normal
 
+        mark_color_seams(bm)
+        dissolve_uv_affine_edges(bm)
+
         region_counter = [1]; world_nodes = []; worldnode_idx = [1]
         recursive_bsp_split(bm, bm_vol, target_size,
                             region_counter, src, zone_volumes,
@@ -985,7 +996,7 @@ def run_outdoor_bsp_split(target_size=282.0):
 
         modify_regions_and_worldtree()
 
-        finalize_region_meshes()
+        # finalize_region_meshes()
     
     bpy.context.scene.render.use_lock_interface = False
     bpy.context.window_manager.progress_end()

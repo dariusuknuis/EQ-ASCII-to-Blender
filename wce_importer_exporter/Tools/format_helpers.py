@@ -1,4 +1,3 @@
-import bpy
 import bmesh
 from collections import deque
 from mathutils import Vector
@@ -119,31 +118,47 @@ def rearrange_uvs(bm, tol=1e-6):
 
     return bm
 
+import bmesh
+
 def merge_verts_by_attrs(bm,
-                            vcol_name=None,
-                            float_vec_name=None,
-                            tol=1e-6):
+                         vcol_name=None,
+                         float_vec_name=None,
+                         tol=1e-6):
     """
-    Merge co-located vertices in `bm` that share:
+    Merge co-located verts in `bm` that share:
       • the same material on all loops,
-      • the same UV on all loops (uses active UV map),
+      • the same UV on all loops (active UV map),
       • the same vertex-color on all loops (per-vertex or per-loop),
       • the same custom vector attribute on all loops (float_vector layer).
-    Returns the modified BMesh. If no UV map is found, returns `bm` unmodified.
+
+    Now quantizes:
+      – loop.float_vector to signed-byte (±128) steps of 1/128,
+      – loop.color     to unsigned-byte (0–255) steps of 1/255.
     """
+    # — quantizers —
+    def quantize_255(c):
+        i = int(round(c * 255.0))
+        if i < 0:   i = 0
+        if i > 255: i = 255
+        return i / 255.0
+
+    def quantize_128(c):
+        i = int(round(c * 128.0))
+        if i < -128: i = -128
+        if i >  127: i =  127
+        return i / 128.0
+
     # — UV layer (must exist) —
     luv = bm.loops.layers.uv.active
     if not luv:
-        # nothing to do
-        return bm
+        return bm  # nothing to do
 
-    # — Vertex-color: try per-vertex first —
+    # — Vertex-color layer? prefer per-vert —
     vcol_vert = None
     if vcol_name:
         vcol_vert = (bm.verts.layers.color.get(vcol_name)
                      or bm.verts.layers.float_color.get(vcol_name))
     else:
-        # pick any existing per-vert color layer
         vcol_vert = next(iter(bm.verts.layers.color.values()), None) \
                  or next(iter(bm.verts.layers.float_color.values()), None)
 
@@ -161,36 +176,41 @@ def merge_verts_by_attrs(bm,
         if not vcol_loop:
             raise RuntimeError("No vertex-color layer found")
 
-    # — Custom float-vector layer (per-loop) —
+    # — Float-vector layer (per-loop) —
     vec_layer = None
     if float_vec_name:
         vec_layer = bm.loops.layers.float_vector.get(float_vec_name)
         if not vec_layer:
             raise RuntimeError(f"Float-vector layer '{float_vec_name}' not found")
     else:
-        # pick any existing vector layer
         vec_layer = next(iter(bm.loops.layers.float_vector.values()), None)
     if not vec_layer:
         raise RuntimeError("No float_vector layer found")
 
-    # — Helpers to extract attributes —
+    # — Helpers to extract a *quantized* attribute signature —
     def pos_key(v):
         return (round(v.co.x,6), round(v.co.y,6), round(v.co.z,6))
+
     def loop_uv(l):
+        # UV precision usually higher, keep 6 decimal places.
         return (round(l[luv].uv.x,6), round(l[luv].uv.y,6))
+
     def vert_color(v):
-        if vcol_vert:
-            col = v[vcol_vert]
-            return tuple(round(c,6) for c in col)
-        else:
-            col = v.link_loops[0][vcol_loop]
-            return tuple(round(c,6) for c in col)
+        # quantize per-vertex color to 0..255
+        col = v[vcol_vert]
+        return tuple(quantize_255(c) for c in col)
+
     def loop_color(l):
+        # quantize per-loop color to 0..255
         col = l[vcol_loop]
-        return tuple(round(c,6) for c in col)
+        return tuple(quantize_255(c) for c in col)
+
     def loop_vec(l):
-        vec = l[vec_layer]
-        return tuple(round(c,6) for c in vec)
+        # quantize float vector to signed byte steps of 1/128
+        x,y,z = l[vec_layer]
+        return (quantize_128(x),
+                quantize_128(y),
+                quantize_128(z))
 
     # — Build buckets by attribute-tuple —
     buckets = {}
@@ -215,12 +235,11 @@ def merge_verts_by_attrs(bm,
         buckets.setdefault(key, []).append(v)
 
     # — Merge each group of duplicates —
-    merged = 0
     for verts in buckets.values():
         if len(verts) <= 1:
             continue
+        # merge into the first vert’s position
         co = verts[0].co.copy()
         bmesh.ops.pointmerge(bm, verts=verts, merge_co=co)
-        merged += len(verts) - 1
 
     return bm

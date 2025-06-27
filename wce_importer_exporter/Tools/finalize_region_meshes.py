@@ -1,4 +1,4 @@
-import bpy, bmesh, math, re
+import bpy, bmesh, math, re, math
 from mathutils import Vector, kdtree
 from mathutils.kdtree import KDTree
 import time
@@ -124,6 +124,7 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
             
         # 3) write mesh & reapply custom normals
         bm.to_mesh(me)
+        me.update()
         bm.free()
 
         for poly in me.polygons:
@@ -280,8 +281,9 @@ def triangulate_meshes(objs):
         for loop in loops:
             loop[ln_layer] = me.loops[loop.index].normal
         
-        bmesh.ops.triangulate(bm, faces=bm.faces[:])
+        bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
         bm.to_mesh(me)
+        me.update()
         bm.free()
 
         for poly in me.polygons:
@@ -290,9 +292,6 @@ def triangulate_meshes(objs):
         for e in me.edges:
             e.use_edge_sharp = False
 
-        me.use_auto_smooth = True
-        me.auto_smooth_angle = math.pi
-
         ln_attr = me.attributes.get("orig_normals")
         if ln_attr:
             # build flat list of normals in loop order
@@ -300,9 +299,12 @@ def triangulate_meshes(objs):
             me.normals_split_custom_set(custom_nors)
             me.attributes.remove(me.attributes.get("orig_normals"))
 
-        # clear any sharp‑edge flags
-        for e in me.edges:
-            e.use_edge_sharp = False
+        me.use_auto_smooth = True
+        me.auto_smooth_angle = math.pi
+
+        # # clear any sharp‑edge flags
+        # for e in me.edges:
+        #     e.use_edge_sharp = False
 
         # print(f"✅ {ob.name}: triangulated and normals preserved.")
 
@@ -577,7 +579,61 @@ def average_vertex_colors_globally(region_objs, threshold=0.001):
 
     # print(f"✅ Averaged colors globally across {len(clusters)} vertex clusters.")
 
-def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
+# def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
+#     print("🧹 Deleting loose and degenerate geometry in region meshes...")
+
+#     for obj in region_objs:
+#         if obj.type != 'MESH':
+#             continue
+
+#         mesh = obj.data
+#         iterations = 0
+#         while True:
+#             # build a fresh BMesh each pass
+#             bm = bmesh.new()
+#             bm.from_mesh(mesh)
+#             bm.verts.ensure_lookup_table()
+#             bm.edges.ensure_lookup_table()
+#             bm.faces.ensure_lookup_table()
+
+#             ln_layer = bm.loops.layers.float_vector.new("orig_normals")
+#             loops = (l for f in bm.faces for l in f.loops)
+#             for loop in loops:
+#                 loop[ln_layer] = mesh.loops[loop.index].normal
+
+#             # collect all the geometry to delete
+#             loose_verts     = [v for v in bm.verts if not v.link_edges]
+#             loose_edges     = [e for e in bm.edges if not e.link_faces]
+#             degenerate_faces= [f for f in bm.faces if f.calc_area() < area_threshold]
+#             geom_to_delete  = loose_verts + loose_edges + degenerate_faces
+
+#             if not geom_to_delete:
+#                 bm.free()
+#                 break
+
+#             # pick a deletion context that will remove everything
+#             if loose_edges or (loose_verts and degenerate_faces):
+#                 context = 'EDGES'
+#             elif degenerate_faces:
+#                 context = 'FACES'
+#             else:
+#                 context = 'VERTS'
+
+#             bmesh.ops.delete(bm, geom=geom_to_delete, context=context)
+#             bm.to_mesh(mesh)
+#             mesh.update()
+#             bm.free()
+
+#             ln_attr = mesh.attributes.get("orig_normals")
+#             if ln_attr:
+#                 # build flat list of normals in loop order
+#                 custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
+#                 mesh.normals_split_custom_set(custom_nors)
+#                 mesh.attributes.remove(mesh.attributes.get("orig_normals"))
+
+#             iterations += 1
+
+def delete_loose_and_degenerate(region_objs, area_threshold=1e-10, dissolve_dist=1e-4, max_passes=8):
     print("🧹 Deleting loose and degenerate geometry in region meshes...")
 
     for obj in region_objs:
@@ -585,8 +641,9 @@ def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
             continue
 
         mesh = obj.data
-        iterations = 0
-        while True:
+
+        for _ in range(max_passes):
+            changed = False
             # build a fresh BMesh each pass
             bm = bmesh.new()
             bm.from_mesh(mesh)
@@ -594,39 +651,46 @@ def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
             bm.edges.ensure_lookup_table()
             bm.faces.ensure_lookup_table()
 
-            # collect all the geometry to delete
-            loose_verts     = [v for v in bm.verts if not v.link_edges]
-            loose_edges     = [e for e in bm.edges if not e.link_faces]
-            degenerate_faces= [f for f in bm.faces if f.calc_area() < area_threshold]
-            geom_to_delete  = loose_verts + loose_edges + degenerate_faces
+            ln_layer = bm.loops.layers.float_vector.new("orig_normals")
+            loops = (l for f in bm.faces for l in f.loops)
+            for loop in loops:
+                loop[ln_layer] = mesh.loops[loop.index].normal
 
-            if not geom_to_delete:
-                bm.free()
-                # if we never deleted anything at all:
-                # if iterations == 0:
-                #     print(f"✅ No loose/degenerate geometry in: {obj.name}")
-                # else:
-                #     print(f"🔄 Finished cleaning {obj.name} in {iterations} passes.")
+            # 1. Delete loose verts/edges and degenerate faces
+            loose_verts = [v for v in bm.verts if not v.link_edges]
+            loose_edges = [e for e in bm.edges if not e.link_faces]
+            degenerate_faces = [f for f in bm.faces if f.calc_area() < area_threshold]
+
+            geom_to_delete = loose_verts + loose_edges + degenerate_faces
+
+            if geom_to_delete:
+                if loose_edges or (loose_verts and degenerate_faces):
+                    context = 'EDGES'
+                elif degenerate_faces:
+                    context = 'FACES'
+                else:
+                    context = 'VERTS'
+                bmesh.ops.delete(bm, geom=geom_to_delete, context=context)
+                changed = True
+
+            # 2. Dissolve degenerate geometry
+            res = bmesh.ops.dissolve_degenerate(bm, dist=dissolve_dist, edges=list(bm.edges))
+            if res and any(res.get(k) for k in ('edges', 'verts', 'faces')):
+                changed = True
+
+            if not changed:
                 break
 
-            # pick a deletion context that will remove everything
-            if loose_edges or (loose_verts and degenerate_faces):
-                context = 'EDGES'
-            elif degenerate_faces:
-                context = 'FACES'
-            else:
-                context = 'VERTS'
-
-            bmesh.ops.delete(bm, geom=geom_to_delete, context=context)
             bm.to_mesh(mesh)
             mesh.update()
             bm.free()
 
-            iterations += 1
-            # print(f"  • {obj.name} pass {iterations}: "
-            #       f"{len(loose_verts)} loose verts, "
-            #       f"{len(loose_edges)} loose edges, "
-            #       f"{len(degenerate_faces)} degenerate faces")
+            ln_attr = mesh.attributes.get("orig_normals")
+            if ln_attr:
+                # build flat list of normals in loop order
+                custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
+                mesh.normals_split_custom_set(custom_nors)
+                mesh.attributes.remove(mesh.attributes.get("orig_normals"))
 
 def delete_empty_region_meshes_and_clear_sprite(region_objs):
     """
@@ -657,6 +721,34 @@ def delete_empty_region_meshes_and_clear_sprite(region_objs):
             bpy.data.objects.remove(obj, do_unlink=True)
             region_objs.remove(obj)
 
+def preserve_and_clear_sharp_normals(region_objs):
+    """
+    For each selected mesh object:
+    1) Captures the current split normals (including any sharp-edge splits)
+    2) Clears all sharp-edge flags
+    3) Reapplies the captured normals as custom split normals
+    """
+    for obj in list(region_objs):
+        if obj.type != 'MESH':
+            continue
+        me = obj.data
+        
+        # 1) Ensure split normals are up-to-date
+        me.calc_normals_split()
+        me.use_auto_smooth = True
+        
+        # 2) Capture current split normals
+        captured_normals = [loop.normal.copy() for loop in me.loops]
+        
+        # 3) Clear all sharp edges so auto-smooth is uniform
+        for edge in me.edges:
+            edge.use_edge_sharp = False
+        
+        # 4) Reapply as custom split normals
+        me.normals_split_custom_set(captured_normals)
+        me.use_auto_smooth = True
+        me.auto_smooth_angle = math.pi
+
 def finalize_region_meshes(
         edge_snap_threshold=0.03,
         merge_dist=0.001,
@@ -675,21 +767,22 @@ def finalize_region_meshes(
     # for obj in region_objs:
         # print(f"   • {obj.name}")
 
-    merge_near_zero_edges(region_objs)
+    # merge_near_zero_edges(region_objs)
     delete_loose_and_degenerate(region_objs)
+    preserve_and_clear_sharp_normals(region_objs)
     collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
-    fix_invalid_split_normals(region_objs)
-    merge_near_zero_edges(region_objs)
+    # fix_invalid_split_normals(region_objs)
+    # merge_near_zero_edges(region_objs)
     delete_loose_and_degenerate(region_objs)
     split_edges_to_snap_verts(region_objs, threshold=edge_snap_threshold)
     collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
-    merge_near_zero_edges(region_objs)
-    delete_loose_and_degenerate(region_objs)
-    for obj in region_objs:
-        merge_by_distance(obj, dist=merge_dist)
+    # merge_near_zero_edges(region_objs)
+    # delete_loose_and_degenerate(region_objs)
+    # for obj in region_objs:
+    #     merge_by_distance(obj, dist=merge_dist)
     delete_loose_and_degenerate(region_objs)
     triangulate_meshes(region_objs)
-    average_vertex_colors_globally(region_objs, threshold=0.1)
+    # average_vertex_colors_globally(region_objs, threshold=0.1)
     delete_loose_and_degenerate(region_objs)
     delete_empty_region_meshes_and_clear_sprite(region_objs)
     
