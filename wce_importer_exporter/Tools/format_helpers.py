@@ -1,4 +1,4 @@
-import bmesh
+import bmesh, math
 from collections import deque
 from mathutils import Vector
 
@@ -117,8 +117,6 @@ def rearrange_uvs(bm, tol=1e-6):
         i += 1
 
     return bm
-
-import bmesh
 
 def merge_verts_by_attrs(bm,
                          vcol_name=None,
@@ -241,5 +239,74 @@ def merge_verts_by_attrs(bm,
         # merge into the first vert’s position
         co = verts[0].co.copy()
         bmesh.ops.pointmerge(bm, verts=verts, merge_co=co)
+
+    return bm
+
+def dissolve_mid_edge_verts(bm, angle_limit=0.01):
+    """
+    1) Dissolve any boundary vertex whose two boundary edges deviate
+       from straight by <= angle_limit, but never if that vertex
+       is part of a UV seam or would collapse away a seam.
+    2) Triangulate with BEAUTY for quads and EAR_CLIP for ngons.
+    """
+    
+    # precompute dot threshold for |angle - pi| <= angle_limit
+    cos_eps = math.cos(angle_limit)
+    thresh  = 1.0 - cos_eps  # so |dot + 1| < thresh → within angle_limit of straight
+
+    to_dissolve = []
+    for v in bm.verts:
+        # --- protection: skip any vertex that is part of or supports a UV seam ---
+        # a) if any incident edge is already a seam, skip
+        if any(e.seam for e in v.link_edges):
+            continue
+        # b) if any face using this vertex has a different seam on another edge, skip
+        skip = False
+        for f in v.link_faces:
+            for e in f.edges:
+                if e is not None and e.seam:
+                    skip = True
+                    break
+            if skip:
+                break
+        if skip:
+            continue
+
+        # --- boundary‐edge colinearity test ---
+        b_eds = [e for e in v.link_edges if len(e.link_faces)==1]
+        if len(b_eds) != 2:
+            continue
+
+        p = v.co
+        a = b_eds[0].other_vert(v).co
+        b = b_eds[1].other_vert(v).co
+
+        d1 = (a - p).normalized()
+        d2 = (b - p).normalized()
+        dot = d1.dot(d2)
+
+        # if |dot + 1| < thresh → nearly straight
+        if abs(dot + 1.0) < thresh:
+            to_dissolve.append(v)
+
+    if to_dissolve:
+        bmesh.ops.dissolve_verts(
+            bm,
+            verts          = to_dissolve,
+            use_face_split = False
+        )
+        print(f"Dissolved {len(to_dissolve)} boundary verts within {angle_limit} rad, skipping seams.")
+    else:
+        print("No boundary verts qualified for dissolve (all protected by seams or not colinear).")
+
+    # now triangulate everything
+    faces = [f for f in bm.faces]
+    bmesh.ops.triangulate(
+        bm,
+        faces        = faces,
+        quad_method  = 'BEAUTY',
+        ngon_method  = 'EAR_CLIP',
+    )
+    print(f"Triangulated {len(faces)} faces (BEAUTY quads, EAR_CLIP ngons).")
 
     return bm

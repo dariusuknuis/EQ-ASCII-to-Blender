@@ -31,7 +31,7 @@ def mesh_from_bmesh_with_split_norms(bm, mesh):
         # build flat list of normals in loop order
         custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
         me.normals_split_custom_set(custom_nors)
-        # me.attributes.remove(me.attributes.get("orig_normals"))
+        me.attributes.remove(me.attributes.get("orig_normals"))
 
     me.use_auto_smooth = True
     

@@ -1,6 +1,8 @@
 import bmesh
+from collections import defaultdict
 from math import radians
 from mathutils import Vector, Matrix
+from mathutils.bvhtree import BVHTree
 
 def mark_color_seams(bm, color_layer_name="Color", threshold=0.04):
     """
@@ -32,6 +34,229 @@ def mark_color_seams(bm, color_layer_name="Color", threshold=0.04):
             e.seam = True
         else:
             e.seam = False
+
+def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMAL'}):
+    """
+    1) Copy the input BMesh (orig_bm), so we have a pristine version to compare against.
+    2) On the *original* `bm`, run bmesh.ops.dissolve_limit.
+    3) Build a BVHTree on that dissolved `bm`.
+    4) For each face in orig_bm, shoot its centroid into the BVH → get new_face_index.
+    5) Collect all dissolved faces in `bm` that are ngons (>4 verts) and have at least one concave corner.
+    6) For each concave face:
+         • Gather the set of original triangles that mapped to it.
+         • Try each possible loop-0 rotation:
+             – Build a tiny temp BMesh with that rotated ngon,
+             – Triangulate it with EAR_CLIP / BEAUTY,
+             – Score = #tris matching the original triangle‐sets.
+         • Pick the rotation with the highest score,
+           then *rebuild* the face in `bm` with that rotated loop order and reapply UVs.
+    """
+
+    # ——— 1) make a pristine copy ——————————————————————————————
+    orig_bm = bm.copy()
+    orig_bm.faces.ensure_lookup_table()
+    orig_bm.verts.ensure_lookup_table()
+
+    # pre‐compute centroids of every original face
+    orig_centroids = {
+        f.index: sum((v.co for v in f.verts), Vector()) / len(f.verts)
+        for f in orig_bm.faces
+    }
+    # also record which verts formed each original face
+    orig_face_verts = {
+        f.index: frozenset(v.index for v in f.verts)
+        for f in orig_bm.faces
+    }
+
+    # ——— 2) dissolve on the *live* bm ———————————————————————————
+    all_edges = [e for e in bm.edges]
+    all_verts = list({v for e in all_edges for v in e.verts})
+    bmesh.ops.dissolve_limit(
+        bm,
+        edges                   = all_edges,
+        verts                   = all_verts,
+        angle_limit             = angle_limit,
+        use_dissolve_boundaries = False,
+        delimit                 = delimit,
+    )
+
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+
+    # ——— 3) build BVH on the dissolved bm ————————————————————————
+    # ngons are preserved in the face list; the BVH will see each dissolved ngon.
+    bvh = BVHTree.FromBMesh(bm, epsilon=0.0)
+
+    # ——— 4) map each original face → new face index by centroid lookup —————
+    orig_to_new = {}
+    for fi, cen in orig_centroids.items():
+        hit = bvh.find_nearest(cen)
+        orig_to_new[fi] = hit[2] if hit else None
+
+    # invert that to get: new_face_idx → list of original face indices
+    new_to_orig = {}
+    for orig_i, new_i in orig_to_new.items():
+        new_to_orig.setdefault(new_i, []).append(orig_i)
+
+    # ——— 5) find all concave ngons in the dissolved mesh —————————————
+    uv_layer = bm.loops.layers.uv.active
+    concave_ngons = []
+    for f in bm.faces:
+        if len(f.verts) <= 4:
+            continue
+        # compute per‐corner concavity (CCW loop order ⇒ >0 means concave)
+        concave_flags = [
+            ((l.link_loop_prev.vert.co - l.vert.co)
+             .cross(l.link_loop_next.vert.co - l.vert.co)
+             .dot(f.normal) > 0)
+            for l in f.loops
+        ]
+        if any(concave_flags):
+            concave_ngons.append((f, concave_flags))
+
+    # ——— 6) for each concave ngon, brute‐force the best loop-0 ——————————
+    for face, concave_flags in concave_ngons:
+        loops_idx = [l.vert.index for l in face.loops]
+        N = len(loops_idx)
+
+        # which original triangles fell into this face?
+        orig_tris = {
+            orig_face_verts[i] for i in new_to_orig.get(face.index, [])
+        }
+
+        best_k, best_score = 0, -1
+        for k in range(N):
+            rot = loops_idx[k:] + loops_idx[:k]
+
+            # tiny test bmesh
+            tb = bmesh.new()
+            inv = {}
+            for vid in rot:
+                tv = tb.verts.new(bm.verts[vid].co)
+                inv[tv] = vid
+            tb.faces.new([next(tv for tv,vv in inv.items() if vv==vid) for vid in rot])
+            tb.faces.ensure_lookup_table()
+
+            tb.normal_update()
+
+            # ear-clip triangulate
+            res = bmesh.ops.triangulate(
+                tb,
+                faces       = tb.faces[:],
+                quad_method = 'BEAUTY',
+                ngon_method = 'EAR_CLIP',
+            )
+
+            # collect the resulting triangles
+            out_tris = {
+                frozenset(inv[v] for v in tri.verts)
+                for tri in res['faces']
+            }
+
+            # score = how many match the original triangles
+            score = len(out_tris & orig_tris)
+            if score > best_score:
+                best_score, best_k = score, k
+
+            tb.free()
+
+        # ——— 7) rebuild the real face with the winning rotation ————————
+        orig_loops = list(face.loops)
+        orig_verts = [l.vert for l in orig_loops]
+        orig_uvs   = [l[uv_layer].uv.copy() for l in orig_loops] if uv_layer else None
+        mat, sm    = face.material_index, face.smooth
+
+        # rotated lists
+        rv = orig_verts[best_k:] + orig_verts[:best_k]
+        ru = (orig_uvs[best_k:] + orig_uvs[:best_k]) if orig_uvs else None
+
+        bm.faces.remove(face)
+        newf = bm.faces.new(rv)
+        newf.material_index = mat
+        newf.smooth         = sm
+
+        if ru:
+            for loop, uv in zip(newf.loops, ru):
+                loop[uv_layer].uv = uv
+
+    # clean up the pristine copy
+    orig_bm.free()
+
+    return bm
+
+def rotate_face_loops(bm):
+    uv_layer = bm.loops.layers.uv.active  # may be None
+
+    # Copy the original face list so we can rebuild safely
+    original_faces = list(bm.faces)
+
+    for face in original_faces:
+        if not face.is_valid:
+            continue
+        """Rebuild `face`, rotating its loops so the pivot falls after the flattest convex cluster."""
+        loops = list(face.loops)
+        N     = len(loops)
+        if N < 4:
+            continue  # nothing to do for tris
+
+        # Classify concave corners
+        concave = [False] * N
+        for i, l in enumerate(loops):
+            v_prev = l.link_loop_prev.vert.co
+            v_curr = l.vert.co
+            v_next = l.link_loop_next.vert.co
+
+            e1 = v_prev - v_curr
+            e2 = v_next - v_curr
+            turn = e1.cross(e2).dot(face.normal)
+            concave[i] = (turn < 0)
+
+        # Find convex indices
+        convex_idx = [i for i in range(N) if not concave[i]]
+        if not convex_idx:
+            continue  # fully concave? leave it
+
+        # Build clusters between convex corners
+        clusters = []
+        for j in range(len(convex_idx)):
+            start = convex_idx[j]
+            end   = convex_idx[(j + 1) % len(convex_idx)]
+            seg = []
+            k = (start + 1) % N
+            while k != end:
+                seg.append(k)
+                k = (k + 1) % N
+            clusters.append((start, end, seg))
+
+        # Pick the cluster with the fewest concave verts
+        best = min(clusters, key=lambda ce: sum(concave[i] for i in ce[2]))
+        _, anchor_idx, _ = best
+
+        # New loop 0 is the one after the anchor
+        new0 = (anchor_idx) % N
+
+        # Snapshot geometry & UVs
+        orig_verts = [l.vert for l in loops]
+        orig_uvs   = [l[uv_layer].uv.copy() for l in loops] if uv_layer else None
+        mat_idx    = face.material_index
+        smooth     = face.smooth
+
+        # Rotate
+        rot_verts = orig_verts[new0:] + orig_verts[:new0]
+        rot_uvs   = (orig_uvs[new0:] + orig_uvs[:new0]) if orig_uvs else None
+
+        # Rebuild face
+        bm.faces.remove(face)
+        new_face = bm.faces.new(rot_verts)
+        new_face.material_index = mat_idx
+        new_face.smooth = smooth
+
+        # Reapply UVs
+        if uv_layer and rot_uvs:
+            for loop, uv in zip(new_face.loops, rot_uvs):
+                loop[uv_layer].uv = uv
+
+    return bm
             
 def is_uv_affine_ngon(verts, uv_layer, uv_tol=15e-3):
 
