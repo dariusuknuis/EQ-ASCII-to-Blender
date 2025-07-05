@@ -35,14 +35,14 @@ def run_format_world():
     
     for mesh in meshes:
         bm = bmesh_with_split_norms(mesh)
-        name = mesh.name
-        # limited_dissolve_vcol(mesh)
         rearrange_uvs(bm)
         merge_verts_by_attrs(bm)
         mark_color_seams(bm)
         dissolve_mid_edge_verts(bm)
         mesh_cleanup(bm)
         mesh_from_bmesh_with_split_norms(bm, mesh)
+        for e in mesh.data.edges:
+            e.use_edge_sharp = False
 
     # Deselect all, then select region meshes and set first as active
     bpy.ops.object.select_all(action='DESELECT')
@@ -78,8 +78,9 @@ def run_format_world():
         loop[ln_layer] = joined.data.loops[loop.index].normal
 
     rearrange_uvs(bm)
-
     merge_verts_by_attrs(bm)
+    dissolve_mid_edge_verts(bm)
+    mesh_cleanup(bm)
 
     bm.to_mesh(joined.data)
     joined.data.update()
@@ -95,6 +96,10 @@ def run_format_world():
         custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
         mesh.normals_split_custom_set(custom_nors)
         mesh.attributes.remove(ln_attr)
+
+    for e in mesh.edges:
+            e.use_edge_sharp = False
+            e.use_seam = False
 
     # Clean up unwanted objects
     # Delete empty named WORLD_BOUNDS

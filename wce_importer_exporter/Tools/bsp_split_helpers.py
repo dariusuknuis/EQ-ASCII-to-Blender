@@ -38,7 +38,8 @@ def mark_color_seams(bm, color_layer_name="Color", threshold=0.04):
 def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMAL'}):
     """
     1) Copy the input BMesh (orig_bm), so we have a pristine version to compare against.
-    2) On the *original* `bm`, run bmesh.ops.dissolve_limit.
+    2) On the *live* `bm`, run bmesh.ops.dissolve_limit **only** on edges/verts that
+       are not themselves seams and don't support any other seam.
     3) Build a BVHTree on that dissolved `bm`.
     4) For each face in orig_bm, shoot its centroid into the BVH → get new_face_index.
     5) Collect all dissolved faces in `bm` that are ngons (>4 verts) and have at least one concave corner.
@@ -47,7 +48,7 @@ def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMA
          • Try each possible loop-0 rotation:
              – Build a tiny temp BMesh with that rotated ngon,
              – Triangulate it with EAR_CLIP / BEAUTY,
-             – Score = #tris matching the original triangle‐sets.
+             – Score = #tris matching the original triangle-sets.
          • Pick the rotation with the highest score,
            then *rebuild* the face in `bm` with that rotated loop order and reapply UVs.
     """
@@ -57,24 +58,59 @@ def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMA
     orig_bm.faces.ensure_lookup_table()
     orig_bm.verts.ensure_lookup_table()
 
-    # pre‐compute centroids of every original face
+    # pre-compute centroids & vert-sets of every original face
     orig_centroids = {
         f.index: sum((v.co for v in f.verts), Vector()) / len(f.verts)
         for f in orig_bm.faces
     }
-    # also record which verts formed each original face
     orig_face_verts = {
         f.index: frozenset(v.index for v in f.verts)
         for f in orig_bm.faces
     }
 
-    # ——— 2) dissolve on the *live* bm ———————————————————————————
-    all_edges = [e for e in bm.edges]
-    all_verts = list({v for e in all_edges for v in e.verts})
+    # ——— 2) filter out seam-related edges & verts ——————————————————
+    # a) edges: skip any that are marked seam, or sit on a face
+    #    which has another seam on one of its other edges.
+    dissolvable_edges = []
+    for e in bm.edges:
+        if e.seam:
+            continue
+        # skip if any face using this edge has a different seam on another edge
+        skip = False
+        for f in e.link_faces:
+            for ed in f.edges:
+                if ed is not e and ed.seam:
+                    skip = True
+                    break
+            if skip:
+                break
+        if not skip:
+            dissolvable_edges.append(e)
+
+    # b) verts: skip any that have an incident seam edge,
+    #    or that are on a face which already has a seam on a different edge.
+    dissolvable_verts = []
+    for v in bm.verts:
+        # if vertex sits on any seam edge, skip
+        if any(e.seam for e in v.link_edges):
+            continue
+        # if any face using this vert has another seam on a different edge, skip
+        skip = False
+        for f in v.link_faces:
+            for ed in f.edges:
+                if ed.seam:
+                    skip = True
+                    break
+            if skip:
+                break
+        if not skip:
+            dissolvable_verts.append(v)
+
+    # ——— 3) dissolve on the *live* bm ———————————————————————————
     bmesh.ops.dissolve_limit(
         bm,
-        edges                   = all_edges,
-        verts                   = all_verts,
+        edges                   = dissolvable_edges,
+        verts                   = dissolvable_verts,
         angle_limit             = angle_limit,
         use_dissolve_boundaries = False,
         delimit                 = delimit,
@@ -83,17 +119,16 @@ def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMA
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
 
-    # ——— 3) build BVH on the dissolved bm ————————————————————————
-    # ngons are preserved in the face list; the BVH will see each dissolved ngon.
+    # ——— 4) build BVH on the dissolved bm ————————————————————————
     bvh = BVHTree.FromBMesh(bm, epsilon=0.0)
 
-    # ——— 4) map each original face → new face index by centroid lookup —————
+    # map each original face → new face index
     orig_to_new = {}
     for fi, cen in orig_centroids.items():
         hit = bvh.find_nearest(cen)
         orig_to_new[fi] = hit[2] if hit else None
 
-    # invert that to get: new_face_idx → list of original face indices
+    # invert: new_face_idx → list of original face indices
     new_to_orig = {}
     for orig_i, new_i in orig_to_new.items():
         new_to_orig.setdefault(new_i, []).append(orig_i)
@@ -104,7 +139,7 @@ def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMA
     for f in bm.faces:
         if len(f.verts) <= 4:
             continue
-        # compute per‐corner concavity (CCW loop order ⇒ >0 means concave)
+        # CCW loop order ⇒ dot>0 means concave corner
         concave_flags = [
             ((l.link_loop_prev.vert.co - l.vert.co)
              .cross(l.link_loop_next.vert.co - l.vert.co)
@@ -114,12 +149,12 @@ def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMA
         if any(concave_flags):
             concave_ngons.append((f, concave_flags))
 
-    # ——— 6) for each concave ngon, brute‐force the best loop-0 ——————————
+    # ——— 6) for each concave ngon, brute-force the best loop-0 ——————————
     for face, concave_flags in concave_ngons:
         loops_idx = [l.vert.index for l in face.loops]
         N = len(loops_idx)
 
-        # which original triangles fell into this face?
+        # which original tris fell into this face?
         orig_tris = {
             orig_face_verts[i] for i in new_to_orig.get(face.index, [])
         }
@@ -136,7 +171,6 @@ def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMA
                 inv[tv] = vid
             tb.faces.new([next(tv for tv,vv in inv.items() if vv==vid) for vid in rot])
             tb.faces.ensure_lookup_table()
-
             tb.normal_update()
 
             # ear-clip triangulate
@@ -147,13 +181,11 @@ def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMA
                 ngon_method = 'EAR_CLIP',
             )
 
-            # collect the resulting triangles
             out_tris = {
                 frozenset(inv[v] for v in tri.verts)
                 for tri in res['faces']
             }
 
-            # score = how many match the original triangles
             score = len(out_tris & orig_tris)
             if score > best_score:
                 best_score, best_k = score, k
@@ -166,7 +198,6 @@ def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMA
         orig_uvs   = [l[uv_layer].uv.copy() for l in orig_loops] if uv_layer else None
         mat, sm    = face.material_index, face.smooth
 
-        # rotated lists
         rv = orig_verts[best_k:] + orig_verts[:best_k]
         ru = (orig_uvs[best_k:] + orig_uvs[:best_k]) if orig_uvs else None
 
