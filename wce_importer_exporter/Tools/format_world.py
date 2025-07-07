@@ -2,10 +2,9 @@
 import bpy, bmesh
 import re
 from mathutils import Matrix, Vector
-from .limited_dissolve_vcol import limited_dissolve_vcol
-from .format_helpers import rearrange_uvs, merge_verts_by_attrs, dissolve_mid_edge_verts
+from .format_helpers import rearrange_uvs, merge_verts_by_attrs, dissolve_colinear_geo
 from .bmesh_with_split_norms import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
-from .bsp_split_helpers import mark_color_seams, mesh_cleanup, rotate_face_loops
+from .bsp_split_helpers import mark_color_seams, mesh_cleanup
 
 def run_format_world():
     """
@@ -37,9 +36,6 @@ def run_format_world():
         bm = bmesh_with_split_norms(mesh)
         rearrange_uvs(bm)
         merge_verts_by_attrs(bm)
-        mark_color_seams(bm)
-        dissolve_mid_edge_verts(bm)
-        mesh_cleanup(bm)
         mesh_from_bmesh_with_split_norms(bm, mesh)
         for e in mesh.data.edges:
             e.use_edge_sharp = False
@@ -79,7 +75,8 @@ def run_format_world():
 
     rearrange_uvs(bm)
     merge_verts_by_attrs(bm)
-    dissolve_mid_edge_verts(bm)
+    # mark_color_seams(bm)
+    dissolve_colinear_geo(bm)
     mesh_cleanup(bm)
 
     bm.to_mesh(joined.data)
@@ -97,9 +94,9 @@ def run_format_world():
         mesh.normals_split_custom_set(custom_nors)
         mesh.attributes.remove(ln_attr)
 
-    for e in mesh.edges:
-            e.use_edge_sharp = False
-            e.use_seam = False
+    # for e in mesh.edges:
+    #         e.use_edge_sharp = False
+    #         e.use_seam = False
 
     # Clean up unwanted objects
     # Delete empty named WORLD_BOUNDS

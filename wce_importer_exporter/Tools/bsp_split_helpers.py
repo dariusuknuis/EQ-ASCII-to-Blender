@@ -1,4 +1,4 @@
-import bmesh
+import bmesh, math, itertools
 from collections import defaultdict
 from math import radians
 from mathutils import Vector, Matrix
@@ -34,6 +34,106 @@ def mark_color_seams(bm, color_layer_name="Color", threshold=0.04):
             e.seam = True
         else:
             e.seam = False
+
+def dissolve_colinear_geo(bm, angle_limit=0.01):
+    """
+    1) Dissolve edges touching vertices where:
+         - all incident edges lie in one plane (within sin(angle_limit)), and
+         - at least one pair of those edges is within angle_limit of 180°.
+       Seams are preserved.
+    2) Dissolve degree-2 vertices whose two edges are within angle_limit of 180°.
+       Seams are preserved.
+    3) Triangulate all faces (BEAUTY quads, EAR_CLIP ngons).
+    """
+    # precompute thresholds
+    planarity_tol = math.sin(angle_limit)
+    cos_eps       = math.cos(angle_limit)
+    thresh        = 1.0 - cos_eps   # |dot + 1| < thresh ⇒ within angle_limit of straight
+
+    # ——— 1) Edge pass —————————————————————————————————————
+    seam_verts = {v for v in bm.verts if any(e.seam for e in v.link_edges)}
+    edges_to_dissolve = set()
+
+    for v in bm.verts:
+        if v in seam_verts:
+            continue
+
+        # gather normalized directions of all incident edges
+        dirs = []
+        for e in v.link_edges:
+            vec = e.other_vert(v).co - v.co
+            if vec.length_squared > 1e-8:
+                dirs.append(vec.normalized())
+        if len(dirs) < 2:
+            continue
+
+        # check coplanarity
+        plane_n = None
+        for d1, d2 in itertools.combinations(dirs, 2):
+            cr = d1.cross(d2)
+            if cr.length_squared > 1e-8:
+                plane_n = cr.normalized()
+                break
+        if plane_n and any(abs(plane_n.dot(d)) > planarity_tol for d in dirs):
+            continue
+
+        # check at least one pair is colinear
+        if not any(abs(d1.dot(d2) + 1.0) < thresh
+                   for d1, d2 in itertools.combinations(dirs, 2)):
+            continue
+
+        # mark all edges at this vertex
+        edges_to_dissolve.update(v.link_edges)
+
+    # filter out any real seam edges or edges touching seam-verts
+    edges_to_dissolve = {
+        e for e in edges_to_dissolve
+        if not e.seam and e.verts[0] not in seam_verts and e.verts[1] not in seam_verts
+    }
+
+    if edges_to_dissolve:
+        bmesh.ops.dissolve_edges(bm,
+                                 edges=list(edges_to_dissolve),
+                                 use_face_split=False)
+        print(f"Dissolved {len(edges_to_dissolve)} planar-colinear edges.")
+    else:
+        print("No planar-colinear edges found.")
+
+    # ——— 2) Degree-2 vertex pass —————————————————————————————
+    to_dissolve_verts = []
+    for v in bm.verts:
+        if any(e.seam for e in v.link_edges):
+            continue
+        if len(v.link_edges) != 2:
+            continue
+
+        e1, e2 = v.link_edges
+        d1 = (e1.other_vert(v).co - v.co).normalized()
+        d2 = (e2.other_vert(v).co - v.co).normalized()
+
+        if abs(d1.dot(d2) + 1.0) < thresh:
+            to_dissolve_verts.append(v)
+
+    if to_dissolve_verts:
+        bmesh.ops.dissolve_verts(bm,
+                                 verts=to_dissolve_verts,
+                                 use_face_split=False)
+        print(f"Dissolved {len(to_dissolve_verts)} degree-2 colinear verts.")
+    else:
+        print("No degree-2 colinear verts found.")
+
+    # ——— 3) Final triangulation —————————————————————————————————
+    faces = [f for f in bm.faces]
+    if faces:
+        bmesh.ops.triangulate(
+            bm,
+            faces        = faces,
+            quad_method  = 'BEAUTY',
+            ngon_method  = 'EAR_CLIP',
+        )
+        print(f"Triangulated {len(faces)} faces.")
+
+    return bm
 
 def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMAL'}):
     """
@@ -193,206 +293,51 @@ def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMA
             tb.free()
 
         # ——— 7) rebuild the real face with the winning rotation ————————
+        # orig_loops = list(face.loops)
+        # orig_verts = [l.vert for l in orig_loops]
+        # orig_uvs   = [l[uv_layer].uv.copy() for l in orig_loops] if uv_layer else None
+        # mat, sm    = face.material_index, face.smooth
+
+        # rv = orig_verts[best_k:] + orig_verts[:best_k]
+        # ru = (orig_uvs[best_k:] + orig_uvs[:best_k]) if orig_uvs else None
+
+        # bm.faces.remove(face)
+        # newf = bm.faces.new(rv)
+        # newf.material_index = mat
+        # newf.smooth         = sm
+
+        # if ru:
+        #     for loop, uv in zip(newf.loops, ru):
+        #         loop[uv_layer].uv = uv
+
+        fn_layer = bm.loops.layers.float_vector.get("orig_normals")
+
+        # inside the loop where you rebuild each ngon:
         orig_loops = list(face.loops)
         orig_verts = [l.vert for l in orig_loops]
         orig_uvs   = [l[uv_layer].uv.copy() for l in orig_loops] if uv_layer else None
+        orig_nrs   = [l[fn_layer].copy() for l in orig_loops] if fn_layer else None
         mat, sm    = face.material_index, face.smooth
 
+        # rotated lists…
         rv = orig_verts[best_k:] + orig_verts[:best_k]
         ru = (orig_uvs[best_k:] + orig_uvs[:best_k]) if orig_uvs else None
+        rn = (orig_nrs[best_k:] + orig_nrs[:best_k]) if orig_nrs else None
 
         bm.faces.remove(face)
         newf = bm.faces.new(rv)
         newf.material_index = mat
         newf.smooth         = sm
 
-        if ru:
+        if uv_layer and ru:
             for loop, uv in zip(newf.loops, ru):
                 loop[uv_layer].uv = uv
+
+        if fn_layer and rn:
+            for loop, nr in zip(newf.loops, rn):
+                loop[fn_layer] = nr
 
     # clean up the pristine copy
     orig_bm.free()
 
     return bm
-
-def rotate_face_loops(bm):
-    uv_layer = bm.loops.layers.uv.active  # may be None
-
-    # Copy the original face list so we can rebuild safely
-    original_faces = list(bm.faces)
-
-    for face in original_faces:
-        if not face.is_valid:
-            continue
-        """Rebuild `face`, rotating its loops so the pivot falls after the flattest convex cluster."""
-        loops = list(face.loops)
-        N     = len(loops)
-        if N < 4:
-            continue  # nothing to do for tris
-
-        # Classify concave corners
-        concave = [False] * N
-        for i, l in enumerate(loops):
-            v_prev = l.link_loop_prev.vert.co
-            v_curr = l.vert.co
-            v_next = l.link_loop_next.vert.co
-
-            e1 = v_prev - v_curr
-            e2 = v_next - v_curr
-            turn = e1.cross(e2).dot(face.normal)
-            concave[i] = (turn < 0)
-
-        # Find convex indices
-        convex_idx = [i for i in range(N) if not concave[i]]
-        if not convex_idx:
-            continue  # fully concave? leave it
-
-        # Build clusters between convex corners
-        clusters = []
-        for j in range(len(convex_idx)):
-            start = convex_idx[j]
-            end   = convex_idx[(j + 1) % len(convex_idx)]
-            seg = []
-            k = (start + 1) % N
-            while k != end:
-                seg.append(k)
-                k = (k + 1) % N
-            clusters.append((start, end, seg))
-
-        # Pick the cluster with the fewest concave verts
-        best = min(clusters, key=lambda ce: sum(concave[i] for i in ce[2]))
-        _, anchor_idx, _ = best
-
-        # New loop 0 is the one after the anchor
-        new0 = (anchor_idx) % N
-
-        # Snapshot geometry & UVs
-        orig_verts = [l.vert for l in loops]
-        orig_uvs   = [l[uv_layer].uv.copy() for l in loops] if uv_layer else None
-        mat_idx    = face.material_index
-        smooth     = face.smooth
-
-        # Rotate
-        rot_verts = orig_verts[new0:] + orig_verts[:new0]
-        rot_uvs   = (orig_uvs[new0:] + orig_uvs[:new0]) if orig_uvs else None
-
-        # Rebuild face
-        bm.faces.remove(face)
-        new_face = bm.faces.new(rot_verts)
-        new_face.material_index = mat_idx
-        new_face.smooth = smooth
-
-        # Reapply UVs
-        if uv_layer and rot_uvs:
-            for loop, uv in zip(new_face.loops, rot_uvs):
-                loop[uv_layer].uv = uv
-
-    return bm
-            
-def is_uv_affine_ngon(verts, uv_layer, uv_tol=15e-3):
-
-    n = len(verts)
-    if n < 3:
-        return False
-    normal = None
-    for v in verts:
-        if v.link_faces:
-            normal = v.link_faces[0].normal.copy()
-            break
-    if not normal or normal.length == 0:
-        return False
-    axis = normal.normalized()
-    helper = Vector((1,0,0))
-    if abs(axis.dot(helper)) > 0.9:
-        helper = Vector((0,1,0))
-    t = axis.cross(helper).normalized()
-    b = t.cross(axis)
-    to2d = Matrix((t, b, axis)).transposed()
-    P2 = [(to2d @ v.co).to_2d() for v in verts]
-    U  = [next(l[uv_layer].uv.copy() for l in v.link_loops) for v in verts]
-    p0,p1,p2 = P2[0], P2[1], P2[2]
-    u0,u1,u2 = U [0], U [1], U [2]
-    M = Matrix(((p1.x-p0.x, p2.x-p0.x),
-                (p1.y-p0.y, p2.y-p0.y)))
-    if abs(M.determinant()) < 1e-8:
-        return False
-    Minv = M.inverted()
-    Umat = Matrix(((u1.x-u0.x, u2.x-u0.x),
-                   (u1.y-u0.y, u2.y-u0.y)))
-    A = Umat @ Minv
-    t_vec = u0 - A @ p0
-    for pi, ui in zip(P2[3:], U[3:]):
-        if (A @ pi + t_vec - ui).length > uv_tol:
-            return False
-    return True
-
-def dissolve_uv_affine_edges(bm, angle_deg=1.0, uv_tol=15e-3):
-    """
-    Dissolve _all_ manifold edges with dihedral < angle_deg AND
-    perfectly affine UVs, but never touch any edge marked as a seam
-    or any edge that would share a face with an existing seam.
-    """
-
-    uv_layer = bm.loops.layers.uv.get("UVMap")
-    if not uv_layer:
-        raise RuntimeError("No UVMap on this BMesh!")
-    angle_tol = radians(angle_deg)
-
-    bm.verts.ensure_lookup_table()
-    bm.edges.ensure_lookup_table()
-    bm.faces.ensure_lookup_table()
-
-    # make sure our normals are up to date
-    bm.normal_update()
-
-    to_dissolve = []
-    for e in bm.edges:
-        # 1) never dissolve a known seam
-        if e.seam:
-            continue
-
-        # 2) only pure 2-face manifold edges
-        if len(e.link_faces) != 2:
-            continue
-        f1, f2 = e.link_faces
-
-        # 3) never dissolve an edge that sits on any seam-bearing face
-        #    (so we don't accidentally collapse away the seam)
-        skip = False
-        for f in (f1, f2):
-            for ed in f.edges:
-                if ed is not e and ed.seam:
-                    skip = True
-                    break
-            if skip:
-                break
-        if skip:
-            continue
-
-        # 4) angle test
-        if f1.normal.angle(f2.normal) > angle_tol:
-            continue
-
-        # 5) build the ordered two‐face patch verts
-        patch_verts = []
-        seen = set()
-        for f in (f1, f2):
-            for v in f.verts:
-                if v not in seen:
-                    seen.add(v)
-                    patch_verts.append(v)
-
-        # 6) UV‐affine test
-        if is_uv_affine_ngon(patch_verts, uv_layer, uv_tol):
-            to_dissolve.append(e)
-
-    if to_dissolve:
-        bmesh.ops.dissolve_edges(
-            bm,
-            edges=to_dissolve,
-            use_verts=False,
-            use_face_split=False,
-        )
-
-    for e in bm.edges:
-        e.seam = False

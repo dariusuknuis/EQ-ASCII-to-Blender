@@ -8,7 +8,7 @@ from create_bounding_sphere import create_bounding_sphere
 from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
 from create_worldtree import create_worldtree
 from .finalize_region_meshes import finalize_region_meshes
-from .bsp_split_helpers import mark_color_seams, dissolve_uv_affine_edges
+from .bsp_split_helpers import mark_color_seams, mesh_cleanup, dissolve_colinear_geo
 import math
 from math import pi
 import re
@@ -216,7 +216,15 @@ def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
       - the “lower” half keeps the inside side (n·X + d <= 0)
       - the “upper” half keeps the outside side (n·X + d >= 0)
     """
-    
+
+    bmesh.ops.triangulate(bm_geo, faces=bm_geo.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
+
+    bm_geo.verts.ensure_lookup_table()
+    bm_geo.edges.ensure_lookup_table()
+    bm_geo.faces.ensure_lookup_table()
+    bm_geo.normal_update()
+
+
     # copy for lower half
     bm_lower = bm_geo.copy()
     geom_l   = list(bm_lower.verts) + list(bm_lower.edges) + list(bm_lower.faces)
@@ -230,9 +238,21 @@ def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
         clear_inner=False,   # keep the “inside” half
         clear_outer=True     # discard the outside
     )
+    bm_lower.verts.ensure_lookup_table()
+    bm_lower.edges.ensure_lookup_table()
+    bm_lower.faces.ensure_lookup_table()
+    bm_lower.normal_update()
     cleanup_mesh_geometry(bm_lower)
-    mark_color_seams(bm_lower)
-    dissolve_uv_affine_edges(bm_lower)
+    # mark_color_seams(bm_lower)
+    dissolve_colinear_geo(bm_lower)
+    mesh_cleanup(bm_lower)
+    for e in bm_lower.edges:
+        e.seam = False
+        e.smooth = True
+    bm_lower.verts.ensure_lookup_table()
+    bm_lower.edges.ensure_lookup_table()
+    bm_lower.faces.ensure_lookup_table()
+    bm_lower.normal_update()
     
     # copy for upper half
     bm_upper = bm_geo.copy()
@@ -242,13 +262,26 @@ def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
         geom       = geom_u,
         plane_co   = plane_co,
         plane_no   = plane_no,
+        dist       = tol,
         use_snap_center=False,
         clear_inner=True,    # discard the inside
         clear_outer=False    # keep the outside half
     )
+    bm_upper.verts.ensure_lookup_table()
+    bm_upper.edges.ensure_lookup_table()
+    bm_upper.faces.ensure_lookup_table()
+    bm_upper.normal_update()
     cleanup_mesh_geometry(bm_upper)
-    mark_color_seams(bm_upper)
-    dissolve_uv_affine_edges(bm_upper)
+    # mark_color_seams(bm_upper)
+    dissolve_colinear_geo(bm_upper)
+    mesh_cleanup(bm_upper)
+    for e in bm_upper.edges:
+        e.seam = False
+        e.smooth = True
+    bm_upper.verts.ensure_lookup_table()
+    bm_upper.edges.ensure_lookup_table()
+    bm_upper.faces.ensure_lookup_table()
+    bm_upper.normal_update()
 
     return bm_lower, bm_upper
 
@@ -925,9 +958,6 @@ def run_outdoor_bsp_split(target_size=282.0):
         loops = (l for f in bm.faces for l in f.loops)
         for loop in loops:
             loop[ln_layer] = src.data.loops[loop.index].normal
-
-        mark_color_seams(bm)
-        dissolve_uv_affine_edges(bm)
 
         region_counter = [1]; world_nodes = []; worldnode_idx = [1]
         recursive_bsp_split(bm, bm_vol, target_size,
