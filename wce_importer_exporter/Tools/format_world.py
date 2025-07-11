@@ -75,9 +75,6 @@ def run_format_world():
 
     rearrange_uvs(bm)
     merge_verts_by_attrs(bm)
-    # mark_color_seams(bm)
-    dissolve_colinear_geo(bm)
-    mesh_cleanup(bm)
 
     bm.to_mesh(joined.data)
     joined.data.update()
@@ -93,10 +90,6 @@ def run_format_world():
         custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
         mesh.normals_split_custom_set(custom_nors)
         mesh.attributes.remove(ln_attr)
-
-    # for e in mesh.edges:
-    #         e.use_edge_sharp = False
-    #         e.use_seam = False
 
     # Clean up unwanted objects
     # Delete empty named WORLD_BOUNDS

@@ -148,6 +148,186 @@ def create_world_volume(vol_min, vol_max):
 
     return bm
 
+def terrain_cleanup(bm, angle_limit=math.radians(1.0), delimit={'SEAM','SHARP','MATERIAL','NORMAL'}):
+    uv_layer = bm.loops.layers.uv.active
+    fn_layer = bm.loops.layers.float_vector.get("orig_normals")
+
+    # ——— 1) pristine copy ——————————————————————————————————————————————
+    orig_bm = bm.copy()
+    orig_bm.faces.ensure_lookup_table()
+    orig_bm.verts.ensure_lookup_table()
+
+    orig_centroids = {
+        f.index: sum((v.co for v in f.verts), Vector()) / len(f.verts)
+        for f in orig_bm.faces
+    }
+    orig_face_verts = {
+        f.index: frozenset(v.index for v in f.verts)
+        for f in orig_bm.faces
+    }
+    print(f"▶ Pristine: {len(orig_bm.faces)} faces, {len(orig_bm.verts)} verts")
+
+    # ——— 2) limited dissolve on the *live* bm ————————————————————————
+    all_edges = [e for e in bm.edges]
+    all_verts = list({v for e in all_edges for v in e.verts})
+    bmesh.ops.dissolve_limit(
+        bm,
+        edges                   = all_edges,
+        verts                   = all_verts,
+        angle_limit             = angle_limit,
+        use_dissolve_boundaries = False,
+        delimit                 = delimit,
+    )
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    print(f"▶ After dissolve: {len(bm.faces)} faces, {len(bm.verts)} verts")
+
+    # ——— 3) build BVH to map original faces → new faces ————————————————————
+    bvh = BVHTree.FromBMesh(bm, epsilon=0.0)
+    orig_to_new = {
+        fi: (bvh.find_nearest(cen) or (None, None, None, None))[2]
+        for fi, cen in orig_centroids.items()
+    }
+    new_to_orig = {}
+    for o, n in orig_to_new.items():
+        new_to_orig.setdefault(n, []).append(o)
+
+    # ——— 4) find all concave ngons in dissolved mesh ————————————————————
+    concave_ngons = []
+    for f in bm.faces:
+        if len(f.verts) <= 4:
+            continue
+        flags = [
+            ((l.link_loop_prev.vert.co - l.vert.co)
+             .cross(l.link_loop_next.vert.co - l.vert.co)
+             .dot(f.normal) > 0)
+            for l in f.loops
+        ]
+        if any(flags):
+            concave_ngons.append((f, flags))
+    print(f"▶ Found {len(concave_ngons)} concave ngons to re-anchor")
+
+    # we'll collect here the BEAUTY-triangulate candidates:
+    beauty_tris = []
+
+    # ——— 5) for each concave ngon, brute-force best rotation + BEAUTY check ————
+    for face, concave_flags in concave_ngons:
+        loops_idx = [l.vert.index for l in face.loops]
+        N = len(loops_idx)
+
+        # per-face KDTree to remap originals → this face’s new verts
+        kd = KDTree(N)
+        for i, vi in enumerate(loops_idx):
+            kd.insert(bm.verts[vi].co, vi)
+        kd.balance()
+
+        # gather the original triangle‐sets (in this face’s vert-space)
+        orig_tris = set()
+        for orig_fi in new_to_orig.get(face.index, []):
+            old_vs = orig_face_verts[orig_fi]
+            mapped = [kd.find(orig_bm.verts[old_vi].co)[1] for old_vi in old_vs]
+            orig_tris.add(frozenset(mapped))
+
+        print(f"\n--- Face {face.index}: loops {loops_idx}")
+        print(f"    orig_tris = {orig_tris}")
+
+        # 1) Ear-clip search
+        best_k, best_score = 0, -1
+        for k in range(N):
+            rot = loops_idx[k:] + loops_idx[:k]
+            tb = bmesh.new(); inv = {}
+            for vi in rot:
+                tv = tb.verts.new(bm.verts[vi].co); inv[tv] = vi
+            tb.faces.new([next(tv for tv,vv in inv.items() if vv==vi) for vi in rot])
+            tb.faces.ensure_lookup_table()
+            tb.normal_update()
+            res = bmesh.ops.triangulate(
+                tb,
+                faces       = tb.faces[:],
+                quad_method = 'BEAUTY',
+                ngon_method = 'EAR_CLIP',
+            )
+            out = {frozenset(inv[v] for v in tri.verts) for tri in res['faces']}
+            score = len(out & orig_tris)
+            print(f"    [EAR] rot k={k} start={rot[0]} → out={out}, score={score}")
+            if score > best_score:
+                best_score, best_k = score, k
+            tb.free()
+        ear_best, ear_score = best_k, best_score
+
+        # 2) BEAUTY-only search
+        beauty_best, beauty_score = 0, -1
+        for k in range(N):
+            rot = loops_idx[k:] + loops_idx[:k]
+            tb = bmesh.new(); inv = {}
+            for vi in rot:
+                tv = tb.verts.new(bm.verts[vi].co); inv[tv] = vi
+            tb.faces.new([next(tv for tv,vv in inv.items() if vv==vi) for vi in rot])
+            tb.faces.ensure_lookup_table()
+            tb.normal_update()
+            res = bmesh.ops.triangulate(
+                tb,
+                faces       = tb.faces[:],
+                quad_method = 'BEAUTY',
+                ngon_method = 'BEAUTY',
+            )
+            out = {frozenset(inv[v] for v in tri.verts) for tri in res['faces']}
+            score = len(out & orig_tris)
+            print(f"    [BEA] rot k={k} start={rot[0]} → out={out}, score={score}")
+            if score > beauty_score:
+                beauty_score, beauty_best = score, k
+            tb.free()
+        print(f"  → EAR best k={ear_best}, score={ear_score}")
+        print(f"  → BEA best k={beauty_best}, score={beauty_score}")
+
+        # Decide which rotation to rebuild with:
+        rebuild_k = ear_best
+        want_beauty = (beauty_score > ear_score)
+
+        # snapshot loops
+        orig_loops = list(face.loops)
+        verts      = [l.vert for l in orig_loops]
+        uvs        = [l[uv_layer].uv.copy() for l in orig_loops] if uv_layer else None
+        nrs        = [l[fn_layer].copy()     for l in orig_loops] if fn_layer else None
+        mat, sm    = face.material_index, face.smooth
+
+        # rotate verts & attrs
+        rv = verts[rebuild_k:] + verts[:rebuild_k]
+        ru = (uvs[rebuild_k:] + uvs[:rebuild_k]) if uvs else None
+        rn = (nrs[rebuild_k:] + nrs[:rebuild_k]) if nrs else None
+
+        # remove & rebuild as ngon
+        bm.faces.remove(face)
+        newf = bm.faces.new(rv)
+        newf.material_index = mat
+        newf.smooth         = sm
+        if uv_layer and ru:
+            for loop, uvv in zip(newf.loops, ru):
+                loop[uv_layer].uv = uvv
+        if fn_layer and rn:
+            for loop, nr in zip(newf.loops, rn):
+                loop[fn_layer] = nr
+
+        # if BEAUTY strictly wins, mark this face for later triangulation
+        if want_beauty:
+            beauty_tris.append(newf)
+
+    # ——— 6) do one batch BEAUTY triangulation on all marked faces —————————
+    bm.normal_update()
+    if beauty_tris:
+        print(f"▶ triangulating {len(beauty_tris)} faces with BEAUTY at the end")
+        bmesh.ops.triangulate(
+            bm,
+            faces        = beauty_tris,
+            quad_method  = 'BEAUTY',
+            ngon_method  = 'BEAUTY',
+        )
+
+    orig_bm.free()
+    print("✅ mesh_cleanup_and_reanchor complete.")
+    return bm
+
+
 def create_region_empty(center, sphere_radius, index, pending_objects):
     """
     Create an empty (for labeling/visualization) at the given center.
@@ -217,14 +397,6 @@ def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
       - the “upper” half keeps the outside side (n·X + d >= 0)
     """
 
-    bmesh.ops.triangulate(bm_geo, faces=bm_geo.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
-
-    bm_geo.verts.ensure_lookup_table()
-    bm_geo.edges.ensure_lookup_table()
-    bm_geo.faces.ensure_lookup_table()
-    bm_geo.normal_update()
-
-
     # copy for lower half
     bm_lower = bm_geo.copy()
     geom_l   = list(bm_lower.verts) + list(bm_lower.edges) + list(bm_lower.faces)
@@ -238,21 +410,15 @@ def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
         clear_inner=False,   # keep the “inside” half
         clear_outer=True     # discard the outside
     )
-    bm_lower.verts.ensure_lookup_table()
-    bm_lower.edges.ensure_lookup_table()
-    bm_lower.faces.ensure_lookup_table()
-    bm_lower.normal_update()
+
     cleanup_mesh_geometry(bm_lower)
     # mark_color_seams(bm_lower)
-    dissolve_colinear_geo(bm_lower)
-    mesh_cleanup(bm_lower)
-    for e in bm_lower.edges:
-        e.seam = False
-        e.smooth = True
-    bm_lower.verts.ensure_lookup_table()
-    bm_lower.edges.ensure_lookup_table()
-    bm_lower.faces.ensure_lookup_table()
-    bm_lower.normal_update()
+    # dissolve_colinear_geo(bm_lower)
+    # mesh_cleanup(bm_lower)
+    # for e in bm_lower.edges:
+    #     e.seam = False
+    #     e.smooth = True
+   
     
     # copy for upper half
     bm_upper = bm_geo.copy()
@@ -267,21 +433,15 @@ def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
         clear_inner=True,    # discard the inside
         clear_outer=False    # keep the outside half
     )
-    bm_upper.verts.ensure_lookup_table()
-    bm_upper.edges.ensure_lookup_table()
-    bm_upper.faces.ensure_lookup_table()
-    bm_upper.normal_update()
+    
     cleanup_mesh_geometry(bm_upper)
     # mark_color_seams(bm_upper)
-    dissolve_colinear_geo(bm_upper)
-    mesh_cleanup(bm_upper)
-    for e in bm_upper.edges:
-        e.seam = False
-        e.smooth = True
-    bm_upper.verts.ensure_lookup_table()
-    bm_upper.edges.ensure_lookup_table()
-    bm_upper.faces.ensure_lookup_table()
-    bm_upper.normal_update()
+    # dissolve_colinear_geo(bm_upper)
+    # mesh_cleanup(bm_upper)
+    # for e in bm_upper.edges:
+    #     e.seam = False
+    #     e.smooth = True
+    
 
     return bm_lower, bm_upper
 
@@ -351,21 +511,46 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
     # --- build the mesh & object ---
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
+
+    # access split normal data from float vector layer
+    ln_layer = bm.loops.layers.float_vector.get("orig_normals")
+    if not ln_layer:
+        raise RuntimeError("Loop layer 'orig_normals' not found")
+
+    # 3) accumulate normals per vertex
+    vert_accum = {v.index: Vector((0,0,0)) for v in bm.verts}
+    vert_count = {v.index: 0               for v in bm.verts}
+    for f in bm.faces:
+        for l in f.loops:
+            n = l[ln_layer]
+            vert_accum[l.vert.index] += n
+            vert_count[l.vert.index] += 1
+
+    # 4) build an averaged, normalized normal per-vertex
+    vert_normal = {}
+    for vid, total in vert_accum.items():
+        cnt = vert_count[vid]
+        if cnt > 0:
+            vert_normal[vid] = (total / cnt).normalized()
+        else:
+            vert_normal[vid] = total.normalized()
+
+    # 5) now build your final loop_normals array
+    loops = [l for f in bm.faces for l in f.loops]
+    loop_normals = [vert_normal[l.vert.index] for l in loops]
     bm.free()
 
     # --- Set vertex color layer as active (or it doesn't display automatically) ---
     col_attr = me.color_attributes.get("Color")
     if col_attr:
         me.color_attributes.active_color = col_attr
+        
+    me.use_auto_smooth = True
+    me.normals_split_custom_set(loop_normals)
 
     ln_attr = me.attributes.get("orig_normals")
     if ln_attr:
-        # build flat list of normals in loop order
-        custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
-        me.normals_split_custom_set(custom_nors)
         me.attributes.remove(me.attributes.get("orig_normals"))
-
-    me.use_auto_smooth = True
 
     # create the object
     new_obj = bpy.data.objects.new(name, me)
@@ -780,9 +965,6 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
     world_nodes.append(node_data)
     current_node = worldnode_idx[0]
     worldnode_idx[0] += 1
-
-    # if worldnode_idx[0] == 213:
-    #     print(f"Worldnode {worldnode_idx[0]}")
     
     # Base case: region is small enough.
     if all(size[i] <= target_size + 1e-4 for i in range(3)):
@@ -958,6 +1140,9 @@ def run_outdoor_bsp_split(target_size=282.0):
         loops = (l for f in bm.faces for l in f.loops)
         for loop in loops:
             loop[ln_layer] = src.data.loops[loop.index].normal
+
+        # color_map = vertex_color_map(bm)
+        terrain_cleanup(bm)
 
         region_counter = [1]; world_nodes = []; worldnode_idx = [1]
         recursive_bsp_split(bm, bm_vol, target_size,

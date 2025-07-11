@@ -35,7 +35,7 @@ def mark_color_seams(bm, color_layer_name="Color", threshold=0.04):
         else:
             e.seam = False
 
-def dissolve_colinear_geo(bm, angle_limit=0.01):
+def dissolve_colinear_geo(bm, angle_limit=math.radians(1.0)):
     """
     1) Dissolve edges touching vertices where:
          - all incident edges lie in one plane (within sin(angle_limit)), and
@@ -135,7 +135,7 @@ def dissolve_colinear_geo(bm, angle_limit=0.01):
 
     return bm
 
-def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMAL'}):
+def mesh_cleanup(bm, angle_limit=math.radians(1.0), delimit={'SEAM','SHARP','MATERIAL','NORMAL'}):
     """
     1) Copy the input BMesh (orig_bm), so we have a pristine version to compare against.
     2) On the *live* `bm`, run bmesh.ops.dissolve_limit **only** on edges/verts that
@@ -293,23 +293,6 @@ def mesh_cleanup(bm, angle_limit=0.01, delimit={'SEAM','SHARP','MATERIAL','NORMA
             tb.free()
 
         # ——— 7) rebuild the real face with the winning rotation ————————
-        # orig_loops = list(face.loops)
-        # orig_verts = [l.vert for l in orig_loops]
-        # orig_uvs   = [l[uv_layer].uv.copy() for l in orig_loops] if uv_layer else None
-        # mat, sm    = face.material_index, face.smooth
-
-        # rv = orig_verts[best_k:] + orig_verts[:best_k]
-        # ru = (orig_uvs[best_k:] + orig_uvs[:best_k]) if orig_uvs else None
-
-        # bm.faces.remove(face)
-        # newf = bm.faces.new(rv)
-        # newf.material_index = mat
-        # newf.smooth         = sm
-
-        # if ru:
-        #     for loop, uv in zip(newf.loops, ru):
-        #         loop[uv_layer].uv = uv
-
         fn_layer = bm.loops.layers.float_vector.get("orig_normals")
 
         # inside the loop where you rebuild each ngon:
