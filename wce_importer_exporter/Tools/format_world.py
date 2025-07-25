@@ -89,7 +89,7 @@ def run_format_world():
     if ln_attr:
         custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
         mesh.normals_split_custom_set(custom_nors)
-        mesh.attributes.remove(ln_attr)
+        # mesh.attributes.remove(ln_attr)
 
     # Clean up unwanted objects
     # Delete empty named WORLD_BOUNDS

@@ -127,90 +127,79 @@ def merge_verts_by_attrs(bm,
       • the same material on all loops,
       • the same UV on all loops (active UV map),
       • the same vertex-color on all loops (per-vertex or per-loop),
-      • the same custom vector attribute on all loops (float_vector layer).
+      • a float_vector layer whose quantized indices differ by at most 1.
 
-    Now quantizes:
-      – loop.float_vector to signed-byte (±128) steps of 1/128,
-      – loop.color     to unsigned-byte (0–255) steps of 1/255.
+    `tol` controls the positional snapping tolerance for merging.
     """
     # — quantizers —
     def quantize_255(c):
         i = int(round(c * 255.0))
-        if i < 0:   i = 0
-        if i > 255: i = 255
-        return i / 255.0
+        return max(0, min(255, i))
 
     def quantize_128(c):
         i = int(round(c * 128.0))
-        if i < -128: i = -128
-        if i >  127: i =  127
-        return i / 128.0
+        return max(-128, min(127, i))
 
-    # — UV layer (must exist) —
+    # — get layers —
     luv = bm.loops.layers.uv.active
     if not luv:
-        return bm  # nothing to do
+        return bm  # no UV → nothing to do
 
-    # — Vertex-color layer? prefer per-vert —
-    vcol_vert = None
-    if vcol_name:
-        vcol_vert = (bm.verts.layers.color.get(vcol_name)
-                     or bm.verts.layers.float_color.get(vcol_name))
-    else:
-        vcol_vert = next(iter(bm.verts.layers.color.values()), None) \
-                 or next(iter(bm.verts.layers.float_color.values()), None)
-
-    # — Fallback to per-loop color —
-    vcol_loop = None
+    # color: try per-vert then per-loop
+    vcol_vert = (bm.verts.layers.color.get(vcol_name)
+                 or bm.verts.layers.float_color.get(vcol_name)
+                 if vcol_name else
+                 next(iter(bm.verts.layers.color.values()), None)
+                 or next(iter(bm.verts.layers.float_color.values()), None))
     if not vcol_vert:
-        if vcol_name:
-            vcol_loop = (bm.loops.layers.color.get(vcol_name)
-                         or bm.loops.layers.float_color.get(vcol_name))
-            if not vcol_loop:
-                raise RuntimeError(f"Vertex-color layer '{vcol_name}' not found")
-        else:
-            vcol_loop = (bm.loops.layers.color.active
-                         or bm.loops.layers.float_color.active)
+        # fallback to loop‑color
+        vcol_loop = (bm.loops.layers.color.get(vcol_name)
+                     or bm.loops.layers.float_color.get(vcol_name)
+                     if vcol_name else
+                     bm.loops.layers.color.active
+                     or bm.loops.layers.float_color.active)
         if not vcol_loop:
             raise RuntimeError("No vertex-color layer found")
-
-    # — Float-vector layer (per-loop) —
-    vec_layer = None
-    if float_vec_name:
-        vec_layer = bm.loops.layers.float_vector.get(float_vec_name)
-        if not vec_layer:
-            raise RuntimeError(f"Float-vector layer '{float_vec_name}' not found")
     else:
-        vec_layer = next(iter(bm.loops.layers.float_vector.values()), None)
+        vcol_loop = None
+
+    # float_vector (per-loop)
+    vec_layer = (bm.loops.layers.float_vector.get(float_vec_name)
+                 if float_vec_name else
+                 next(iter(bm.loops.layers.float_vector.values()), None))
     if not vec_layer:
         raise RuntimeError("No float_vector layer found")
 
-    # — Helpers to extract a *quantized* attribute signature —
+    # — helpers to pull per-vert / per-loop values —
     def pos_key(v):
         return (round(v.co.x,6), round(v.co.y,6), round(v.co.z,6))
 
     def loop_uv(l):
-        # UV precision usually higher, keep 6 decimal places.
         return (round(l[luv].uv.x,6), round(l[luv].uv.y,6))
 
     def vert_color(v):
-        # quantize per-vertex color to 0..255
         col = v[vcol_vert]
         return tuple(quantize_255(c) for c in col)
 
     def loop_color(l):
-        # quantize per-loop color to 0..255
         col = l[vcol_loop]
         return tuple(quantize_255(c) for c in col)
 
-    def loop_vec(l):
-        # quantize float vector to signed byte steps of 1/128
-        x,y,z = l[vec_layer]
-        return (quantize_128(x),
+    def vert_vec_index(v):
+        # average per-loop, then quantize to integer index
+        idxs = []
+        for l in v.link_loops:
+            x,y,z = l[vec_layer]
+            idxs.append((
+                quantize_128(x),
                 quantize_128(y),
-                quantize_128(z))
+                quantize_128(z),
+            ))
+        # if multiple loops, pick the most common triple
+        from collections import Counter
+        return Counter(idxs).most_common(1)[0][0]
 
-    # — Build buckets by attribute-tuple —
+    # — 1) bucket by everything except the float‑vector —
     buckets = {}
     for v in bm.verts:
         p    = pos_key(v)
@@ -219,26 +208,49 @@ def merge_verts_by_attrs(bm,
         cols = ({vert_color(v)}
                 if vcol_vert
                 else {loop_color(l) for l in v.link_loops})
-        vecs = {loop_vec(l)   for l in v.link_loops}
 
-        # require exactly one unique value per attribute
-        if len(mats)!=1 or len(uvs)!=1 or len(cols)!=1 or len(vecs)!=1:
+        if len(mats)!=1 or len(uvs)!=1 or len(cols)!=1:
             continue
 
-        key = (p,
-               mats.pop(),
-               uvs.pop(),
-               cols.pop(),
-               vecs.pop())
+        key = (p, mats.pop(), uvs.pop(), cols.pop())
         buckets.setdefault(key, []).append(v)
 
-    # — Merge each group of duplicates —
+    # — 2) within each bucket, cluster by vec‐indices ±1 —
     for verts in buckets.values():
         if len(verts) <= 1:
             continue
-        # merge into the first vert’s position
-        co = verts[0].co.copy()
-        bmesh.ops.pointmerge(bm, verts=verts, merge_co=co)
+
+        # gather (vert, its vec‐index triple)
+        verts_idx = [(v, vert_vec_index(v)) for v in verts]
+
+        # build adjacency: two verts connect if each component differs ≤1
+        adj = {v: set() for v,_ in verts_idx}
+        for i,(v1,idx1) in enumerate(verts_idx):
+            for v2,idx2 in verts_idx[i+1:]:
+                if all(abs(idx1[k] - idx2[k]) <= 1 for k in range(3)):
+                    adj[v1].add(v2)
+                    adj[v2].add(v1)
+
+        # find connected‐components in this small graph
+        seen = set()
+        for v in adj:
+            if v in seen:
+                continue
+            # BFS
+            comp = {v}
+            stack = [v]
+            while stack:
+                u = stack.pop()
+                for w in adj[u]:
+                    if w not in comp:
+                        comp.add(w)
+                        stack.append(w)
+            seen |= comp
+            if len(comp) > 1:
+                # merge this component down to the first vertex
+                target = next(iter(comp))
+                co = target.co.copy()
+                bmesh.ops.pointmerge(bm, verts=list(comp), merge_co=co)
 
     return bm
 

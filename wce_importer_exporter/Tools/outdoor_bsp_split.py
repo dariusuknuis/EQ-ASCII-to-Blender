@@ -9,6 +9,8 @@ from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bo
 from create_worldtree import create_worldtree
 from .finalize_region_meshes import finalize_region_meshes
 from .bsp_split_helpers import mark_color_seams, mesh_cleanup, dissolve_colinear_geo
+from .format_helpers import merge_verts_by_attrs
+from .bmesh_with_split_norms import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
 import math
 from math import pi
 import re
@@ -147,6 +149,152 @@ def create_world_volume(vol_min, vol_max):
     bm.normal_update()
 
     return bm
+
+def fix_concave_ngons(bm_half, bm_orig, tol):
+    FMAP = "orig_face"
+    VMAP = "orig_vert"
+
+    # ensure up‐to‐date tables & normals
+    bm_half.verts.ensure_lookup_table()
+    bm_half.faces.ensure_lookup_table()
+    bm_half.normal_update()
+    bm_orig.verts.ensure_lookup_table()
+    bm_orig.faces.ensure_lookup_table()
+    bm_orig.normal_update()
+
+    fmap_h = bm_half.faces.layers.face_map[FMAP]
+    fmap_o = bm_orig.faces.layers.face_map[FMAP]
+    vmap_h = bm_half.verts.layers.int[VMAP]
+    vmap_o = bm_orig.verts.layers.int[VMAP]
+
+    uv_layer = bm_half.loops.layers.uv.active
+    fn_layer = bm_half.loops.layers.float_vector.get("orig_normals")
+
+    # build EAR_CLIP triangulation of one original face → set of frozenset(orig_vert indices)
+    def build_orig_tris(orig_f):
+        tb = bmesh.new()
+        inv = {}
+        for loop in orig_f.loops:
+            ov = loop.vert
+            tv = tb.verts.new(ov.co)
+            inv[tv] = ov[vmap_o]
+        tb.faces.new(list(inv.keys()))
+        tb.verts.ensure_lookup_table()
+        tb.faces.ensure_lookup_table()
+        tb.normal_update()
+        out = bmesh.ops.triangulate(
+            tb,
+            faces=tb.faces[:],
+            quad_method='BEAUTY',
+            ngon_method='EAR_CLIP',
+        )['faces']
+        tris = {frozenset(inv[v] for v in tri.verts) for tri in out}
+        tb.free()
+        return tris
+
+    orig_tris_cache = {}
+
+    # find concave ngons in this half
+    concaves = []
+    for f in bm_half.faces:
+        if len(f.verts) <= 4:
+            continue
+        for l in f.loops:
+            p, c, n = l.link_loop_prev.vert.co, l.vert.co, l.link_loop_next.vert.co
+            if (p - c).cross(n - c).dot(f.normal) > 0:
+                concaves.append(f)
+                break
+
+    to_tris = []
+    for f in concaves:
+        ofi = f[fmap_h]
+        print(f"\n[debug] Concave ngon in half: face={f.index} → original_face={ofi}")
+        orig_f = bm_orig.faces[ofi]
+        if ofi not in orig_tris_cache:
+            orig_tris_cache[ofi] = build_orig_tris(orig_f)
+        target_tris = orig_tris_cache[ofi]
+        print(f"[debug]   original EAR_CLIP tris (by orig_vert): {target_tris}")
+
+        loops_idx = [l.vert.index for l in f.loops]
+        N = len(loops_idx)
+        best_k, best_score, best_method = 0, -1, 'EAR_CLIP'
+
+        for method in ('EAR_CLIP', 'BEAUTY'):
+            for k in range(N):
+                rot = loops_idx[k:] + loops_idx[:k]
+                tb = bmesh.new()
+                inv = {}
+                for vid in rot:
+                    tv = tb.verts.new(bm_half.verts[vid].co)
+                    inv[tv] = bm_half.verts[vid][vmap_h]
+                tb.faces.new(list(inv.keys()))
+                tb.verts.ensure_lookup_table()
+                tb.faces.ensure_lookup_table()
+                tb.normal_update()
+                out = bmesh.ops.triangulate(
+                    tb,
+                    faces=tb.faces[:],
+                    quad_method='BEAUTY',
+                    ngon_method=method,
+                )['faces']
+                test_tris = {frozenset(inv[v] for v in tri.verts) for tri in out}
+                tb.free()
+                score = len(test_tris & target_tris)
+                print(f"[debug]     test method={method:<9} k={k:>2} → score={score}")
+                if score > best_score:
+                    best_score, best_k, best_method = score, k, method
+
+        print(f"[debug]   → best: method={best_method}, k={best_k}, score={best_score}")
+
+        # rebuild face f with best rotation
+        orig_loops = list(f.loops)
+        verts = [l.vert for l in orig_loops]
+        uvs   = [l[uv_layer].uv.copy() for l in orig_loops] if uv_layer else None
+        nrs   = [l[fn_layer].copy()     for l in orig_loops] if fn_layer else None
+        mat, sm = f.material_index, f.smooth
+
+        rv = verts[best_k:] + verts[:best_k]
+        ru = (uvs[best_k:] + uvs[:best_k]) if uvs else None
+        rn = (nrs[best_k:] + nrs[:best_k]) if nrs else None
+
+        bm_half.faces.remove(f)
+        newf = bm_half.faces.new(rv)
+        newf.material_index = mat
+        newf.smooth         = sm
+        newf[fmap_h]        = ofi
+
+        if uv_layer and ru:
+            for loop, uvv in zip(newf.loops, ru):
+                loop[uv_layer].uv = uvv
+        if fn_layer and rn:
+            for loop, nr in zip(newf.loops, rn):
+                loop[fn_layer] = nr
+
+        if best_method == 'BEAUTY':
+            to_tris.append(newf)
+
+    bm_half.normal_update()
+    if to_tris:
+        res = bmesh.ops.triangulate(
+            bm_half,
+            faces=to_tris,
+            quad_method='BEAUTY',
+            ngon_method='BEAUTY',
+        )
+        # carry face_map into each new tri
+        for tri in res['faces']:
+            tri[fmap_h] = tri.verts[0].link_loops[0].face[fmap_h]
+
+    
+    bm_orig.normal_update()
+
+    # ——— CLEANUP: remove our two custom layers ——————————————
+    fmap_h = bm_half.faces.layers.face_map.get(FMAP)
+    if fmap_h:
+        bm_half.faces.layers.face_map.remove(fmap_h)
+    vmap_h = bm_half.verts.layers.int.get(VMAP)
+    if vmap_h:
+        bm_half.verts.layers.int.remove(vmap_h)
 
 def terrain_cleanup(bm, angle_limit=math.radians(1.0), delimit={'SEAM','SHARP','MATERIAL','NORMAL'}):
     uv_layer = bm.loops.layers.uv.active
@@ -397,6 +545,15 @@ def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
       - the “upper” half keeps the outside side (n·X + d >= 0)
     """
 
+    # tag original BMesh faces & verts
+    fmap = bm_geo.faces.layers.face_map.new("orig_face")
+    for f in bm_geo.faces:
+        f[fmap] = f.index
+
+    vmap = bm_geo.verts.layers.int.new("orig_vert")
+    for v in bm_geo.verts:
+        v[vmap] = v.index
+
     # copy for lower half
     bm_lower = bm_geo.copy()
     geom_l   = list(bm_lower.verts) + list(bm_lower.edges) + list(bm_lower.faces)
@@ -412,12 +569,9 @@ def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
     )
 
     cleanup_mesh_geometry(bm_lower)
-    # mark_color_seams(bm_lower)
-    # dissolve_colinear_geo(bm_lower)
-    # mesh_cleanup(bm_lower)
-    # for e in bm_lower.edges:
-    #     e.seam = False
-    #     e.smooth = True
+    fix_concave_ngons(bm_lower, bm_geo, tol)
+    bmesh.ops.triangulate(bm_lower, faces = bm_lower.faces[:], quad_method = 'BEAUTY', ngon_method = 'EAR_CLIP',)
+    terrain_cleanup(bm_lower)
    
     
     # copy for upper half
@@ -435,13 +589,16 @@ def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
     )
     
     cleanup_mesh_geometry(bm_upper)
-    # mark_color_seams(bm_upper)
-    # dissolve_colinear_geo(bm_upper)
-    # mesh_cleanup(bm_upper)
-    # for e in bm_upper.edges:
-    #     e.seam = False
-    #     e.smooth = True
-    
+    fix_concave_ngons(bm_upper, bm_geo, tol)
+    bmesh.ops.triangulate(bm_upper, faces = bm_upper.faces[:], quad_method = 'BEAUTY', ngon_method = 'EAR_CLIP',)
+    terrain_cleanup(bm_upper)
+
+    fmap_o = bm_geo.faces.layers.face_map.get("orig_face")
+    if fmap_o:
+        bm_geo.faces.layers.face_map.remove(fmap_o)
+    vmap_o = bm_geo.verts.layers.int.get("orig_vert")
+    if vmap_o:
+        bm_geo.verts.layers.int.remove(vmap_o)
 
     return bm_lower, bm_upper
 
@@ -952,6 +1109,13 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
                 depth_counters[d] = 0
 
     vol_min, vol_max = calculate_bounds_for_bmesh(bm_vol)
+
+    fpscale = source_obj.get("FPSCALE", None)
+    if isinstance(fpscale, int):
+        grid_step = 1.0 / (2 ** fpscale)
+    else:
+        grid_step = None
+
     size = vol_max - vol_min
     
     node_data = {
@@ -1029,7 +1193,16 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
             node_data["region_tag"] = empty_obj.name
             node_data["back_tree"] = 0
             return
-        split_pos = vol_min[axis] + target_size * math.floor((length/target_size)*0.5)
+        if grid_step:
+            # Snap to nearest grid step aligned with FPSCALE
+            mid = vol_min[axis] + (length * 0.5)
+            split_pos = round(mid / grid_step) * grid_step
+        else:
+            # Default behavior
+            split_pos = vol_min[axis] + target_size * math.floor((length/target_size)*0.5)
+            if split_pos <= vol_min[axis] + 1e-6 or split_pos >= vol_max[axis] - 1e-6:
+                split_pos = vol_min[axis] + (length * 0.5)
+        # split_pos = vol_min[axis] + target_size * math.floor((length/target_size)*0.5)
         plane_co = Vector((0, 0, 0))
         plane_no = Vector((0, 0, 0))
         plane_co[axis] = split_pos

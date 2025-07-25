@@ -1,7 +1,11 @@
 import bpy, bmesh, math, re, math
+from math import pi
 from mathutils import Vector, kdtree
 from mathutils.kdtree import KDTree
 import time
+from .bmesh_with_split_norms import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
+from .format_helpers import merge_verts_by_attrs
+from .bsp_split_helpers import mesh_cleanup
 
 def angle_between_normals(n1, n2):
     """Compute angle between two vectors in degrees."""
@@ -24,6 +28,70 @@ def aabb_intersects(minA, maxA, minB, maxB, epsilon=0.001):
         maxA.y + epsilon < minB.y - epsilon or minA.y - epsilon > maxB.y + epsilon or
         maxA.z + epsilon < minB.z - epsilon or minA.z - epsilon > maxB.z + epsilon
     )
+
+def mesh_boundary_cleanup(bm, thin_thresh=0.001, angle_tol=1e-3):
+    """
+    In-place on `bm`:
+      1) Dissolve vertices on any face whose thinness ratio ≤ thin_thresh,
+         but only those vertices that have exactly 2 incident edges.
+      2) Rebuild normals & lookup tables.
+      3) Dissolve any boundary-vert with exactly 2 boundary edges that are nearly colinear
+         (dot(d1,d2) ≈ -1 within angle_tol).
+    Returns the modified bm.
+    """
+    # ——— Pass 1: thin-face vertices ———
+    bm.faces.ensure_lookup_table()
+    thin_verts = set()
+    for f in bm.faces:
+        # area & perimeter
+        area = f.calc_area()
+        peri = 0.0
+        verts = f.verts
+        n = len(verts)
+        for i in range(n):
+            peri += (verts[i].co - verts[(i+1)%n].co).length
+        tr = (4.0*pi*area)/(peri*peri) if peri > 0 else 0.0
+        if tr <= thin_thresh:
+            for v in verts:
+                if len(v.link_edges) == 2:
+                    thin_verts.add(v)
+
+    if thin_verts:
+        bmesh.ops.dissolve_verts(bm,
+                                 verts=list(thin_verts),
+                                 use_face_split=False)
+
+    # ——— Refresh normals & tables ———
+    bm.normal_update()
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+
+    # ——— Pass 2: colinear boundary vertices ———
+    col_verts = []
+    eps = angle_tol
+    for v in bm.verts:
+        if len(v.link_edges) != 2:
+            continue
+        # pick out the two boundary edges
+        b_edges = [e for e in v.link_edges if len(e.link_faces) == 1]
+        if len(b_edges) != 2:
+            continue
+
+        v1 = b_edges[0].other_vert(v)
+        v2 = b_edges[1].other_vert(v)
+        d1 = (v1.co - v.co)
+        d2 = (v2.co - v.co)
+        if d1.length == 0 or d2.length == 0:
+            continue
+        if abs(d1.normalized().dot(d2.normalized()) + 1.0) < eps:
+            col_verts.append(v)
+
+    if col_verts:
+        bmesh.ops.dissolve_verts(bm,
+                                 verts=col_verts,
+                                 use_face_split=False)
+
+    return bm
 
 def split_edges_to_snap_verts(objs, threshold=1e-4):
     """
@@ -121,19 +189,9 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
                             break
 
                 offset = t
-            
-        # 3) write mesh & reapply custom normals
-        bm.to_mesh(me)
-        me.update()
-        bm.free()
 
-        for poly in me.polygons:
-            poly.use_smooth = True
-
-        me.use_auto_smooth = True
-        custom_nors = [Vector(cd.vector) for cd in me.attributes["orig_normals"].data]
-        me.normals_split_custom_set(custom_nors)
-        me.attributes.remove(me.attributes["orig_normals"])
+        merge_verts_by_attrs(bm)
+        mesh_from_bmesh_with_split_norms(bm, ob_B)
 
     #print("✅ split_edges_to_snap_verts: done, all splits & normals preserved.")
 
@@ -239,27 +297,8 @@ def merge_by_distance(obj, dist=0.001, normal_angle_limit=45):
 
     # write back
     bm.to_mesh(me)
+    mesh_from_bmesh_with_split_norms(bm, obj)
     bm.free()
-
-    for poly in me.polygons:
-        poly.use_smooth = True
-
-    for e in me.edges:
-        e.use_edge_sharp = False
-
-    me.use_auto_smooth = True
-    me.auto_smooth_angle = math.pi
-
-    ln_attr = me.attributes.get("orig_normals")
-    if ln_attr:
-        # build flat list of normals in loop order
-        custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
-        me.normals_split_custom_set(custom_nors)
-        me.attributes.remove(me.attributes.get("orig_normals"))
-
-    # clear any sharp‑edge flags
-    for e in me.edges:
-        e.use_edge_sharp = False
 
     # print(f"✅ Merged {merged} vertices in {len(clusters)} cluster(s) "
     #       f"(threshold={dist}, angle<{normal_angle_limit}°)")
@@ -282,180 +321,155 @@ def triangulate_meshes(objs):
             loop[ln_layer] = me.loops[loop.index].normal
         
         bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
-        bm.to_mesh(me)
-        me.update()
-        bm.free()
-
-        for poly in me.polygons:
-            poly.use_smooth = True
-
-        for e in me.edges:
-            e.use_edge_sharp = False
-
-        ln_attr = me.attributes.get("orig_normals")
-        if ln_attr:
-            # build flat list of normals in loop order
-            custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
-            me.normals_split_custom_set(custom_nors)
-            me.attributes.remove(me.attributes.get("orig_normals"))
-
-        me.use_auto_smooth = True
-        me.auto_smooth_angle = math.pi
-
-        # # clear any sharp‑edge flags
-        # for e in me.edges:
-        #     e.use_edge_sharp = False
+        
+        mesh_from_bmesh_with_split_norms(bm, ob)
 
         # print(f"✅ {ob.name}: triangulated and normals preserved.")
 
+# def collapse_vertices_across_objects(objs, threshold=1e-5):
+#     """
+#     Cluster all world-space verts across objs within threshold,
+#     snap each cluster to its centroid, then round that centroid
+#     to the grid implied by each obj.FPSCALE.
+#     """
+#     # gather world-space coords + mapping
+#     coords, mapping = [], []
+#     for ob in objs:
+#         mesh = ob.data
+#         mesh.calc_normals_split()
+#         loop_normals_backup = [loop.normal for loop in mesh.loops]
+#         wm = ob.matrix_world
+#         fscale = ob.get("FPSCALE", 0)
+#         factor = 2 ** fscale
+#         for vi, v in enumerate(ob.data.vertices):
+#             coords.append(wm @ v.co)
+#             mapping.append((ob, vi, factor))
+#     N = len(coords)
+#     if N == 0:
+#         # print("⚠️ no vertices to collapse.")
+#         return
+
+#     # build KD-tree
+#     kd = KDTree(N)
+#     for i, co in enumerate(coords):
+#         kd.insert(co, i)
+#     kd.balance()
+
+#     visited = set()
+#     for i, co in enumerate(coords):
+#         if i in visited:
+#             continue
+#         # find cluster
+#         neighbors = [idx for (_, idx, _) in kd.find_range(co, threshold)]
+#         visited.update(neighbors)
+#         centroid = Vector((0,0,0))
+#         for j in neighbors:
+#             centroid += coords[j]
+#         centroid /= len(neighbors)
+#         # write back + grid-round
+#         for j in neighbors:
+#             ob, vi, factor = mapping[j]
+#             local = ob.matrix_world.inverted() @ centroid
+#             if factor != 0:
+#                 local.x = round(local.x * factor) / factor
+#                 local.y = round(local.y * factor) / factor
+#                 local.z = round(local.z * factor) / factor
+#             ob.data.vertices[vi].co = local
+
+#     # update meshes
+#     for ob in objs:
+#         ob.data.update()
+#         mesh.normals_split_custom_set(loop_normals_backup)
+#         mesh.use_auto_smooth = True
+
+    #print(f"✅ collapse_vertices_across_objects (th={threshold}) done.")
+
 def collapse_vertices_across_objects(objs, threshold=0.05):
-    """
-    Cluster all world-space verts across objs within threshold,
-    snap each cluster to its centroid, then round that centroid
-    to the grid implied by each obj.FPSCALE.
-    """
-    # gather world-space coords + mapping
-    coords, mapping = [], []
+    eps = 1e-6
+
+    # 1) Build BMesh per object, collect coords+mapping
+    coords, mapping, bm_by_obj = [], [], {}
     for ob in objs:
+        if ob.type != 'MESH': continue
+
+        bm = bmesh_with_split_norms(ob)
+        bm.verts.ensure_lookup_table()
+        bm_by_obj[ob] = bm
+
         wm = ob.matrix_world
-        fscale = ob.get("FPSCALE", 0)
-        factor = 2 ** fscale
-        for vi, v in enumerate(ob.data.vertices):
+        factor = 2 ** ob.get("FPSCALE", 0)
+
+        for v in bm.verts:
             coords.append(wm @ v.co)
-            mapping.append((ob, vi, factor))
-    N = len(coords)
-    if N == 0:
-        # print("⚠️ no vertices to collapse.")
+            mapping.append((ob, v, factor))
+
+    if not coords:
         return
 
-    # build KD-tree
-    kd = KDTree(N)
+    # 2) KD‑tree cluster in world‑space
+    kd = KDTree(len(coords))
     for i, co in enumerate(coords):
         kd.insert(co, i)
     kd.balance()
 
     visited = set()
+
+    # 3) Snap & (optionally) merge edge‑neighbors during cluster loop
     for i, co in enumerate(coords):
         if i in visited:
             continue
-        # find cluster
-        neighbors = [idx for (_, idx, _) in kd.find_range(co, threshold)]
-        visited.update(neighbors)
-        centroid = Vector((0,0,0))
-        for j in neighbors:
-            centroid += coords[j]
-        centroid /= len(neighbors)
-        # write back + grid-round
-        for j in neighbors:
-            ob, vi, factor = mapping[j]
-            local = ob.matrix_world.inverted() @ centroid
-            if factor != 0:
-                local.x = round(local.x * factor) / factor
-                local.y = round(local.y * factor) / factor
-                local.z = round(local.z * factor) / factor
-            ob.data.vertices[vi].co = local
-
-    # update meshes
-    for ob in objs:
-        ob.data.update()
-
-    #print(f"✅ collapse_vertices_across_objects (th={threshold}) done.")
-
-def is_invalid_normal(v):
-    """Check if a normal is zero-length or contains NaNs."""
-    return v.length == 0.0 or math.isnan(v.x) or math.isnan(v.y) or math.isnan(v.z)
-
-def fix_invalid_split_normals(region_objs):
-    """Fix zero-length or NaN split normals in region meshes."""
-    for obj in region_objs:
-        me = obj.data
-        me.calc_normals_split()
-        me.use_auto_smooth = True
-
-        loop_normals = [loop.normal.copy() for loop in me.loops]
-
-        # Build loop-to-face mapping since MeshLoop has no .face
-        loop_to_face = {}
-        for face in me.polygons:
-            for li in face.loop_indices:
-                loop_to_face[li] = face
-
-        invalid_loops = [i for i, n in enumerate(loop_normals) if is_invalid_normal(n)]
-
-        for li in invalid_loops:
-            replacement = None
-            vert_index = me.loops[li].vertex_index
-            face = loop_to_face.get(li)
-
-            # Try other loops in the same face
-            for alt_li in face.loop_indices:
-                if alt_li == li:
-                    continue
-                n = loop_normals[alt_li]
-                if not is_invalid_normal(n):
-                    replacement = n
-                    break
-
-            # If that fails, try other loops that use the same vertex
-            if not replacement:
-                for alt_li, loop in enumerate(me.loops):
-                    if loop.vertex_index == vert_index and alt_li != li:
-                        n = loop_normals[alt_li]
-                        if not is_invalid_normal(n):
-                            replacement = n
-                            break
-
-            if replacement:
-                loop_normals[li] = replacement
-            #     print(f"✅ Fixed invalid normal at loop {li} (vertex {vert_index}) in {obj.name}")
-            # else:
-            #     print(f"⚠️ Could not fix invalid normal at loop {li} (vertex {vert_index}) in {obj.name}")
-
-        me.normals_split_custom_set(loop_normals)
-        # print(f"🔧 Completed normal fix for {obj.name}")
-
-def merge_near_zero_edges(region_objs, threshold=1e-6, max_iterations=10):
-    print(f"🔧 Merging near-zero-length edges (≤ {threshold}) across {len(region_objs)} region meshes...")
-
-    for obj in region_objs:
-        if obj.type != 'MESH':
+        nbrs = [j for (_, j, _) in kd.find_range(co, threshold)]
+        visited.update(nbrs)
+        if len(nbrs) < 2:
             continue
 
-        me = obj.data
-        merged_total = 0
-        iterations = 0
+        centroid = sum((coords[j] for j in nbrs), Vector()) / len(nbrs)
 
-        while iterations < max_iterations:
-            bm = bmesh.new()
-            bm.from_mesh(me)
-            bm.verts.ensure_lookup_table()
-            bm.edges.ensure_lookup_table()
+        for j in nbrs:
+            ob, v, factor = mapping[j]
+            bm = bm_by_obj[ob]
 
-            edges_to_merge = []
-            for edge in bm.edges:
-                v1, v2 = edge.verts
-                if (v1.co - v2.co).length_squared <= threshold ** 2:
-                    edges_to_merge.append((v1, v2))
+            # grid‑snap the local target
+            lt = ob.matrix_world.inverted() @ centroid
+            if factor != 1:
+                lt.x = round(lt.x * factor) / factor
+                lt.y = round(lt.y * factor) / factor
+                lt.z = round(lt.z * factor) / factor
 
-            if not edges_to_merge:
-                bm.free()
-                break
+            # merge if an edge‑neighbor already sits at that spot
+            merged = False
+            for e in v.link_edges:
+                ov = e.other_vert(v)
+                if (ov.co - lt).length < eps:
+                    bmesh.ops.pointmerge(bm, verts=[v, ov], merge_co=ov.co)
+                    merged = True
+                    break
 
-            collapse_count = 0
-            for v1, v2 in edges_to_merge:
-                if v1.is_valid and v2.is_valid:
-                    midpoint = (v1.co + v2.co) / 2.0
-                    bmesh.ops.pointmerge(bm, verts=[v1, v2], merge_co=midpoint)
-                    collapse_count += 1
+            if not merged:
+                v.co = lt
 
-            bm.to_mesh(me)
-            me.update()
-            bm.free()
+            coords[j] = ob.matrix_world @ v.co
 
-            merged_total += collapse_count
-            iterations += 1
+    # 4) NEW: merge any remaining zero‑length edges **only** where verts share an edge
+    for ob, bm in bm_by_obj.items():
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        # collect offending edges
+        to_merge = []
+        for e in bm.edges:
+            v1, v2 = e.verts
+            if (v1.co - v2.co).length < eps:
+                to_merge.append((v1, v2))
+        # perform merges
+        for v1, v2 in to_merge:
+            if v1.is_valid and v2.is_valid:
+                bmesh.ops.pointmerge(bm, verts=[v1, v2], merge_co=v1.co)
 
-        # print(f"✅ {obj.name}: {merged_total} edge(s) collapsed in {iterations} iteration(s)")
+    # 5) Write back and reapply normals
+    for ob, bm in bm_by_obj.items():
+        mesh_cleanup(bm)
+        mesh_boundary_cleanup(bm)
+        mesh_from_bmesh_with_split_norms(bm, ob)
 
 def average_vertex_colors_globally(region_objs, threshold=0.001):
     print(f"🎨 Reapplying vertex colors to {len(region_objs)} region meshes...")
@@ -681,17 +695,9 @@ def delete_loose_and_degenerate(region_objs, area_threshold=1e-10, dissolve_dist
             if not changed:
                 break
 
-            bm.to_mesh(mesh)
-            mesh.update()
-            bm.free()
-
-            ln_attr = mesh.attributes.get("orig_normals")
-            if ln_attr:
-                # build flat list of normals in loop order
-                custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
-                mesh.normals_split_custom_set(custom_nors)
-                mesh.attributes.remove(mesh.attributes.get("orig_normals"))
-
+            bm.select_flush(False)
+            mesh_from_bmesh_with_split_norms(bm, obj)
+        
 def delete_empty_region_meshes_and_clear_sprite(region_objs):
     """
     Remove region mesh objects that have no vertices, delete any *_BR empties
@@ -721,38 +727,10 @@ def delete_empty_region_meshes_and_clear_sprite(region_objs):
             bpy.data.objects.remove(obj, do_unlink=True)
             region_objs.remove(obj)
 
-def preserve_and_clear_sharp_normals(region_objs):
-    """
-    For each selected mesh object:
-    1) Captures the current split normals (including any sharp-edge splits)
-    2) Clears all sharp-edge flags
-    3) Reapplies the captured normals as custom split normals
-    """
-    for obj in list(region_objs):
-        if obj.type != 'MESH':
-            continue
-        me = obj.data
-        
-        # 1) Ensure split normals are up-to-date
-        me.calc_normals_split()
-        me.use_auto_smooth = True
-        
-        # 2) Capture current split normals
-        captured_normals = [loop.normal.copy() for loop in me.loops]
-        
-        # 3) Clear all sharp edges so auto-smooth is uniform
-        for edge in me.edges:
-            edge.use_edge_sharp = False
-        
-        # 4) Reapply as custom split normals
-        me.normals_split_custom_set(captured_normals)
-        me.use_auto_smooth = True
-        me.auto_smooth_angle = math.pi
-
 def finalize_region_meshes(
         edge_snap_threshold=0.03,
         merge_dist=0.001,
-        collapse_thresh=0.05):
+        collapse_thresh=0.001):
     start = time.perf_counter()
     # pick up all of your region meshes by naming convention
     region_objs = [
@@ -768,22 +746,21 @@ def finalize_region_meshes(
         # print(f"   • {obj.name}")
 
     # merge_near_zero_edges(region_objs)
-    delete_loose_and_degenerate(region_objs)
-    preserve_and_clear_sharp_normals(region_objs)
+    # delete_loose_and_degenerate(region_objs)
     collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
     # fix_invalid_split_normals(region_objs)
     # merge_near_zero_edges(region_objs)
-    delete_loose_and_degenerate(region_objs)
-    split_edges_to_snap_verts(region_objs, threshold=edge_snap_threshold)
-    collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
+    # delete_loose_and_degenerate(region_objs)
+    # split_edges_to_snap_verts(region_objs, threshold=edge_snap_threshold)
+    # collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
     # merge_near_zero_edges(region_objs)
     # delete_loose_and_degenerate(region_objs)
     # for obj in region_objs:
     #     merge_by_distance(obj, dist=merge_dist)
-    delete_loose_and_degenerate(region_objs)
-    triangulate_meshes(region_objs)
+    # delete_loose_and_degenerate(region_objs)
+    # triangulate_meshes(region_objs)
     # average_vertex_colors_globally(region_objs, threshold=0.1)
-    delete_loose_and_degenerate(region_objs)
+    # delete_loose_and_degenerate(region_objs)
     delete_empty_region_meshes_and_clear_sprite(region_objs)
     
     elapsed = time.perf_counter() - start
