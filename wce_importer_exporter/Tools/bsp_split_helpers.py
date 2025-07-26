@@ -3,6 +3,7 @@ from collections import defaultdict
 from math import radians
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
+from mathutils.kdtree import KDTree
 
 def mark_color_seams(bm, color_layer_name="Color", threshold=0.04):
     """
@@ -154,11 +155,14 @@ def mesh_cleanup(bm, angle_limit=math.radians(1.0), delimit={'SEAM','SHARP','MAT
     """
 
     # ——— 1) make a pristine copy ——————————————————————————————
+    uv_layer = bm.loops.layers.uv.active
+    fn_layer = bm.loops.layers.float_vector.get("orig_normals")
+
+    # ——— 1) pristine copy ——————————————————————————————————————————————
     orig_bm = bm.copy()
     orig_bm.faces.ensure_lookup_table()
     orig_bm.verts.ensure_lookup_table()
 
-    # pre-compute centroids & vert-sets of every original face
     orig_centroids = {
         f.index: sum((v.co for v in f.verts), Vector()) / len(f.verts)
         for f in orig_bm.faces
@@ -167,160 +171,164 @@ def mesh_cleanup(bm, angle_limit=math.radians(1.0), delimit={'SEAM','SHARP','MAT
         f.index: frozenset(v.index for v in f.verts)
         for f in orig_bm.faces
     }
+    print(f"▶ Pristine: {len(orig_bm.faces)} faces, {len(orig_bm.verts)} verts")
 
-    # ——— 2) filter out seam-related edges & verts ——————————————————
-    # a) edges: skip any that are marked seam, or sit on a face
-    #    which has another seam on one of its other edges.
-    dissolvable_edges = []
-    for e in bm.edges:
-        if e.seam:
-            continue
-        # skip if any face using this edge has a different seam on another edge
-        skip = False
-        for f in e.link_faces:
-            for ed in f.edges:
-                if ed is not e and ed.seam:
-                    skip = True
-                    break
-            if skip:
-                break
-        if not skip:
-            dissolvable_edges.append(e)
-
-    # b) verts: skip any that have an incident seam edge,
-    #    or that are on a face which already has a seam on a different edge.
-    dissolvable_verts = []
-    for v in bm.verts:
-        # if vertex sits on any seam edge, skip
-        if any(e.seam for e in v.link_edges):
-            continue
-        # if any face using this vert has another seam on a different edge, skip
-        skip = False
-        for f in v.link_faces:
-            for ed in f.edges:
-                if ed.seam:
-                    skip = True
-                    break
-            if skip:
-                break
-        if not skip:
-            dissolvable_verts.append(v)
-
-    # ——— 3) dissolve on the *live* bm ———————————————————————————
+    # ——— 2) limited dissolve on the *live* bm ————————————————————————
+    all_edges = [e for e in bm.edges]
+    all_verts = list({v for e in all_edges for v in e.verts})
     bmesh.ops.dissolve_limit(
         bm,
-        edges                   = dissolvable_edges,
-        verts                   = dissolvable_verts,
+        edges                   = all_edges,
+        verts                   = all_verts,
         angle_limit             = angle_limit,
         use_dissolve_boundaries = False,
         delimit                 = delimit,
     )
-
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
+    print(f"▶ After dissolve: {len(bm.faces)} faces, {len(bm.verts)} verts")
 
-    # ——— 4) build BVH on the dissolved bm ————————————————————————
+    # ——— 3) build BVH to map original faces → new faces ————————————————————
     bvh = BVHTree.FromBMesh(bm, epsilon=0.0)
-
-    # map each original face → new face index
-    orig_to_new = {}
-    for fi, cen in orig_centroids.items():
-        hit = bvh.find_nearest(cen)
-        orig_to_new[fi] = hit[2] if hit else None
-
-    # invert: new_face_idx → list of original face indices
+    orig_to_new = {
+        fi: (bvh.find_nearest(cen) or (None, None, None, None))[2]
+        for fi, cen in orig_centroids.items()
+    }
     new_to_orig = {}
-    for orig_i, new_i in orig_to_new.items():
-        new_to_orig.setdefault(new_i, []).append(orig_i)
+    for o, n in orig_to_new.items():
+        new_to_orig.setdefault(n, []).append(o)
 
-    # ——— 5) find all concave ngons in the dissolved mesh —————————————
-    uv_layer = bm.loops.layers.uv.active
+    # ——— 4) find all concave ngons in dissolved mesh ————————————————————
     concave_ngons = []
     for f in bm.faces:
         if len(f.verts) <= 4:
             continue
-        # CCW loop order ⇒ dot>0 means concave corner
-        concave_flags = [
+        flags = [
             ((l.link_loop_prev.vert.co - l.vert.co)
              .cross(l.link_loop_next.vert.co - l.vert.co)
              .dot(f.normal) > 0)
             for l in f.loops
         ]
-        if any(concave_flags):
-            concave_ngons.append((f, concave_flags))
+        if any(flags):
+            concave_ngons.append((f, flags))
+    print(f"▶ Found {len(concave_ngons)} concave ngons to re-anchor")
 
-    # ——— 6) for each concave ngon, brute-force the best loop-0 ——————————
+    # we'll collect here the BEAUTY-triangulate candidates:
+    beauty_tris = []
+
+    # ——— 5) for each concave ngon, brute-force best rotation + BEAUTY check ————
     for face, concave_flags in concave_ngons:
         loops_idx = [l.vert.index for l in face.loops]
         N = len(loops_idx)
 
-        # which original tris fell into this face?
-        orig_tris = {
-            orig_face_verts[i] for i in new_to_orig.get(face.index, [])
-        }
+        # per-face KDTree to remap originals → this face’s new verts
+        kd = KDTree(N)
+        for i, vi in enumerate(loops_idx):
+            kd.insert(bm.verts[vi].co, vi)
+        kd.balance()
 
+        # gather the original triangle‐sets (in this face’s vert-space)
+        orig_tris = set()
+        for orig_fi in new_to_orig.get(face.index, []):
+            old_vs = orig_face_verts[orig_fi]
+            mapped = [kd.find(orig_bm.verts[old_vi].co)[1] for old_vi in old_vs]
+            orig_tris.add(frozenset(mapped))
+
+        print(f"\n--- Face {face.index}: loops {loops_idx}")
+        print(f"    orig_tris = {orig_tris}")
+
+        # 1) Ear-clip search
         best_k, best_score = 0, -1
         for k in range(N):
             rot = loops_idx[k:] + loops_idx[:k]
-
-            # tiny test bmesh
-            tb = bmesh.new()
-            inv = {}
-            for vid in rot:
-                tv = tb.verts.new(bm.verts[vid].co)
-                inv[tv] = vid
-            tb.faces.new([next(tv for tv,vv in inv.items() if vv==vid) for vid in rot])
+            tb = bmesh.new(); inv = {}
+            for vi in rot:
+                tv = tb.verts.new(bm.verts[vi].co); inv[tv] = vi
+            tb.faces.new([next(tv for tv,vv in inv.items() if vv==vi) for vi in rot])
             tb.faces.ensure_lookup_table()
             tb.normal_update()
-
-            # ear-clip triangulate
             res = bmesh.ops.triangulate(
                 tb,
                 faces       = tb.faces[:],
                 quad_method = 'BEAUTY',
                 ngon_method = 'EAR_CLIP',
             )
-
-            out_tris = {
-                frozenset(inv[v] for v in tri.verts)
-                for tri in res['faces']
-            }
-
-            score = len(out_tris & orig_tris)
+            out = {frozenset(inv[v] for v in tri.verts) for tri in res['faces']}
+            score = len(out & orig_tris)
+            print(f"    [EAR] rot k={k} start={rot[0]} → out={out}, score={score}")
             if score > best_score:
                 best_score, best_k = score, k
-
             tb.free()
+        ear_best, ear_score = best_k, best_score
 
-        # ——— 7) rebuild the real face with the winning rotation ————————
-        fn_layer = bm.loops.layers.float_vector.get("orig_normals")
+        # 2) BEAUTY-only search
+        beauty_best, beauty_score = 0, -1
+        for k in range(N):
+            rot = loops_idx[k:] + loops_idx[:k]
+            tb = bmesh.new(); inv = {}
+            for vi in rot:
+                tv = tb.verts.new(bm.verts[vi].co); inv[tv] = vi
+            tb.faces.new([next(tv for tv,vv in inv.items() if vv==vi) for vi in rot])
+            tb.faces.ensure_lookup_table()
+            tb.normal_update()
+            res = bmesh.ops.triangulate(
+                tb,
+                faces       = tb.faces[:],
+                quad_method = 'BEAUTY',
+                ngon_method = 'BEAUTY',
+            )
+            out = {frozenset(inv[v] for v in tri.verts) for tri in res['faces']}
+            score = len(out & orig_tris)
+            print(f"    [BEA] rot k={k} start={rot[0]} → out={out}, score={score}")
+            if score > beauty_score:
+                beauty_score, beauty_best = score, k
+            tb.free()
+        print(f"  → EAR best k={ear_best}, score={ear_score}")
+        print(f"  → BEA best k={beauty_best}, score={beauty_score}")
 
-        # inside the loop where you rebuild each ngon:
+        # Decide which rotation to rebuild with:
+        rebuild_k = ear_best
+        want_beauty = (beauty_score > ear_score)
+
+        # snapshot loops
         orig_loops = list(face.loops)
-        orig_verts = [l.vert for l in orig_loops]
-        orig_uvs   = [l[uv_layer].uv.copy() for l in orig_loops] if uv_layer else None
-        orig_nrs   = [l[fn_layer].copy() for l in orig_loops] if fn_layer else None
+        verts      = [l.vert for l in orig_loops]
+        uvs        = [l[uv_layer].uv.copy() for l in orig_loops] if uv_layer else None
+        nrs        = [l[fn_layer].copy()     for l in orig_loops] if fn_layer else None
         mat, sm    = face.material_index, face.smooth
 
-        # rotated lists…
-        rv = orig_verts[best_k:] + orig_verts[:best_k]
-        ru = (orig_uvs[best_k:] + orig_uvs[:best_k]) if orig_uvs else None
-        rn = (orig_nrs[best_k:] + orig_nrs[:best_k]) if orig_nrs else None
+        # rotate verts & attrs
+        rv = verts[rebuild_k:] + verts[:rebuild_k]
+        ru = (uvs[rebuild_k:] + uvs[:rebuild_k]) if uvs else None
+        rn = (nrs[rebuild_k:] + nrs[:rebuild_k]) if nrs else None
 
+        # remove & rebuild as ngon
         bm.faces.remove(face)
         newf = bm.faces.new(rv)
         newf.material_index = mat
         newf.smooth         = sm
-
         if uv_layer and ru:
-            for loop, uv in zip(newf.loops, ru):
-                loop[uv_layer].uv = uv
-
+            for loop, uvv in zip(newf.loops, ru):
+                loop[uv_layer].uv = uvv
         if fn_layer and rn:
             for loop, nr in zip(newf.loops, rn):
                 loop[fn_layer] = nr
 
-    # clean up the pristine copy
+        # if BEAUTY strictly wins, mark this face for later triangulation
+        if want_beauty:
+            beauty_tris.append(newf)
+
+    # ——— 6) do one batch BEAUTY triangulation on all marked faces —————————
+    bm.normal_update()
+    if beauty_tris:
+        print(f"▶ triangulating {len(beauty_tris)} faces with BEAUTY at the end")
+        bmesh.ops.triangulate(
+            bm,
+            faces        = beauty_tris,
+            quad_method  = 'BEAUTY',
+            ngon_method  = 'BEAUTY',
+        )
+
     orig_bm.free()
 
     return bm

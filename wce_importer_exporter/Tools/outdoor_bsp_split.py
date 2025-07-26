@@ -475,7 +475,6 @@ def terrain_cleanup(bm, angle_limit=math.radians(1.0), delimit={'SEAM','SHARP','
     print("✅ mesh_cleanup_and_reanchor complete.")
     return bm
 
-
 def create_region_empty(center, sphere_radius, index, pending_objects):
     """
     Create an empty (for labeling/visualization) at the given center.
@@ -571,9 +570,8 @@ def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
     cleanup_mesh_geometry(bm_lower)
     fix_concave_ngons(bm_lower, bm_geo, tol)
     bmesh.ops.triangulate(bm_lower, faces = bm_lower.faces[:], quad_method = 'BEAUTY', ngon_method = 'EAR_CLIP',)
-    terrain_cleanup(bm_lower)
+    terrain_cleanup(bm_lower, angle_limit=math.radians(1.0))
    
-    
     # copy for upper half
     bm_upper = bm_geo.copy()
     geom_u   = list(bm_upper.verts) + list(bm_upper.edges) + list(bm_upper.faces)
@@ -591,7 +589,7 @@ def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
     cleanup_mesh_geometry(bm_upper)
     fix_concave_ngons(bm_upper, bm_geo, tol)
     bmesh.ops.triangulate(bm_upper, faces = bm_upper.faces[:], quad_method = 'BEAUTY', ngon_method = 'EAR_CLIP',)
-    terrain_cleanup(bm_upper)
+    terrain_cleanup(bm_upper, angle_limit=math.radians(1.0))
 
     fmap_o = bm_geo.faces.layers.face_map.get("orig_face")
     if fmap_o:
@@ -1384,7 +1382,7 @@ def run_outdoor_bsp_split(target_size=282.0):
 
         modify_regions_and_worldtree()
 
-        # finalize_region_meshes()
+        finalize_region_meshes()
     
     bpy.context.scene.render.use_lock_interface = False
     bpy.context.window_manager.progress_end()

@@ -29,6 +29,44 @@ def aabb_intersects(minA, maxA, minB, maxB, epsilon=0.001):
         maxA.z + epsilon < minB.z - epsilon or minA.z - epsilon > maxB.z + epsilon
     )
 
+def cleanup_mesh_geometry(bm, area_threshold=1e-10, dissolve_dist=1e-4, max_passes=8):
+    """
+    Iteratively deletes loose verts/edges, degenerate faces,
+    and performs dissolve_degenerate until no more geometry can be removed.
+    Operates in-place on the given mesh.
+    """
+    for _ in range(max_passes):
+        changed = False
+
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+        # 1. Delete loose verts/edges and degenerate faces
+        loose_verts = [v for v in bm.verts if not v.link_edges]
+        loose_edges = [e for e in bm.edges if not e.link_faces]
+        degenerate_faces = [f for f in bm.faces if f.calc_area() < area_threshold]
+
+        geom_to_delete = loose_verts + loose_edges + degenerate_faces
+
+        if geom_to_delete:
+            if loose_edges or (loose_verts and degenerate_faces):
+                context = 'EDGES'
+            elif degenerate_faces:
+                context = 'FACES'
+            else:
+                context = 'VERTS'
+            bmesh.ops.delete(bm, geom=geom_to_delete, context=context)
+            changed = True
+
+        # 2. Dissolve degenerate geometry
+        res = bmesh.ops.dissolve_degenerate(bm, dist=dissolve_dist, edges=list(bm.edges))
+        if res and any(res.get(k) for k in ('edges', 'verts', 'faces')):
+            changed = True
+
+        if not changed:
+            break
+
 def mesh_boundary_cleanup(bm, thin_thresh=0.001, angle_tol=1e-3):
     """
     In-place on `bm`:
@@ -195,114 +233,6 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
 
     #print("✅ split_edges_to_snap_verts: done, all splits & normals preserved.")
 
-def _material_uv_normal_match(v1, v2, uv_layer, normal_angle_limit=45, ln_layer=None):
-    """Check if v1 and v2 share the same materials, UVs, and all loop normals are within angle limit."""
-    def loop_data(v):
-        uv_set = set()
-        mat_set = set()
-        normals = []
-        for loop in v.link_loops:
-            if loop.face:
-                mat_set.add(loop.face.material_index)
-                if uv_layer:
-                    uv_set.add(tuple(loop[uv_layer].uv))
-                if ln_layer is not None:
-                    # our pre–baked corner normals
-                    normals.append(loop[ln_layer].copy())
-                else:
-                    # fallback to fresh split normals
-                    normals.append(loop.calc_normal())
-        return mat_set, uv_set, normals
-
-    mats1, uvs1, normals1 = loop_data(v1)
-    mats2, uvs2, normals2 = loop_data(v2)
-
-    if mats1 != mats2:
-        return False
-    if uv_layer and uvs1 != uvs2:
-        return False
-
-    for n1 in normals1:
-        for n2 in normals2:
-            angle = angle_between_normals(n1, n2)
-            if angle > normal_angle_limit:
-                return False
-
-    return True
-
-def merge_by_distance(obj, dist=0.001, normal_angle_limit=45):
-    """
-    Merges vertices that are within dist of each other AND whose
-    UV/material/normal sets all match within normal_angle_limit.
-    """
-    me = obj.data
-    bm = bmesh.new()
-    bm.from_mesh(me)
-    bm.verts.ensure_lookup_table()
-    bm.faces.ensure_lookup_table()
-
-    me.calc_normals_split()
-    me.use_auto_smooth = True
-
-    ln_layer = bm.loops.layers.float_vector.new("orig_normals")
-    loops = (l for f in bm.faces for l in f.loops)
-    for loop in loops:
-        loop[ln_layer] = me.loops[loop.index].normal
-
-    uv_layer = bm.loops.layers.uv.active  # may be None
-
-    # 1) Snapshot verts into a list and build KDTree once
-    verts = list(bm.verts)
-    N = len(verts)
-    kd = KDTree(N)
-    for i, v in enumerate(verts):
-        kd.insert(v.co, i)
-    kd.balance()
-
-    # 2) Union‑find data structure
-    parent = list(range(N))
-    def find(i):
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-    def union(i, j):
-        ri, rj = find(i), find(j)
-        if ri != rj:
-            parent[rj] = ri
-
-    # 3) For each vert, merge with every neighbor in range if they match
-    for i, v in enumerate(verts):
-        for (_, j, _) in kd.find_range(v.co, dist):
-            if i == j:
-                continue
-            v2 = verts[j]
-            # only union if material, UVs and normals all line up
-            if _material_uv_normal_match(v, verts[j], uv_layer, normal_angle_limit, ln_layer):
-                union(i, j)
-
-    # 4) Gather clusters by their root
-    clusters = {}
-    for i in range(N):
-        root = find(i)
-        clusters.setdefault(root, []).append(verts[i])
-
-    # 5) Perform a pointmerge on each cluster of size>1
-    merged = 0
-    for cl in clusters.values():
-        if len(cl) > 1:
-            # merge all in cl into the first one’s location
-            bmesh.ops.pointmerge(bm, verts=cl, merge_co=cl[0].co)
-            merged += len(cl) - 1
-
-    # write back
-    bm.to_mesh(me)
-    mesh_from_bmesh_with_split_norms(bm, obj)
-    bm.free()
-
-    # print(f"✅ Merged {merged} vertices in {len(clusters)} cluster(s) "
-    #       f"(threshold={dist}, angle<{normal_angle_limit}°)")
-
 def triangulate_meshes(objs):
     """Triangulate faces and very quickly preserve custom split normals."""
     for ob in objs:
@@ -321,70 +251,14 @@ def triangulate_meshes(objs):
             loop[ln_layer] = me.loops[loop.index].normal
         
         bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
+        cleanup_mesh_geometry(bm)
+        bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
         
         mesh_from_bmesh_with_split_norms(bm, ob)
 
         # print(f"✅ {ob.name}: triangulated and normals preserved.")
 
-# def collapse_vertices_across_objects(objs, threshold=1e-5):
-#     """
-#     Cluster all world-space verts across objs within threshold,
-#     snap each cluster to its centroid, then round that centroid
-#     to the grid implied by each obj.FPSCALE.
-#     """
-#     # gather world-space coords + mapping
-#     coords, mapping = [], []
-#     for ob in objs:
-#         mesh = ob.data
-#         mesh.calc_normals_split()
-#         loop_normals_backup = [loop.normal for loop in mesh.loops]
-#         wm = ob.matrix_world
-#         fscale = ob.get("FPSCALE", 0)
-#         factor = 2 ** fscale
-#         for vi, v in enumerate(ob.data.vertices):
-#             coords.append(wm @ v.co)
-#             mapping.append((ob, vi, factor))
-#     N = len(coords)
-#     if N == 0:
-#         # print("⚠️ no vertices to collapse.")
-#         return
-
-#     # build KD-tree
-#     kd = KDTree(N)
-#     for i, co in enumerate(coords):
-#         kd.insert(co, i)
-#     kd.balance()
-
-#     visited = set()
-#     for i, co in enumerate(coords):
-#         if i in visited:
-#             continue
-#         # find cluster
-#         neighbors = [idx for (_, idx, _) in kd.find_range(co, threshold)]
-#         visited.update(neighbors)
-#         centroid = Vector((0,0,0))
-#         for j in neighbors:
-#             centroid += coords[j]
-#         centroid /= len(neighbors)
-#         # write back + grid-round
-#         for j in neighbors:
-#             ob, vi, factor = mapping[j]
-#             local = ob.matrix_world.inverted() @ centroid
-#             if factor != 0:
-#                 local.x = round(local.x * factor) / factor
-#                 local.y = round(local.y * factor) / factor
-#                 local.z = round(local.z * factor) / factor
-#             ob.data.vertices[vi].co = local
-
-#     # update meshes
-#     for ob in objs:
-#         ob.data.update()
-#         mesh.normals_split_custom_set(loop_normals_backup)
-#         mesh.use_auto_smooth = True
-
-    #print(f"✅ collapse_vertices_across_objects (th={threshold}) done.")
-
-def collapse_vertices_across_objects(objs, threshold=0.05):
+def collapse_vertices_across_objects(objs, threshold=0.5):
     eps = 1e-6
 
     # 1) Build BMesh per object, collect coords+mapping
@@ -467,7 +341,9 @@ def collapse_vertices_across_objects(objs, threshold=0.05):
 
     # 5) Write back and reapply normals
     for ob, bm in bm_by_obj.items():
+        mesh_boundary_cleanup(bm)
         mesh_cleanup(bm)
+        cleanup_mesh_geometry(bm)
         mesh_boundary_cleanup(bm)
         mesh_from_bmesh_with_split_norms(bm, ob)
 
@@ -592,111 +468,6 @@ def average_vertex_colors_globally(region_objs, threshold=0.001):
     #                     attr.data[vi].color = avg
 
     # print(f"✅ Averaged colors globally across {len(clusters)} vertex clusters.")
-
-# def delete_loose_and_degenerate(region_objs, area_threshold=1e-10):
-#     print("🧹 Deleting loose and degenerate geometry in region meshes...")
-
-#     for obj in region_objs:
-#         if obj.type != 'MESH':
-#             continue
-
-#         mesh = obj.data
-#         iterations = 0
-#         while True:
-#             # build a fresh BMesh each pass
-#             bm = bmesh.new()
-#             bm.from_mesh(mesh)
-#             bm.verts.ensure_lookup_table()
-#             bm.edges.ensure_lookup_table()
-#             bm.faces.ensure_lookup_table()
-
-#             ln_layer = bm.loops.layers.float_vector.new("orig_normals")
-#             loops = (l for f in bm.faces for l in f.loops)
-#             for loop in loops:
-#                 loop[ln_layer] = mesh.loops[loop.index].normal
-
-#             # collect all the geometry to delete
-#             loose_verts     = [v for v in bm.verts if not v.link_edges]
-#             loose_edges     = [e for e in bm.edges if not e.link_faces]
-#             degenerate_faces= [f for f in bm.faces if f.calc_area() < area_threshold]
-#             geom_to_delete  = loose_verts + loose_edges + degenerate_faces
-
-#             if not geom_to_delete:
-#                 bm.free()
-#                 break
-
-#             # pick a deletion context that will remove everything
-#             if loose_edges or (loose_verts and degenerate_faces):
-#                 context = 'EDGES'
-#             elif degenerate_faces:
-#                 context = 'FACES'
-#             else:
-#                 context = 'VERTS'
-
-#             bmesh.ops.delete(bm, geom=geom_to_delete, context=context)
-#             bm.to_mesh(mesh)
-#             mesh.update()
-#             bm.free()
-
-#             ln_attr = mesh.attributes.get("orig_normals")
-#             if ln_attr:
-#                 # build flat list of normals in loop order
-#                 custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
-#                 mesh.normals_split_custom_set(custom_nors)
-#                 mesh.attributes.remove(mesh.attributes.get("orig_normals"))
-
-#             iterations += 1
-
-def delete_loose_and_degenerate(region_objs, area_threshold=1e-10, dissolve_dist=1e-4, max_passes=8):
-    print("🧹 Deleting loose and degenerate geometry in region meshes...")
-
-    for obj in region_objs:
-        if obj.type != 'MESH':
-            continue
-
-        mesh = obj.data
-
-        for _ in range(max_passes):
-            changed = False
-            # build a fresh BMesh each pass
-            bm = bmesh.new()
-            bm.from_mesh(mesh)
-            bm.verts.ensure_lookup_table()
-            bm.edges.ensure_lookup_table()
-            bm.faces.ensure_lookup_table()
-
-            ln_layer = bm.loops.layers.float_vector.new("orig_normals")
-            loops = (l for f in bm.faces for l in f.loops)
-            for loop in loops:
-                loop[ln_layer] = mesh.loops[loop.index].normal
-
-            # 1. Delete loose verts/edges and degenerate faces
-            loose_verts = [v for v in bm.verts if not v.link_edges]
-            loose_edges = [e for e in bm.edges if not e.link_faces]
-            degenerate_faces = [f for f in bm.faces if f.calc_area() < area_threshold]
-
-            geom_to_delete = loose_verts + loose_edges + degenerate_faces
-
-            if geom_to_delete:
-                if loose_edges or (loose_verts and degenerate_faces):
-                    context = 'EDGES'
-                elif degenerate_faces:
-                    context = 'FACES'
-                else:
-                    context = 'VERTS'
-                bmesh.ops.delete(bm, geom=geom_to_delete, context=context)
-                changed = True
-
-            # 2. Dissolve degenerate geometry
-            res = bmesh.ops.dissolve_degenerate(bm, dist=dissolve_dist, edges=list(bm.edges))
-            if res and any(res.get(k) for k in ('edges', 'verts', 'faces')):
-                changed = True
-
-            if not changed:
-                break
-
-            bm.select_flush(False)
-            mesh_from_bmesh_with_split_norms(bm, obj)
         
 def delete_empty_region_meshes_and_clear_sprite(region_objs):
     """
@@ -730,7 +501,7 @@ def delete_empty_region_meshes_and_clear_sprite(region_objs):
 def finalize_region_meshes(
         edge_snap_threshold=0.03,
         merge_dist=0.001,
-        collapse_thresh=0.001):
+        collapse_thresh=0.05):
     start = time.perf_counter()
     # pick up all of your region meshes by naming convention
     region_objs = [
@@ -745,22 +516,10 @@ def finalize_region_meshes(
     # for obj in region_objs:
         # print(f"   • {obj.name}")
 
-    # merge_near_zero_edges(region_objs)
-    # delete_loose_and_degenerate(region_objs)
     collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
-    # fix_invalid_split_normals(region_objs)
-    # merge_near_zero_edges(region_objs)
-    # delete_loose_and_degenerate(region_objs)
-    # split_edges_to_snap_verts(region_objs, threshold=edge_snap_threshold)
-    # collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
-    # merge_near_zero_edges(region_objs)
-    # delete_loose_and_degenerate(region_objs)
-    # for obj in region_objs:
-    #     merge_by_distance(obj, dist=merge_dist)
-    # delete_loose_and_degenerate(region_objs)
-    # triangulate_meshes(region_objs)
+    split_edges_to_snap_verts(region_objs, threshold=edge_snap_threshold)
+    triangulate_meshes(region_objs)
     # average_vertex_colors_globally(region_objs, threshold=0.1)
-    # delete_loose_and_degenerate(region_objs)
     delete_empty_region_meshes_and_clear_sprite(region_objs)
     
     elapsed = time.perf_counter() - start
