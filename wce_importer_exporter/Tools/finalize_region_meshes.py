@@ -341,6 +341,15 @@ def collapse_vertices_across_objects(objs, threshold=0.5):
 
     # 5) Write back and reapply normals
     for ob, bm in bm_by_obj.items():
+        # mesh_boundary_cleanup(bm)
+        # mesh_cleanup(bm)
+        # cleanup_mesh_geometry(bm)
+        # mesh_boundary_cleanup(bm)
+        mesh_from_bmesh_with_split_norms(bm, ob)
+
+def region_mesh_cleanup(objs):
+    for ob in objs:
+        bm = bmesh_with_split_norms(ob)
         mesh_boundary_cleanup(bm)
         mesh_cleanup(bm)
         cleanup_mesh_geometry(bm)
@@ -468,6 +477,78 @@ def average_vertex_colors_globally(region_objs, threshold=0.001):
     #                     attr.data[vi].color = avg
 
     # print(f"✅ Averaged colors globally across {len(clusters)} vertex clusters.")
+
+def copy_per_vertex_colors(orig_obj, region_objs, attr_name="Color"):
+    orig_me = orig_obj.data
+
+    # --- 1) find original color data ---
+    # Try new attribute API first:
+    color_attr = orig_me.color_attributes.get(attr_name)
+    legacy_vcol = orig_me.vertex_colors.active
+
+    if color_attr is None and legacy_vcol is None:
+        raise RuntimeError(f"Original has neither a '{attr_name}' attribute nor a legacy vertex‐color layer")
+
+    # --- 2) build a simple per‐vertex color list ---
+    n_orig_verts = len(orig_me.vertices)
+    orig_vert_col = [None] * n_orig_verts
+
+    if color_attr:
+        # domain=POINT means color_attr.data is per‐vertex
+        if color_attr.domain != 'POINT':
+            raise RuntimeError(f"Expected '{attr_name}' attribute to be point‑domain")
+        for i, d in enumerate(color_attr.data):
+            orig_vert_col[i] = d.color[:]  # copy RGBA tuple
+    else:
+        # legacy vertex_color: data is per‐loop, average into per‐vertex
+        sums = [[0,0,0,0] for _ in range(n_orig_verts)]
+        cnts = [0]*n_orig_verts
+        for loop in orig_me.loops:
+            vi = loop.vertex_index
+            c4 = legacy_vcol.data[loop.index].color
+            sums[vi][0] += c4[0]
+            sums[vi][1] += c4[1]
+            sums[vi][2] += c4[2]
+            sums[vi][3] += c4[3]
+            cnts[vi]   += 1
+        for i in range(n_orig_verts):
+            if cnts[i]:
+                orig_vert_col[i] = (
+                    sums[i][0]/cnts[i],
+                    sums[i][1]/cnts[i],
+                    sums[i][2]/cnts[i],
+                    sums[i][3]/cnts[i],
+                )
+            else:
+                orig_vert_col[i] = (1,1,1,1)
+
+    # --- 3) build KD‑tree of original verts in world space ---
+    kd = kdtree.KDTree(n_orig_verts)
+    wm = orig_obj.matrix_world
+    for i, v in enumerate(orig_me.vertices):
+        kd.insert(wm @ v.co, i)
+    kd.balance()
+
+    # --- 4) paint each region mesh’s per‑vertex color attribute ---
+    for reg in region_objs:
+        me = reg.data
+
+        # ensure a point‑domain color attribute named attr_name
+        reg_attr = me.color_attributes.get(attr_name)
+        if reg_attr is None:
+            reg_attr = me.color_attributes.new(
+                name=attr_name,
+                domain='POINT',
+                data_type='FLOAT_COLOR'
+            )
+
+        # for each vertex, find closest orig vert and copy its color
+        wm_r = reg.matrix_world
+        for i, v in enumerate(me.vertices):
+            _, orig_i, _ = kd.find(wm_r @ v.co)
+            reg_attr.data[i].color = orig_vert_col[orig_i]
+
+        me.update()
         
 def delete_empty_region_meshes_and_clear_sprite(region_objs):
     """
@@ -498,7 +579,7 @@ def delete_empty_region_meshes_and_clear_sprite(region_objs):
             bpy.data.objects.remove(obj, do_unlink=True)
             region_objs.remove(obj)
 
-def finalize_region_meshes(
+def finalize_region_meshes(orig_obj,
         edge_snap_threshold=0.03,
         merge_dist=0.001,
         collapse_thresh=0.05):
@@ -517,9 +598,11 @@ def finalize_region_meshes(
         # print(f"   • {obj.name}")
 
     collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
+    region_mesh_cleanup(region_objs)
     split_edges_to_snap_verts(region_objs, threshold=edge_snap_threshold)
+    collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
     triangulate_meshes(region_objs)
-    # average_vertex_colors_globally(region_objs, threshold=0.1)
+    copy_per_vertex_colors(orig_obj, region_objs)
     delete_empty_region_meshes_and_clear_sprite(region_objs)
     
     elapsed = time.perf_counter() - start
