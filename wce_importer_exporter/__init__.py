@@ -16,16 +16,16 @@ import re
 import sys
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
-import_folder = os.path.join(script_dir, "Import")
-export_folder = os.path.join(script_dir, "Export")
+import_folder = os.path.join(script_dir, "wce_import")
+export_folder = os.path.join(script_dir, "wce_export")
 
 if import_folder not in sys.path:
     sys.path.append(import_folder)
 if export_folder not in sys.path:
     sys.path.append(export_folder)
 
-from .Import import import_wce_file
-from .Export import master_export  # Assuming 'master_export.py' is in the Export folder
+from .wce_import import import_wce_file
+from .wce_export import master_export  # Assuming 'master_export.py' is in the export folder
 from .passable_flag_editor import register_passable_editor, unregister_passable_editor
 from .ui_world_tools import register as register_world_tools, unregister as unregister_world_tools
 

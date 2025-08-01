@@ -1,4 +1,4 @@
-import bmesh, math,itertools
+import bmesh
 from collections import deque
 from mathutils import Vector
 
@@ -136,9 +136,9 @@ def merge_verts_by_attrs(bm,
         i = int(round(c * 255.0))
         return max(0, min(255, i))
 
-    def quantize_128(c):
-        i = int(round(c * 128.0))
-        return max(-128, min(127, i))
+    def quantize_127(c):
+        i = int(round(c * 127.0))
+        return max(-127, min(127, i))
 
     # — get layers —
     luv = bm.loops.layers.uv.active
@@ -191,9 +191,9 @@ def merge_verts_by_attrs(bm,
         for l in v.link_loops:
             x,y,z = l[vec_layer]
             idxs.append((
-                quantize_128(x),
-                quantize_128(y),
-                quantize_128(z),
+                quantize_127(x),
+                quantize_127(y),
+                quantize_127(z),
             ))
         # if multiple loops, pick the most common triple
         from collections import Counter
@@ -251,105 +251,5 @@ def merge_verts_by_attrs(bm,
                 target = next(iter(comp))
                 co = target.co.copy()
                 bmesh.ops.pointmerge(bm, verts=list(comp), merge_co=co)
-
-    return bm
-
-def dissolve_colinear_geo(bm, angle_limit=0.01):
-    """
-    1) Dissolve edges touching vertices where:
-         - all incident edges lie in one plane (within sin(angle_limit)), and
-         - at least one pair of those edges is within angle_limit of 180°.
-       Seams are preserved.
-    2) Dissolve degree-2 vertices whose two edges are within angle_limit of 180°.
-       Seams are preserved.
-    3) Triangulate all faces (BEAUTY quads, EAR_CLIP ngons).
-    """
-    # precompute thresholds
-    planarity_tol = math.sin(angle_limit)
-    cos_eps       = math.cos(angle_limit)
-    thresh        = 1.0 - cos_eps   # |dot + 1| < thresh ⇒ within angle_limit of straight
-
-    # ——— 1) Edge pass —————————————————————————————————————
-    seam_verts = {v for v in bm.verts if any(e.seam for e in v.link_edges)}
-    edges_to_dissolve = set()
-
-    for v in bm.verts:
-        if v in seam_verts:
-            continue
-
-        # gather normalized directions of all incident edges
-        dirs = []
-        for e in v.link_edges:
-            vec = e.other_vert(v).co - v.co
-            if vec.length_squared > 1e-8:
-                dirs.append(vec.normalized())
-        if len(dirs) < 2:
-            continue
-
-        # check coplanarity
-        plane_n = None
-        for d1, d2 in itertools.combinations(dirs, 2):
-            cr = d1.cross(d2)
-            if cr.length_squared > 1e-8:
-                plane_n = cr.normalized()
-                break
-        if plane_n and any(abs(plane_n.dot(d)) > planarity_tol for d in dirs):
-            continue
-
-        # check at least one pair is colinear
-        if not any(abs(d1.dot(d2) + 1.0) < thresh
-                   for d1, d2 in itertools.combinations(dirs, 2)):
-            continue
-
-        # mark all edges at this vertex
-        edges_to_dissolve.update(v.link_edges)
-
-    # filter out any real seam edges or edges touching seam-verts
-    edges_to_dissolve = {
-        e for e in edges_to_dissolve
-        if not e.seam and e.verts[0] not in seam_verts and e.verts[1] not in seam_verts
-    }
-
-    if edges_to_dissolve:
-        bmesh.ops.dissolve_edges(bm,
-                                 edges=list(edges_to_dissolve),
-                                 use_face_split=False)
-        print(f"Dissolved {len(edges_to_dissolve)} planar-colinear edges.")
-    else:
-        print("No planar-colinear edges found.")
-
-    # ——— 2) Degree-2 vertex pass —————————————————————————————
-    to_dissolve_verts = []
-    for v in bm.verts:
-        if any(e.seam for e in v.link_edges):
-            continue
-        if len(v.link_edges) != 2:
-            continue
-
-        e1, e2 = v.link_edges
-        d1 = (e1.other_vert(v).co - v.co).normalized()
-        d2 = (e2.other_vert(v).co - v.co).normalized()
-
-        if abs(d1.dot(d2) + 1.0) < thresh:
-            to_dissolve_verts.append(v)
-
-    if to_dissolve_verts:
-        bmesh.ops.dissolve_verts(bm,
-                                 verts=to_dissolve_verts,
-                                 use_face_split=False)
-        print(f"Dissolved {len(to_dissolve_verts)} degree-2 colinear verts.")
-    else:
-        print("No degree-2 colinear verts found.")
-
-    # ——— 3) Final triangulation —————————————————————————————————
-    faces = [f for f in bm.faces]
-    if faces:
-        bmesh.ops.triangulate(
-            bm,
-            faces        = faces,
-            quad_method  = 'BEAUTY',
-            ngon_method  = 'EAR_CLIP',
-        )
-        print(f"Triangulated {len(faces)} faces.")
 
     return bm

@@ -1,4 +1,4 @@
-import bpy, os, re
+import bpy, os
 
 @bpy.app.handlers.persistent
 def update_animated_texture_nodes(scene):

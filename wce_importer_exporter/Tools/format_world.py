@@ -2,9 +2,8 @@
 import bpy, bmesh
 import re
 from mathutils import Matrix, Vector
-from .format_helpers import rearrange_uvs, merge_verts_by_attrs, dissolve_colinear_geo
-from .bmesh_with_split_norms import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
-from .bsp_split_helpers import mark_color_seams, mesh_cleanup
+from .format_helpers import rearrange_uvs, merge_verts_by_attrs
+from ..core.bmesh_utils import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
 
 def run_format_world():
     """
@@ -89,7 +88,7 @@ def run_format_world():
     if ln_attr:
         custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
         mesh.normals_split_custom_set(custom_nors)
-        # mesh.attributes.remove(ln_attr)
+        mesh.attributes.remove(ln_attr)
 
     # Clean up unwanted objects
     # Delete empty named WORLD_BOUNDS

@@ -1,33 +1,10 @@
-import bpy, bmesh, math, re, math
+import bpy, bmesh, re, time
 from math import pi
-from mathutils import Vector, kdtree
+from mathutils import Vector
 from mathutils.kdtree import KDTree
-import time
-from .bmesh_with_split_norms import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
+from ..core.math_helpers import aabb_intersects, object_world_aabb
+from ..core.bmesh_utils import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
 from .format_helpers import merge_verts_by_attrs
-from .bsp_split_helpers import mesh_cleanup
-
-def angle_between_normals(n1, n2):
-    """Compute angle between two vectors in degrees."""
-    return math.degrees(n1.angle(n2))
-
-def object_world_aabb(obj):
-    """Return min/max world-space AABB of a mesh object."""
-    mat = obj.matrix_world
-    verts = [mat @ v.co for v in obj.data.vertices]
-    if not verts:
-        return Vector((0,0,0)), Vector((0,0,0))
-    minb = Vector((min(v.x for v in verts), min(v.y for v in verts), min(v.z for v in verts)))
-    maxb = Vector((max(v.x for v in verts), max(v.y for v in verts), max(v.z for v in verts)))
-    return minb, maxb
-
-def aabb_intersects(minA, maxA, minB, maxB, epsilon=0.001):
-    """Return True if two padded AABBs intersect."""
-    return not (
-        maxA.x + epsilon < minB.x - epsilon or minA.x - epsilon > maxB.x + epsilon or
-        maxA.y + epsilon < minB.y - epsilon or minA.y - epsilon > maxB.y + epsilon or
-        maxA.z + epsilon < minB.z - epsilon or minA.z - epsilon > maxB.z + epsilon
-    )
 
 def cleanup_mesh_geometry(bm, area_threshold=1e-10, dissolve_dist=1e-4, max_passes=8):
     """
@@ -143,19 +120,9 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
     }
 
     for ob_B in objs:
-        me = ob_B.data
-        me.calc_normals_split()
-        me.use_auto_smooth = True
-
-        bm = bmesh.new()
-        bm.from_mesh(me)
+        bm = bmesh_with_split_norms(ob_B)
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
-
-        ln_layer = bm.loops.layers.float_vector.new("orig_normals")
-        loops = (l for f in bm.faces for l in f.loops)
-        for loop in loops:
-            loop[ln_layer] = me.loops[loop.index].normal
 
         minB, maxB = object_world_aabb(ob_B)
         # collect all hits per edge: {edge: [(t, interp_normal), ...]}
@@ -165,7 +132,7 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
             if ob_A is ob_B:
                 continue
             minA, maxA = object_world_aabb(ob_A)
-            if not aabb_intersects(minA, maxA, minB, maxB):
+            if not aabb_intersects(minA, maxA, minB, maxB, epsilon=0.001):
                 continue
 
             for edge in bm.edges:
@@ -231,24 +198,10 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
         merge_verts_by_attrs(bm)
         mesh_from_bmesh_with_split_norms(bm, ob_B)
 
-    #print("✅ split_edges_to_snap_verts: done, all splits & normals preserved.")
-
 def triangulate_meshes(objs):
     """Triangulate faces and very quickly preserve custom split normals."""
     for ob in objs:
-        me = ob.data
-        
-        # 2) Triangulate via BMesh
-        bm = bmesh.new()
-        bm.from_mesh(me)
-
-        me.calc_normals_split()
-        me.use_auto_smooth = True
-
-        ln_layer = bm.loops.layers.float_vector.new("orig_normals")
-        loops = (l for f in bm.faces for l in f.loops)
-        for loop in loops:
-            loop[ln_layer] = me.loops[loop.index].normal
+        bm = bmesh_with_split_norms(ob)
         
         bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
         cleanup_mesh_geometry(bm)
@@ -256,15 +209,17 @@ def triangulate_meshes(objs):
         
         mesh_from_bmesh_with_split_norms(bm, ob)
 
-        # print(f"✅ {ob.name}: triangulated and normals preserved.")
-
-def collapse_vertices_across_objects(objs, threshold=0.5):
+def collapse_vertices_across_objects(objs, threshold=0.05):
     eps = 1e-6
 
     # 1) Build BMesh per object, collect coords+mapping
-    coords, mapping, bm_by_obj = [], [], {}
+    coords = []
+    mapping = []        # [(obj, bmvert, fpscale_factor), ...]
+    bm_by_obj = {}      # {obj: bm, ...}
+
     for ob in objs:
-        if ob.type != 'MESH': continue
+        if ob.type != 'MESH':
+            continue
 
         bm = bmesh_with_split_norms(ob)
         bm.verts.ensure_lookup_table()
@@ -280,7 +235,7 @@ def collapse_vertices_across_objects(objs, threshold=0.5):
     if not coords:
         return
 
-    # 2) KD‑tree cluster in world‑space
+    # 2) Build KD‑tree once
     kd = KDTree(len(coords))
     for i, co in enumerate(coords):
         kd.insert(co, i)
@@ -288,29 +243,40 @@ def collapse_vertices_across_objects(objs, threshold=0.5):
 
     visited = set()
 
-    # 3) Snap & (optionally) merge edge‑neighbors during cluster loop
+    # 3) For each point, cluster & snap/merge
     for i, co in enumerate(coords):
-        if i in visited:
+        ob_i, v_i, _ = mapping[i]
+
+        # skip deleted verts or already clustered
+        if not v_i.is_valid or i in visited:
             continue
-        nbrs = [j for (_, j, _) in kd.find_range(co, threshold)]
+
+        # find all nearby indices
+        raw = kd.find_range(co, threshold)
+        nbrs = [j for (_, j, _) in raw
+                if mapping[j][1].is_valid]  # only still‑valid verts
         visited.update(nbrs)
         if len(nbrs) < 2:
             continue
 
+        # new cluster centroid in world‐space
         centroid = sum((coords[j] for j in nbrs), Vector()) / len(nbrs)
 
+        # snap/merge each member back in its local BM
         for j in nbrs:
             ob, v, factor = mapping[j]
-            bm = bm_by_obj[ob]
+            # if this vertex was deleted during the loop, skip it
+            if not v.is_valid:
+                continue
 
-            # grid‑snap the local target
+            bm = bm_by_obj[ob]
             lt = ob.matrix_world.inverted() @ centroid
             if factor != 1:
                 lt.x = round(lt.x * factor) / factor
                 lt.y = round(lt.y * factor) / factor
                 lt.z = round(lt.z * factor) / factor
 
-            # merge if an edge‑neighbor already sits at that spot
+            # try merging into an existing neighbor
             merged = False
             for e in v.link_edges:
                 ov = e.other_vert(v)
@@ -322,233 +288,33 @@ def collapse_vertices_across_objects(objs, threshold=0.5):
             if not merged:
                 v.co = lt
 
+            # update just this one entry in coords
             coords[j] = ob.matrix_world @ v.co
 
-    # 4) NEW: merge any remaining zero‑length edges **only** where verts share an edge
+    # 4) Collapse any zero‐length edges in each BM
     for ob, bm in bm_by_obj.items():
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
-        # collect offending edges
         to_merge = []
         for e in bm.edges:
             v1, v2 = e.verts
             if (v1.co - v2.co).length < eps:
                 to_merge.append((v1, v2))
-        # perform merges
         for v1, v2 in to_merge:
             if v1.is_valid and v2.is_valid:
                 bmesh.ops.pointmerge(bm, verts=[v1, v2], merge_co=v1.co)
 
-    # 5) Write back and reapply normals
+    # 5) Write back and restore split normals
     for ob, bm in bm_by_obj.items():
-        # mesh_boundary_cleanup(bm)
-        # mesh_cleanup(bm)
-        # cleanup_mesh_geometry(bm)
-        # mesh_boundary_cleanup(bm)
         mesh_from_bmesh_with_split_norms(bm, ob)
 
 def region_mesh_cleanup(objs):
     for ob in objs:
         bm = bmesh_with_split_norms(ob)
         mesh_boundary_cleanup(bm)
-        mesh_cleanup(bm)
         cleanup_mesh_geometry(bm)
         mesh_boundary_cleanup(bm)
         mesh_from_bmesh_with_split_norms(bm, ob)
-
-def average_vertex_colors_globally(region_objs, threshold=0.001):
-    print(f"🎨 Reapplying vertex colors to {len(region_objs)} region meshes...")
-
-    def linear_to_srgb(c: float) -> float:
-        """
-        Convert a linear-light value to sRGB‑encoded.
-        """
-        if c <= 0.0031308:
-            return c * 12.92
-        else:
-            return 1.055 * (c ** (1/2.4)) - 0.055
-        
-    # ─── 0) Convert any per‑loop (corner) "_loop" attrs back to point‑domain ─────────────────────
-    for obj in region_objs:
-        me = obj.data
-
-        # find all corner‑domain attrs whose names end with "_loop"
-        loop_attrs = [
-            attr for attr in me.color_attributes
-            if attr.domain == 'CORNER' and attr.name.endswith('_loop')
-        ]
-        if not loop_attrs:
-            continue
-
-        for loop_attr in loop_attrs:
-            point_name = loop_attr.name[:-5]  # strip "_loop"
-            dst = me.color_attributes.get(point_name)
-            if not dst:
-                dst = me.color_attributes.new(
-                    name=point_name,
-                    type='FLOAT_COLOR',
-                    domain='POINT'
-                )
-
-            # accumulate loop colors per vertex
-            accum  = [Vector((0.0, 0.0, 0.0, 0.0)) for _ in me.vertices]
-            counts = [0] * len(me.vertices)
-
-            for li, loop in enumerate(me.loops):
-                vi  = loop.vertex_index
-                col = Vector(loop_attr.data[li].color)
-                accum[vi]  += col
-                counts[vi] += 1
-
-            # write averaged (with gamma correction) back into the point‑domain attr
-            for vi in range(len(me.vertices)):
-                if counts[vi] > 0:
-                    avg = accum[vi] / counts[vi]
-                    lin = Vector((
-                        linear_to_srgb(avg.x),
-                        linear_to_srgb(avg.y),
-                        linear_to_srgb(avg.z),
-                        avg[3]  # leave alpha unchanged
-                    ))
-                    dst.data[vi].color = lin
-
-            # remove the corner‑domain layer when done
-            me.color_attributes.remove(loop_attr)
-
-    # # ─── 1) Build KD‑tree on world‑space vertex positions ───────────────────────────────────
-    # vertex_data = []
-    # tree = KDTree(sum(len(obj.data.vertices) for obj in region_objs))
-    # index = 0
-
-    # for obj in region_objs:
-    #     src = obj.data
-    #     if not src.color_attributes:
-    #         continue
-
-    #     wm = obj.matrix_world
-
-    #     for i, v in enumerate(src.vertices):
-    #         co = wm @ v.co
-    #         tree.insert(co, index)
-    #         vertex_data.append((obj, i, co))
-    #         index += 1
-
-    # tree.balance()
-
-    # # ─── 2) Cluster nearby verts ───────────────────────────────────────────────────────────
-    # clusters = []
-    # visited = set()
-    # for i, (_, _, co) in enumerate(vertex_data):
-    #     if i in visited:
-    #         continue
-    #     group = [i]
-    #     visited.add(i)
-    #     for (_, idx, _) in tree.find_range(co, threshold):
-    #         if idx not in visited:
-    #             group.append(idx)
-    #             visited.add(idx)
-    #     if len(group) > 1:
-    #         clusters.append(group)
-
-    # # ─── 3) Find all point‑domain attrs to average ─────────────────────────────────────────
-    # attr_names = set()
-    # for obj in region_objs:
-    #     for attr in obj.data.color_attributes:
-    #         if attr.domain == 'POINT':
-    #             attr_names.add(attr.name)
-
-    # # ─── 4) Average each attr over each cluster ────────────────────────────────────────────
-    # for attr_name in attr_names:
-    #     for cluster in clusters:
-    #         accum = Vector((0.0, 0.0, 0.0, 0.0))
-    #         count = 0
-    #         for idx in cluster:
-    #             obj, vi, _ = vertex_data[idx]
-    #             attr = obj.data.color_attributes.get(attr_name)
-    #             if attr:
-    #                 accum += Vector(attr.data[vi].color)
-    #                 count += 1
-    #         if count > 0:
-    #             avg = accum / count
-    #             for idx in cluster:
-    #                 obj, vi, _ = vertex_data[idx]
-    #                 attr = obj.data.color_attributes.get(attr_name)
-    #                 if attr:
-    #                     attr.data[vi].color = avg
-
-    # print(f"✅ Averaged colors globally across {len(clusters)} vertex clusters.")
-
-def copy_per_vertex_colors(orig_obj, region_objs, attr_name="Color"):
-    orig_me = orig_obj.data
-
-    # --- 1) find original color data ---
-    # Try new attribute API first:
-    color_attr = orig_me.color_attributes.get(attr_name)
-    legacy_vcol = orig_me.vertex_colors.active
-
-    if color_attr is None and legacy_vcol is None:
-        raise RuntimeError(f"Original has neither a '{attr_name}' attribute nor a legacy vertex‐color layer")
-
-    # --- 2) build a simple per‐vertex color list ---
-    n_orig_verts = len(orig_me.vertices)
-    orig_vert_col = [None] * n_orig_verts
-
-    if color_attr:
-        # domain=POINT means color_attr.data is per‐vertex
-        if color_attr.domain != 'POINT':
-            raise RuntimeError(f"Expected '{attr_name}' attribute to be point‑domain")
-        for i, d in enumerate(color_attr.data):
-            orig_vert_col[i] = d.color[:]  # copy RGBA tuple
-    else:
-        # legacy vertex_color: data is per‐loop, average into per‐vertex
-        sums = [[0,0,0,0] for _ in range(n_orig_verts)]
-        cnts = [0]*n_orig_verts
-        for loop in orig_me.loops:
-            vi = loop.vertex_index
-            c4 = legacy_vcol.data[loop.index].color
-            sums[vi][0] += c4[0]
-            sums[vi][1] += c4[1]
-            sums[vi][2] += c4[2]
-            sums[vi][3] += c4[3]
-            cnts[vi]   += 1
-        for i in range(n_orig_verts):
-            if cnts[i]:
-                orig_vert_col[i] = (
-                    sums[i][0]/cnts[i],
-                    sums[i][1]/cnts[i],
-                    sums[i][2]/cnts[i],
-                    sums[i][3]/cnts[i],
-                )
-            else:
-                orig_vert_col[i] = (1,1,1,1)
-
-    # --- 3) build KD‑tree of original verts in world space ---
-    kd = kdtree.KDTree(n_orig_verts)
-    wm = orig_obj.matrix_world
-    for i, v in enumerate(orig_me.vertices):
-        kd.insert(wm @ v.co, i)
-    kd.balance()
-
-    # --- 4) paint each region mesh’s per‑vertex color attribute ---
-    for reg in region_objs:
-        me = reg.data
-
-        # ensure a point‑domain color attribute named attr_name
-        reg_attr = me.color_attributes.get(attr_name)
-        if reg_attr is None:
-            reg_attr = me.color_attributes.new(
-                name=attr_name,
-                domain='POINT',
-                data_type='FLOAT_COLOR'
-            )
-
-        # for each vertex, find closest orig vert and copy its color
-        wm_r = reg.matrix_world
-        for i, v in enumerate(me.vertices):
-            _, orig_i, _ = kd.find(wm_r @ v.co)
-            reg_attr.data[i].color = orig_vert_col[orig_i]
-
-        me.update()
         
 def delete_empty_region_meshes_and_clear_sprite(region_objs):
     """
@@ -579,10 +345,7 @@ def delete_empty_region_meshes_and_clear_sprite(region_objs):
             bpy.data.objects.remove(obj, do_unlink=True)
             region_objs.remove(obj)
 
-def finalize_region_meshes(orig_obj,
-        edge_snap_threshold=0.03,
-        merge_dist=0.001,
-        collapse_thresh=0.05):
+def finalize_region_meshes(edge_snap_threshold=0.03, collapse_thresh=0.05):
     start = time.perf_counter()
     # pick up all of your region meshes by naming convention
     region_objs = [
@@ -593,16 +356,11 @@ def finalize_region_meshes(orig_obj,
         print("⚠️ No region meshes found (Rxxxxx_DMSPRITEDEF).")
         return
 
-    print(f"🔧 Finalizing {len(region_objs)} region meshes:")
-    # for obj in region_objs:
-        # print(f"   • {obj.name}")
-
     collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
     region_mesh_cleanup(region_objs)
     split_edges_to_snap_verts(region_objs, threshold=edge_snap_threshold)
     collapse_vertices_across_objects(region_objs, threshold=collapse_thresh)
     triangulate_meshes(region_objs)
-    copy_per_vertex_colors(orig_obj, region_objs)
     delete_empty_region_meshes_and_clear_sprite(region_objs)
     
     elapsed = time.perf_counter() - start
