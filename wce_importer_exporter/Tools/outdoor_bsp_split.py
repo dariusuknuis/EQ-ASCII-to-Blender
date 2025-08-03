@@ -5,6 +5,7 @@ from create_bounding_sphere import create_bounding_sphere
 from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
 from create_worldtree import create_worldtree
 from .finalize_region_meshes import finalize_region_meshes
+from ..core.cleanup import cleanup_mesh_geometry
 from ..core.math_helpers import aabb_intersects, aabb_mesh_local, aabb_mesh_world, aabb_bmesh_local, compute_bmesh_volume_centroid
 from ..core.bmesh_utils import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
 
@@ -104,44 +105,6 @@ def create_region_empty(center, sphere_radius, index, pending_objects):
     pending_objects.append(empty)
     
     return empty
-
-def cleanup_mesh_geometry(bm, area_threshold=1e-10, dissolve_dist=1e-4, max_passes=8):
-    """
-    Iteratively deletes loose verts/edges, degenerate faces,
-    and performs dissolve_degenerate until no more geometry can be removed.
-    Operates in-place on the given mesh.
-    """
-    for _ in range(max_passes):
-        changed = False
-
-        bm.verts.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
-
-        # 1. Delete loose verts/edges and degenerate faces
-        loose_verts = [v for v in bm.verts if not v.link_edges]
-        loose_edges = [e for e in bm.edges if not e.link_faces]
-        degenerate_faces = [f for f in bm.faces if f.calc_area() < area_threshold]
-
-        geom_to_delete = loose_verts + loose_edges + degenerate_faces
-
-        if geom_to_delete:
-            if loose_edges or (loose_verts and degenerate_faces):
-                context = 'EDGES'
-            elif degenerate_faces:
-                context = 'FACES'
-            else:
-                context = 'VERTS'
-            bmesh.ops.delete(bm, geom=geom_to_delete, context=context)
-            changed = True
-
-        # 2. Dissolve degenerate geometry
-        res = bmesh.ops.dissolve_degenerate(bm, dist=dissolve_dist, edges=list(bm.edges))
-        if res and any(res.get(k) for k in ('edges', 'verts', 'faces')):
-            changed = True
-
-        if not changed:
-            break
 
 def terrain_split(bm_geo, plane_co, plane_no, tol=1e-6):
     """

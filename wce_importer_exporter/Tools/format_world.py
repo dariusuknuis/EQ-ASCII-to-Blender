@@ -1,6 +1,5 @@
 # Tools/format_world.py
-import bpy, bmesh
-import re
+import bpy, bmesh, re
 from mathutils import Matrix, Vector
 from ..core.bmesh_utils import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms, rearrange_uvs, merge_verts_by_attrs
 
