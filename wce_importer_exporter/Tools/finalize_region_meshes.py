@@ -2,9 +2,8 @@ import bpy, bmesh, re, time
 from math import pi
 from mathutils import Vector
 from mathutils.kdtree import KDTree
-from ..core.math_helpers import aabb_intersects, object_world_aabb
-from ..core.bmesh_utils import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
-from .format_helpers import merge_verts_by_attrs
+from ..core.math_helpers import aabb_intersects, aabb_mesh_world
+from ..core.bmesh_utils import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms, merge_verts_by_attrs
 
 def cleanup_mesh_geometry(bm, area_threshold=1e-10, dissolve_dist=1e-4, max_passes=8):
     """
@@ -124,14 +123,14 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
 
-        minB, maxB = object_world_aabb(ob_B)
+        minB, maxB = aabb_mesh_world(ob_B)
         # collect all hits per edge: {edge: [(t, interp_normal), ...]}
         edge_hits = {}
 
         for ob_A in objs:
             if ob_A is ob_B:
                 continue
-            minA, maxA = object_world_aabb(ob_A)
+            minA, maxA = aabb_mesh_world(ob_A)
             if not aabb_intersects(minA, maxA, minB, maxB, epsilon=0.001):
                 continue
 

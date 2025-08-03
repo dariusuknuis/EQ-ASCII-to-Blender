@@ -1,43 +1,16 @@
-import bmesh, bpy, math, re
+import bmesh, bpy, math
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
 from create_bounding_sphere import create_bounding_sphere
 from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
 from create_worldtree import create_worldtree
 from .finalize_region_meshes import finalize_region_meshes
-from ..core.math_helpers import aabb_intersects, object_world_aabb
+from ..core.math_helpers import aabb_intersects, aabb_mesh_local, aabb_mesh_world, aabb_bmesh_local, compute_bmesh_volume_centroid
 from ..core.bmesh_utils import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
 
 # ------------------------------------------------------------
 # --- Standard Helper Functions
 # ------------------------------------------------------------
-
-def calculate_bounds(obj):
-    """Compute object-space bounding box of obj.data."""
-    local_coords = [v.co for v in obj.data.vertices]
-    min_bound = Vector((float('inf'), float('inf'), float('inf')))
-    max_bound = Vector((float('-inf'), float('-inf'), float('-inf')))
-    for co in local_coords:
-        min_bound.x = min(min_bound.x, co.x)
-        min_bound.y = min(min_bound.y, co.y)
-        min_bound.z = min(min_bound.z, co.z)
-        max_bound.x = max(max_bound.x, co.x)
-        max_bound.y = max(max_bound.y, co.y)
-        max_bound.z = max(max_bound.z, co.z)
-    return min_bound, max_bound
-
-def calculate_bounds_for_bmesh(bm):
-    """Compute the bounding box of the bmesh geometry (object-space)."""
-    minb = Vector((float('inf'), float('inf'), float('inf')))
-    maxb = Vector((float('-inf'), float('-inf'), float('-inf')))
-    for v in bm.verts:
-        minb.x = min(minb.x, v.co.x)
-        minb.y = min(minb.y, v.co.y)
-        minb.z = min(minb.z, v.co.z)
-        maxb.x = max(maxb.x, v.co.x)
-        maxb.y = max(maxb.y, v.co.y)
-        maxb.z = max(maxb.z, v.co.z)
-    return minb, maxb
 
 def normalize_bounds(min_bound, max_bound, target_size):
     """Expand the bounds so that each side is an integer multiple of target_size."""
@@ -347,28 +320,6 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
 
     return new_obj
 
-def mesh_world_matrix(mesh_obj):
-    """Return a copy of the object's world matrix."""
-    return mesh_obj.matrix_world.copy()
-
-def assign_back_trees(world_nodes):
-    """
-    Iterates over world_nodes in reverse order (i.e. from last to first) and for every
-    node with depth > 0, finds the first candidate (earlier in the list) with depth equal
-    to current depth - 1 that has no back_tree assigned and sets that candidate's back_tree
-    to the current node's worldnode index.
-    """
-    for current_node in world_nodes:
-        for candidate in world_nodes:
-            # Skip candidates that already have their front_tree set to the current node's worldnode.
-            if candidate["front_tree"] == current_node["worldnode"]:
-                break
-            if (candidate["depth"] == current_node["depth"] - 1 and
-                candidate["back_tree"] is None):
-                candidate["back_tree"] = current_node["worldnode"]
-                break
-
-
 # ------------------------------------------------------------
 # --- Zone BVH and Point–in–Mesh Test (Using closest_point_on_mesh)
 # ------------------------------------------------------------
@@ -569,7 +520,7 @@ def zone_bsp_split(bm_geo, zone_obj, current_node, bm_vol, tol=1e-4, min_diag=0.
     rmax = Vector((max(v.x for v in vol_ws),
                    max(v.y for v in vol_ws),
                    max(v.z for v in vol_ws)))
-    zmin, zmax = object_world_aabb(zone_obj)
+    zmin, zmax = aabb_mesh_world(zone_obj)
     if not aabb_intersects(rmin, rmax, zmin, zmax):
         return None
 
@@ -639,8 +590,8 @@ def zone_bsp_split(bm_geo, zone_obj, current_node, bm_vol, tol=1e-4, min_diag=0.
 
     # 8) Sanity‐check
     # ---------------
-    bi_min, bi_max = calculate_bounds_for_bmesh(geo_in)
-    bo_min, bo_max = calculate_bounds_for_bmesh(geo_out)
+    bi_min, bi_max = aabb_bmesh_local(vol_in)
+    bo_min, bo_max = aabb_bmesh_local(vol_out)
     if (bi_max - bi_min).length < min_diag or (bo_max - bo_min).length < min_diag:
         return None
 
@@ -653,7 +604,7 @@ def zone_bsp_split(bm_geo, zone_obj, current_node, bm_vol, tol=1e-4, min_diag=0.
 # --- Primary Recursive BSP Split (with Zone Splitting)
 # ------------------------------------------------------------
 
-def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=None, depth=0, depth_counters=None, backtree=False):
+def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, region_centroids, used_planes=None, depth=0, depth_counters=None, backtree=False):
     """
     Recursively subdivide the normalized volume using axis–aligned splits.
     When a region is small enough, attempt to further split it using zone-based splits.
@@ -680,7 +631,7 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
             if d >= depth:
                 depth_counters[d] = 0
 
-    vol_min, vol_max = calculate_bounds_for_bmesh(bm_vol)
+    vol_min, vol_max = aabb_bmesh_local(bm_vol)
 
     fpscale = source_obj.get("FPSCALE", None)
     if isinstance(fpscale, int):
@@ -720,8 +671,8 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
                 bm_geo_in, bm_geo_out, bm_vol_in, bm_vol_out, plane_no, d = split_result
                 node_data["normal"] = [-plane_no.x, -plane_no.y, -plane_no.z, -float(d)]
                 node_data["front_tree"] = worldnode_idx[0]
-                recursive_bsp_split(bm_geo_in, bm_vol_in, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=used_planes, depth=depth+1, depth_counters=depth_counters, backtree=False)
-                recursive_bsp_split(bm_geo_out, bm_vol_out, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=used_planes, depth=depth+1, depth_counters=depth_counters, backtree=True)
+                recursive_bsp_split(bm_geo_in, bm_vol_in, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, region_centroids, used_planes=used_planes, depth=depth+1, depth_counters=depth_counters, backtree=False)
+                recursive_bsp_split(bm_geo_out, bm_vol_out, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, region_centroids, used_planes=used_planes, depth=depth+1, depth_counters=depth_counters, backtree=True)
                 return  # Stop after a successful zone split.
         # No zone candidate split succeeded → finalize this leaf region.
         region_index = region_counter[0]
@@ -741,6 +692,8 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
                          max(c.z for c in ws_corners)))
         # Compute the sphere radius that encloses this region.
         sphere_radius = (ws_max - ws_min).length / 2.0
+        centroid = compute_bmesh_volume_centroid(bm_vol)
+        region_centroids[region_index] = centroid
         empty_obj = create_region_empty(center, sphere_radius, region_index, pending_objects)
         node_data["region_tag"] = empty_obj.name
         node_data["back_tree"] = 0
@@ -758,6 +711,8 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
             center = (vol_min + vol_max)*0.5
             # Compute sphere radius from volume dimensions.
             sphere_radius = (size).length / 2.0
+            centroid = compute_bmesh_volume_centroid(bm_vol)
+            region_centroids[region_index] = centroid
             empty_obj = create_region_empty(center, sphere_radius, region_index, pending_objects)
             node_data["region_tag"] = empty_obj.name
             node_data["back_tree"] = 0
@@ -782,8 +737,8 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
         
         bm_vol_lower, bm_vol_upper = volume_split(bm_vol, plane_co, plane_no, tol=0.0)
 
-        recursive_bsp_split(bm_geo, bm_vol_lower, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=None, depth=depth+1, depth_counters=depth_counters, backtree=False)
-        recursive_bsp_split(bm_geo, bm_vol_upper, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=None, depth=depth+1, depth_counters=depth_counters, backtree=True)
+        recursive_bsp_split(bm_geo, bm_vol_lower, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, region_centroids, used_planes=None, depth=depth+1, depth_counters=depth_counters, backtree=False)
+        recursive_bsp_split(bm_geo, bm_vol_upper, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, region_centroids, used_planes=None, depth=depth+1, depth_counters=depth_counters, backtree=True)
         return
 
     # Otherwise, perform an axis-aligned split.
@@ -793,6 +748,8 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
         region_counter[0] += 1
         center = (vol_min + vol_max)*0.5
         sphere_radius = (size).length / 2.0
+        centroid = compute_bmesh_volume_centroid(bm_vol)
+        region_centroids[region_index] = centroid
         empty_obj = create_region_empty(center, sphere_radius, region_index, pending_objects)
         node_data["region_tag"] = empty_obj.name
         node_data["back_tree"] = 0
@@ -820,10 +777,9 @@ def recursive_bsp_split(bm_geo, bm_vol, target_size, region_counter, source_obj,
 
     bm_vol_lower, bm_vol_upper = volume_split(bm_vol, plane_co, plane_no, tol=0.0)
 
-    recursive_bsp_split(bm_geo_lower, bm_vol_lower, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=None, depth=depth+1, depth_counters=depth_counters, backtree=False)
-    recursive_bsp_split(bm_geo_upper, bm_vol_upper, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, used_planes=None, depth=depth+1, depth_counters=depth_counters, backtree=True)
+    recursive_bsp_split(bm_geo_lower, bm_vol_lower, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, region_centroids, used_planes=None, depth=depth+1, depth_counters=depth_counters, backtree=False)
+    recursive_bsp_split(bm_geo_upper, bm_vol_upper, target_size, region_counter, source_obj, zone_volumes, world_nodes, worldnode_idx, pending_objects, region_centroids, used_planes=None, depth=depth+1, depth_counters=depth_counters, backtree=True)
     
-
 # ------------------------------------------------------------
 # --- Main Runner
 # ------------------------------------------------------------
@@ -863,7 +819,7 @@ def run_outdoor_bsp_split(target_size=282.0):
         container["ZONE"]       = True  # bool
 
         # --- 2) Your existing split & worldtree build ---
-        bounds_min, bounds_max = calculate_bounds(src)
+        bounds_min, bounds_max = aabb_mesh_local(src)
         vol_min, vol_max = normalize_bounds(bounds_min, bounds_max, target_size)
 
         bm = bmesh_with_split_norms(src)
@@ -878,12 +834,13 @@ def run_outdoor_bsp_split(target_size=282.0):
         loops = (l for f in bm.faces for l in f.loops)
         for loop in loops:
             loop[ln_layer] = src.data.loops[loop.index].normal
+        
+        region_centroids = {}
 
         region_counter = [1]; world_nodes = []; worldnode_idx = [1]
         recursive_bsp_split(bm, bm_vol, target_size,
                             region_counter, src, zone_volumes,
-                            world_nodes, worldnode_idx, pending_objects, depth=0, depth_counters=None, backtree=False)
-        # assign_back_trees(world_nodes)
+                            world_nodes, worldnode_idx, pending_objects, region_centroids, depth=0, depth_counters=None, backtree=False)
         worldtree = {"nodes": world_nodes, "total_nodes": len(world_nodes)}
 
         # --- 3) Create & parent the WorldTree root ---
@@ -894,7 +851,7 @@ def run_outdoor_bsp_split(target_size=282.0):
             bpy.context.collection.objects.link(obj)
         
         zone_boxes = {
-            zone: object_world_aabb(zone)
+            zone: aabb_mesh_world(zone)
             for zone in zone_volumes
         }
 
@@ -904,23 +861,14 @@ def run_outdoor_bsp_split(target_size=282.0):
             for zone in zone_volumes
         }
 
-        # for zone, planes in zone_planes.items():
-        #     for i, (n, d) in enumerate(planes):
-        #         print(f"  Plane {i:03d}: normal = ({n.x:.3f}, {n.y:.3f}, {n.z:.3f}),  d = {d:.3f}")
-
-        # 3) Gather your region empties once:
-        region_empties = [o for o in bpy.data.objects if re.fullmatch(r"R\d{6}", o.name)]
-
         # 4) Now do the combined test:
         for zone in zone_volumes:
             minb, maxb = zone_boxes[zone]
             planes     = zone_planes[zone]
             region_idxs = []
 
-            for empty in region_empties:
-                # grab true world‐space location in case of parenting
-                pt = empty.location.copy()
-
+            for region_index, centroid in region_centroids.items():
+                pt = centroid
                 # —— A) Cheap AABB cull ——
                 if (pt.x < minb.x - AABB_EPS or pt.x > maxb.x + AABB_EPS or
                     pt.y < minb.y - AABB_EPS or pt.y > maxb.y + AABB_EPS or
@@ -929,7 +877,8 @@ def run_outdoor_bsp_split(target_size=282.0):
 
                 # —— B) Convex half‐space test ——
                 if point_inside_convex_zone(pt, planes):
-                    region_idxs.append(int(empty.name[1:]) - 1)
+                    # subtract 1 to match your old zero-based indexing
+                    region_idxs.append(region_index - 1)
 
             zone["REGIONLIST"] = "[" + ", ".join(map(str, region_idxs)) + "]"
             # print(f"{zone.name}.REGIONLIST = {zone['REGIONLIST']}")
