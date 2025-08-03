@@ -1,7 +1,7 @@
 import bpy
-from .Tools.outdoor_bsp_split import run_outdoor_bsp_split
-from .Tools.radial_visibility import run_radial_visibility
-from .Tools.format_world import run_format_world
+from .tools.outdoor_bsp_split import run_outdoor_bsp_split
+from .tools.radial_visibility import run_radial_visibility
+from .tools.format_world import run_format_world
 
 class OBJECT_OT_generate_outdoor_world(bpy.types.Operator):
     """Split mesh into BSP regions & submeshes (Outdoor world)"""
