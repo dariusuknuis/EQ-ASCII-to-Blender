@@ -1,9 +1,9 @@
 import bmesh, bpy, math
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
-from create_bounding_sphere import create_bounding_sphere
-from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
-from create_worldtree import create_worldtree
+from ..create.create_bounding_sphere import create_bounding_sphere
+from ..create.modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
+from ..create.create_worldtree import create_worldtree
 from .finalize_region_meshes import finalize_region_meshes
 from ..core.cleanup import cleanup_mesh_geometry
 from ..core.math_helpers import aabb_intersects, aabb_mesh_local, aabb_mesh_world, aabb_bmesh_local

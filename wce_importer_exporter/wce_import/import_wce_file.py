@@ -18,20 +18,20 @@ def load_modules():
         from eq_ascii_wld_parser import eq_ascii_parse
         from material_creator import create_materials
         from apply_passable_to_all_meshes import apply_passable_to_all_meshes, apply_passable_to_mesh, create_passable_geometry_node_group, create_passable_material
-        from create_mesh import create_mesh
-        from create_armature import create_armature
+        from ..create.create_mesh import create_mesh
+        from ..create.create_armature import create_armature
         from assign_mesh_to_armature import assign_mesh_to_armature
-        from create_animation import create_animation
-        from create_default_pose import create_default_pose
-        from create_polyhedron import create_polyhedron
-        from create_worldtree import create_worldtree
-        from create_worlddef import create_worlddef
-        from create_mesh_and_bounding_shapes import create_bounding_sphere, create_bounding_box
+        from ..create.create_animation import create_animation
+        from ..create.create_default_pose import create_default_pose
+        from ..create.create_polyhedron import create_polyhedron
+        from ..create.create_worldtree import create_worldtree
+        from ..create.create_worlddef import create_worlddef
+        from ..create.create_mesh_and_bounding_shapes import create_bounding_sphere, create_bounding_box
         from add_actordef_to_object import add_actordef_to_object
         from parent_polyhedron import parent_polyhedron
-        from create_region import create_region
-        from create_zone import create_zone
-        from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
+        from ..create.create_region import create_region
+        from ..create.create_zone import create_zone
+        from ..create.modify_regions_and_worldtree import modify_regions_and_worldtree, create_bounding_volume_for_region_empties
 
         # Set the flag to True to prevent re-loading
         modules_loaded = True
