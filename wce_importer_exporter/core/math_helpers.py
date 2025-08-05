@@ -95,3 +95,34 @@ def compute_bmesh_volume_centroid(bm: bmesh.types.BMesh):
     # divide by total (signed) volume
     center_of_volume = weighted_centroid / total_vol
     return center_of_volume
+
+def point_inside_convex(pt, planes, tol=1e-9):
+    """
+    True if pt satisfies normal·pt + d <= PLANE_EPS for every plane.
+    """
+    for n, d in planes:
+        if n.dot(pt) + d > tol:
+            return False
+    return True
+
+def point_in_poly_2d(x, y, poly2d):
+    inside = False
+    n = len(poly2d)
+    for i in range(n):
+        xi, yi = poly2d[i]
+        xj, yj = poly2d[(i-1) % n]
+        if (yi > y) != (yj > y):
+            t = (y - yi) / (yj - yi)
+            if xi + t*(xj - xi) > x:
+                inside = not inside
+    return inside
+
+def point_in_face_polygon(pt, ws_verts, normal):
+    origin = ws_verts[0]
+    u      = (ws_verts[1] - origin).normalized()
+    v      = normal.cross(u).normalized()
+    poly2d = [(((vv - origin).dot(u)),
+                ((vv - origin).dot(v)))
+                for vv in ws_verts]
+    x, y   = ((pt - origin).dot(u), (pt - origin).dot(v))
+    return point_in_poly_2d(x, y, poly2d)

@@ -6,7 +6,8 @@ from modify_regions_and_worldtree import modify_regions_and_worldtree, create_bo
 from create_worldtree import create_worldtree
 from .finalize_region_meshes import finalize_region_meshes
 from ..core.cleanup import cleanup_mesh_geometry
-from ..core.math_helpers import aabb_intersects, aabb_mesh_local, aabb_mesh_world, aabb_bmesh_local, compute_bmesh_volume_centroid
+from ..core.math_helpers import aabb_intersects, aabb_mesh_local, aabb_mesh_world, aabb_bmesh_local
+from ..core.math_helpers import compute_bmesh_volume_centroid, point_inside_convex, point_in_face_polygon
 from ..core.bmesh_utils import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
 
 # ------------------------------------------------------------
@@ -288,7 +289,6 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
 # ------------------------------------------------------------
 
 AABB_EPS  = 1e-6
-PLANE_EPS = 1e-9
 
 def build_volume_planes(source, source_obj=None):
     """
@@ -349,44 +349,6 @@ def build_volume_planes(source, source_obj=None):
 
     return planes
 
-def point_inside_convex_zone(pt, planes):
-    """
-    True if pt satisfies normal·pt + d <= PLANE_EPS for every plane.
-    """
-    for n, d in planes:
-        if n.dot(pt) + d > PLANE_EPS:
-            return False
-    return True
-
-# ——— Helper routines ——————————————————————————————
-def point_in_convex(pt, planes, tol=1e-4):
-    for n, d in planes:
-        if n.dot(pt) + d >= -tol:
-            return False
-    return True
-
-def point_in_poly_2d(x, y, poly2d):
-    inside = False
-    n = len(poly2d)
-    for i in range(n):
-        xi, yi = poly2d[i]
-        xj, yj = poly2d[(i-1) % n]
-        if (yi > y) != (yj > y):
-            t = (y - yi) / (yj - yi)
-            if xi + t*(xj - xi) > x:
-                inside = not inside
-    return inside
-
-def point_in_face_polygon(pt, ws_verts, normal):
-    origin = ws_verts[0]
-    u      = (ws_verts[1] - origin).normalized()
-    v      = normal.cross(u).normalized()
-    poly2d = [(((vv - origin).dot(u)),
-                ((vv - origin).dot(v)))
-                for vv in ws_verts]
-    x, y   = ((pt - origin).dot(u), (pt - origin).dot(v))
-    return point_in_poly_2d(x, y, poly2d)
-
 def volume_intersection_tests(zone_face, region_planes, bvh_vol, region_edges, zone_wm3, zone_wm4):
     """
     Returns True if this DRP_ZONE face truly intersects the region volume.
@@ -401,7 +363,7 @@ def volume_intersection_tests(zone_face, region_planes, bvh_vol, region_edges, z
 
     # — Step 1: any vertex inside? —
     for i, v in enumerate(ws_verts):
-        inside = point_in_convex(v, region_planes)
+        inside = point_inside_convex(v, region_planes, tol=-1e-4)
         # print(f"[DEBUG]   Step 1: vert {i} at {v} inside region? {inside}")
         if inside:
             return True
@@ -839,7 +801,7 @@ def run_outdoor_bsp_split(target_size=282.0):
                     continue
 
                 # —— B) Convex half‐space test ——
-                if point_inside_convex_zone(pt, planes):
+                if point_inside_convex(pt, planes):
                     # subtract 1 to match your old zero-based indexing
                     region_idxs.append(region_index - 1)
 
