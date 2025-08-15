@@ -146,7 +146,7 @@ def create_materials(materials, textures, file_path, node_group_cache):
         mat["BRIGHTNESS"] = mat_data.get('brightness', 0.0)
         mat["SCALEDAMBIENT"] = mat_data.get('scaledambient', 0.75)
         mat["SIMPLESPRITEHEXFIFTYFLAG"] = bool(mat_data.get('hexfiftyflag', 0))
-        mat["PAIRS"] = mat_data.get('pairs', (0.0, 0.0))
+        mat["UVSHIFTPERMS"] = mat_data.get('uvshiftperms', (0.0, 0.0))
         mat["SIMPLESPRITETAGINDEX"] = mat_data.get('simple_sprite_tag_index', 0)
 
         # Add custom properties from simplespritedef_parse
