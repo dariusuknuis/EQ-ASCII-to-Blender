@@ -6,7 +6,7 @@
 
 import bpy
 import os
-from material_utils import add_texture_coordinate_and_mapping_nodes
+from .material_utils import add_texture_coordinate_and_mapping_nodes
 
 def create_node_group_t5ag1():
     # Create the node group

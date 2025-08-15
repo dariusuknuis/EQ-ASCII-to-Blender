@@ -1,7 +1,6 @@
 # radial_visibility.py
 
 import bpy, re, json
-from mathutils import Vector
 
 def encode_rle(regions):
     """Run-length encode a sorted 1-based region list into compact bytes."""

@@ -2,7 +2,7 @@ import bpy
 import bmesh
 import mathutils
 import re
-from create_vertex_animation import create_vertex_animation
+from .create_vertex_animation import create_vertex_animation
 
 def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, material_palettes=None, created_materials=None, vertex_animations=None, pending_objects=None):
     mesh = bpy.data.meshes.new(mesh_data['name'])

@@ -1,7 +1,7 @@
 import bpy
 import os
 import struct
-from material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes, apply_tiled_mapping
+from .material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes, apply_tiled_mapping
 
 def add_tiled_texture_nodes(material, frame_data, texture_info, node_group_cache, base_path=None):
     """

@@ -1,5 +1,5 @@
 import bpy
-from create_mesh_and_bounding_shapes import create_bounding_sphere
+from .create_mesh_and_bounding_shapes import create_bounding_sphere
 
 def create_polyhedron(polyhedron_data):
     name = polyhedron_data['name']

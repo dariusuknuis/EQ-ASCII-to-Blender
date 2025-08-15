@@ -1,6 +1,6 @@
 import bpy
 import mathutils
-from create_mesh_and_bounding_shapes import create_bounding_sphere
+from .create_mesh_and_bounding_shapes import create_bounding_sphere
 
 def create_armature(armature_data, armature_tracks, parent_obj):
     bpy.context.view_layer.objects.active = parent_obj

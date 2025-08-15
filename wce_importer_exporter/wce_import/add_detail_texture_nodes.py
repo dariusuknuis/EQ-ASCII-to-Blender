@@ -1,6 +1,6 @@
 import bpy
 import os
-from material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes
+from .material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes
 
 def add_detail_texture_nodes(material, texture_info, node_group_cache, base_path=None):
     """

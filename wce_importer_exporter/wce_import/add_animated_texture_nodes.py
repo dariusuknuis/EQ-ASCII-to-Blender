@@ -1,6 +1,6 @@
 import bpy
 import os
-from dds_checker import check_and_fix_dds
+from .dds_checker import check_and_fix_dds
 from wce_importer_exporter.update_handler import update_animated_texture_nodes
 
 def add_animated_texture_nodes(material, texture_info, base_path=None):

@@ -6,18 +6,18 @@ import re
 # Add the path where everquestize_mesh.py is located
 sys.path.append(r'C:\Users\dariu\Documents\Quail\Exporter')
 
-from export_dm_sprite_def_2 import write_dm_sprite_def
-from export_dm_track_def_2 import write_dm_track_def_2
-from export_hierarchical_sprite_def import write_hierarchical_sprite_def
-from export_track import export_animation_data
-from export_actor_def import write_actor_def
-from export_material import write_materials_and_sprites
-from export_world_tree import export_world_tree
-from export_regions import export_regions
-from export_ambient_light import export_ambient_light
-from export_zones import export_zones
-from export_variation_material import write_variation_sprites_and_materials
-from everquestize_mesh import split_vertices_by_uv, reindex_vertices_and_faces, update_vertex_material_indices
+from .export_dm_sprite_def_2 import write_dm_sprite_def
+from .export_dm_track_def_2 import write_dm_track_def_2
+from .export_hierarchical_sprite_def import write_hierarchical_sprite_def
+from .export_track import export_animation_data
+from .export_actor_def import write_actor_def
+from .export_material import write_materials_and_sprites
+from .export_world_tree import export_world_tree
+from .export_regions import export_regions
+from .export_ambient_light import export_ambient_light
+from .export_zones import export_zones
+from .export_variation_material import write_variation_sprites_and_materials
+from .everquestize_mesh import split_vertices_by_uv, reindex_vertices_and_faces, update_vertex_material_indices
 
 def get_armature(obj):
     """Finds and returns the armature associated with the given object."""

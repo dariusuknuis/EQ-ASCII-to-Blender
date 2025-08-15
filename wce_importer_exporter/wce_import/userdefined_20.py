@@ -3,7 +3,7 @@
 import bpy
 import struct
 import os
-from material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes
+from .material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes
 
 def read_bmp_palette_color(file_path):
     with open(file_path, 'rb') as f:
