@@ -4,7 +4,7 @@ bl_info = {
     "description": "A tool to import EQ WCE files and export model data.",
     "author": "Darius",
     "version": (2, 4, 0),
-    "Quail": (1.6.0),
+    "Quail": "dev",
     "blender": (3, 6, 2),
     "location": "View3D > Tool Shelf > WCE Importer/Exporter",
     "category": "Import-Export",
@@ -293,4 +293,5 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+
 
