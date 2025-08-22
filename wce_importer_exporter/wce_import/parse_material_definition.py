@@ -51,10 +51,10 @@ def parse_material_definition(r, parse_property, current_line):
     records = parse_property(r, "SIMPLESPRITEHEXFIFTYFLAG", 1)
     material['hexfiftyflag'] = int(records[1])
 
-    # Parse PAIRS? and handle NULL
-    records = parse_property(r, "PAIRS?", 2)
+    # Parse UVSHIFTPERMS? and handle NULL
+    records = parse_property(r, "UVSHIFTPERMS?", 2)
     if records[1] != "NULL":
-        material['uvshiftperms'] = (int(records[1]), float(records[2]))
+        material['uvshiftperms'] = (float(records[1]), float(records[2]))
 
     # Parse DOUBLESIDED
     records = parse_property(r, "DOUBLESIDED", 1)

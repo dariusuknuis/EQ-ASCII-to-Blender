@@ -151,5 +151,5 @@ def write_variation_sprites_and_materials(material, file, written_sprites, writt
     hex_flag = 1 if material.get("HEXFIFTYFLAG", False) else 0
     file.write(f'\t\tHEXFIFTYFLAG {hex_flag}\n')
     uvshiftperms = material.get("UVSHIFTPERMS", [0, 0.0])
-    file.write(f'\tUVSHIFTPERMS? {int(uvshiftperms[0])} {uvshiftperms[1]:.8e}\n')
+    file.write(f'\tUVSHIFTPERMS? {uvshiftperms[0]:.8e} {uvshiftperms[1]:.8e}\n')
     file.write(f'\tDOUBLESIDED {0 if material.use_backface_culling else 1}\n')
