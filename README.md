@@ -17,7 +17,7 @@ Import
    
 5) In Blender press N to bring up the Sidebar and find the WCE Importer/Exporter tab. Press "Import WCE File".
 6) Find and select the _root.wce file in the main filename.quail folder that you created with quail.exe.
-7) A dialog box will appear that had the names of the files or folders that can be loaded. Each one is basically a model. Some, like WORLD.WCE, just have some data. Check the models you want to load and hit OK.
+7) A dialog box will appear that had the names of the files or folders that can be loaded. Each one is basically a model. Some, like WORLD.WCE, just have some data. Check the models you want to load and hit OK. To import a "Zone" you should check WORLD, REGION, and ZONE, all at once. 
 
 World Tools
 
