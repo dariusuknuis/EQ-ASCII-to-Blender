@@ -89,7 +89,7 @@ def write_dm_sprite_def(mesh, file):
         file.write(f'\n\tNUMVERTEXCOLORS {len(col_attr.data)}\n')
         for el in col_attr.data:
             r,g,b,a = (round(c*255) for c in el.color)
-            file.write(f'\t\tRGBA {b} {g} {r} {a}\n')
+            file.write(f'\t\tBGRA {b} {g} {r} {a}\n')
     else:
         file.write('\n\tNUMVERTEXCOLORS 0\n')
 

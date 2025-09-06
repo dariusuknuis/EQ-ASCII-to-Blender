@@ -45,12 +45,12 @@ def parse_dm_sprite_def_2(r, parse_property, current_line):
         normals.append(tuple(map(float, records[1:])))
     mesh['normals'] = normals
 
-    # Parse NUMVERTEXCOLORS and the RGBA values
+    # Parse NUMVERTEXCOLORS and the BGRA values
     records = parse_property(r, "NUMVERTEXCOLORS", 1)
     num_colors = int(records[1])
     colors = []
     for i in range(num_colors):
-        records = parse_property(r, "RGBA", 4)
+        records = parse_property(r, "BGRA", 4)
         blue = float(records[1])
         green = float(records[2])
         red = float(records[3])
