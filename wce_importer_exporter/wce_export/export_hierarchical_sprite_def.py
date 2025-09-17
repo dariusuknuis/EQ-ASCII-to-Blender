@@ -79,10 +79,10 @@ def write_hierarchical_sprite_def(armature, file):
         file.write(f'\tBOUNDINGRADIUS? 0.00000000e+00\n')
 
     # Write flag properties
-    hex_two_hundred_flag = 1 if armature.get("HEXTWOHUNDREDFLAG", False) else 0
-    hex_twenty_thousand_flag = 1 if armature.get("HEXTWENTYTHOUSANDFLAG", False) else 0
-    file.write(f'\tHEXTWOHUNDREDFLAG {hex_two_hundred_flag}\n')
-    file.write(f'\tHEXTWENTYTHOUSANDFLAG {hex_twenty_thousand_flag}\n')
+    hex_two_hundred_flag = 1 if armature.get("HAVEATTACHEDSKINS", False) else 0
+    hex_twenty_thousand_flag = 1 if armature.get("DAGCOLLISIONS", False) else 0
+    file.write(f'\tHAVEATTACHEDSKINS {hex_two_hundred_flag}\n')
+    file.write(f'\tDAGCOLLISIONS {hex_twenty_thousand_flag}\n')
     
     print(f'HIERARCHICALSPRITEDEF data for "{hs_def_name}" exported.')
 

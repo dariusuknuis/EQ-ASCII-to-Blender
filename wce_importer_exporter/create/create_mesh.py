@@ -80,15 +80,18 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
 
     # == Save custom properties ==
     material_palette = mesh_data.get('material_palette', "")
+    dmrgbtrack = mesh_data.get('dmrgbtrack', "")
     obj["TAGINDEX"] = mesh_data.get("tag_index", 0)
     obj["MATERIALPALETTE"] = material_palette
+    obj["DMRGBTRACK"] = dmrgbtrack
+    obj["PARAMS2"] = mesh_data.get("params2", (0.0, 0.0, 0.0))
     obj["FPSCALE"] = mesh_data.get("fpscale", 1)
-    obj["HEXONEFLAG"] = bool(mesh_data.get("hexoneflag", 0))
-    obj["HEXTWOFLAG"] = bool(mesh_data.get("hextwoflag", 0))
-    obj["HEXFOURTHOUSANDFLAG"] = bool(mesh_data.get("hexfourthousandflag", 0))
-    obj["HEXEIGHTTHOUSANDFLAG"] = bool(mesh_data.get("hexeightthousandflag", 0))
-    obj["HEXTENTHOUSANDFLAG"] = bool(mesh_data.get("hextenthousandflag", 0))
-    obj["HEXTWENTYTHOUSANDFLAG"] = bool(mesh_data.get("hextwentythousandflag", 0))
+    obj["USECENTEROFFSET"] = bool(mesh_data.get("use_center_offset", 1))
+    obj["USEBOUNDINGRADIUS"] = bool(mesh_data.get("use_bounding_radius", 1))
+    obj["USEPARAMS2"] = bool(mesh_data.get("use_params2", 0))
+    obj["USEBOUNDINGBOX"] = bool(mesh_data.get("use_bounding_box", 0))
+    obj["USEVERTEXCOLORALPHA"] = bool(mesh_data.get("use_vertex_color_alpha", 0))
+    obj["SPRITEDEFPOLYHEDRON"] = bool(mesh_data.get("sprite_def_polyhedron", 0))
 
     # Add the "POLYHEDRON" custom property
     polyhedron_value = mesh_data.get("polyhedron", "")
@@ -166,7 +169,10 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
 
         # Write each MESHOP entry
         for meshop in mesh_data['meshops']:
-            text_block.write(f"MESHOP {meshop[0]} {meshop[1]} {meshop[2]:.8f} {meshop[3]} {meshop[4]}\n")
+            meshoptype, index1, param1, index2, offset = meshop
+            text_block.write(
+                f"MESHOP {meshoptype} {index1} {param1} {index2} {offset:.8f}\n"
+            )
 
         # Link the text block to the mesh (optional if you want to reference it later)
         obj["MESHOPS_TEXT"] = text_block_name

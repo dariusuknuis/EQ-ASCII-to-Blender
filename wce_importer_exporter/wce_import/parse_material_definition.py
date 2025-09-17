@@ -48,8 +48,12 @@ def parse_material_definition(r, parse_property, current_line):
     material['simple_sprite_tag_index'] = int(records[1])
 
     # Parse HEXFIFTYFLAG
-    records = parse_property(r, "SIMPLESPRITEHEXFIFTYFLAG", 1)
-    material['hexfiftyflag'] = int(records[1])
+    records = parse_property(r, "SIMPLESPRITEHAVESKIPFRAMES", 1)
+    material['simple_sprite_have_skip_frames'] = int(records[1])
+
+    # Parse HEXFIFTYFLAG
+    records = parse_property(r, "SIMPLESPRITESKIPFRAMES", 1)
+    material['simple_sprite_skip_frames'] = int(records[1])
 
     # Parse UVSHIFTPERMS? and handle NULL
     records = parse_property(r, "UVSHIFTPERMS?", 2)
@@ -57,7 +61,7 @@ def parse_material_definition(r, parse_property, current_line):
         material['uvshiftperms'] = (float(records[1]), float(records[2]))
 
     # Parse DOUBLESIDED
-    records = parse_property(r, "DOUBLESIDED", 1)
-    material['doublesided'] = int(records[1])
+    records = parse_property(r, "TWOSIDED", 1)
+    material['twosided'] = int(records[1])
 
     return material

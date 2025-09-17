@@ -136,8 +136,8 @@ def create_materials(materials, textures, file_path, node_group_cache):
 
         mat.use_fake_user = True  # Assign a fake user to the material        
 
-        # Set Backface Culling based on DOUBLESIDED
-        mat.use_backface_culling = not bool(mat_data.get('doublesided', 0))
+        # Set Backface Culling based on TWOSIDED
+        mat.use_backface_culling = not bool(mat_data.get('twosided', 0))
 
         # Add custom properties from materialdefinition_parse
         mat["TAGINDEX"] = mat_data.get('tag_index', 0)
@@ -145,7 +145,8 @@ def create_materials(materials, textures, file_path, node_group_cache):
         mat["RGBPEN"] = mat_data.get('rgbpen', (0.698, 0.698, 0.698, 0.0))
         mat["BRIGHTNESS"] = mat_data.get('brightness', 0.0)
         mat["SCALEDAMBIENT"] = mat_data.get('scaledambient', 0.75)
-        mat["SIMPLESPRITEHEXFIFTYFLAG"] = bool(mat_data.get('hexfiftyflag', 0))
+        mat["SIMPLESPRITEHAVESKIPFRAMES"] = bool(mat_data.get('simple_sprite_have_skip_frames', 0))
+        mat["SIMPLESPRITESKIPFRAMES"] = bool(mat_data.get('simple_sprite_skip_frames', 0))
         mat["UVSHIFTPERMS"] = mat_data.get('uvshiftperms', (0.0, 0.0))
         mat["SIMPLESPRITETAGINDEX"] = mat_data.get('simple_sprite_tag_index', 0)
 

@@ -50,10 +50,10 @@ def parse_dm_sprite_def_2(r, parse_property, current_line):
     num_colors = int(records[1])
     colors = []
     for i in range(num_colors):
-        records = parse_property(r, "BGRA", 4)
-        blue = float(records[1])
+        records = parse_property(r, "RGBA", 4)
+        red = float(records[1])
         green = float(records[2])
-        red = float(records[3])
+        blue = float(records[3])
         alpha = float(records[4])
         colors.append((red, green, blue, alpha))
     mesh['colors'] = colors
@@ -81,6 +81,10 @@ def parse_dm_sprite_def_2(r, parse_property, current_line):
     dmtrack_data = records[1]
     mesh['dmtrack'] = dmtrack_data
 
+    # Parse DMTRACKINST and its DEFINITION
+    records = parse_property(r, "DMRGBTRACK", 1)
+    mesh['dmrgbtrack'] = records[1]
+
     # Parse POLYHEDRON and its DEFINITION
     records = parse_property(r, "POLYHEDRON", 0)
     records = parse_property(r, "SPRITE", 1)
@@ -105,10 +109,48 @@ def parse_dm_sprite_def_2(r, parse_property, current_line):
     num_meshops = int(records[1])
     meshops = []
     for i in range(num_meshops):
-        records = parse_property(r, "MESHOP", 5)
-        meshop = (int(records[1]), int(records[2]), float(records[3]), int(records[4]), int(records[5]))
-        meshops.append(meshop)
-    mesh['meshops'] = meshops
+        rec = parse_property(r, "MESHOP", -1)
+        if len(rec) < 2:
+            raise ValueError(f"mesh op {i}: malformed line")
+
+        meshoptype = str(rec[1]).strip().upper()
+
+        # Defaults
+        index1 = 0
+        param1 = 0
+        index2 = 0
+        offset = 0.0
+
+        if meshoptype == "SW":
+            # MESHOP SW <Index1(face)> <Param1(0..2)> <Index2(targetVertex)>
+            if len(rec) > 2:
+                index1 = int(rec[2])
+            if len(rec) > 3:
+                param1 = int(rec[3])
+            if len(rec) > 4:
+                index2 = int(rec[4])
+
+        elif meshoptype == "FA":
+            # MESHOP FA <Index1(face)>
+            if len(rec) > 2:
+                index1 = int(rec[2])
+
+        elif meshoptype == "VA":
+            # MESHOP VA <Index1(vertex)>
+            if len(rec) > 2:
+                index1 = int(rec[2])
+
+        elif meshoptype == "EL":
+            # MESHOP EL <Offset>
+            if len(rec) > 2:
+                offset = float(rec[2])
+
+        else:
+            raise ValueError(f"mesh op {i}: unknown kind '{meshoptype}'")
+
+        meshops.append((meshoptype, index1, param1, index2, offset))
+
+    mesh["meshops"] = meshops
 
     # Parse FACEMATERIALGROUPS
     records = parse_property(r, "FACEMATERIALGROUPS", -1)
@@ -138,6 +180,10 @@ def parse_dm_sprite_def_2(r, parse_property, current_line):
         vertex_start = vertex_end
     mesh['vertex_materials'] = vertex_material_groups
 
+    # Parse PARAMS2
+    records = parse_property(r, "PARAMS2", 3)
+    mesh['params2'] = tuple(map(float, records[1:]))
+
     # Parse BOUNDINGBOX
     bounding_box_data = []
     records = parse_property(r, "BOUNDINGBOXMIN", 3)
@@ -155,22 +201,22 @@ def parse_dm_sprite_def_2(r, parse_property, current_line):
     mesh["fpscale"] = int(records[1])
 
     # Parse FLAGS
-    records = parse_property(r, "HEXONEFLAG", 1)
-    mesh["hexoneflag"] = int(records[1])
+    records = parse_property(r, "USECENTEROFFSET", 1)
+    mesh["use_center_offset"] = int(records[1])
 
-    records = parse_property(r, "HEXTWOFLAG", 1)
-    mesh["hextwoflag"] = int(records[1])
+    records = parse_property(r, "USEBOUNDINGRADIUS", 1)
+    mesh["use_bounding_radius"] = int(records[1])
 
-    records = parse_property(r, "HEXFOURTHOUSANDFLAG", 1)
-    mesh["hexfourthousandflag"] = int(records[1])
+    records = parse_property(r, "USEPARAMS2", 1)
+    mesh["use_params2"] = int(records[1])
 
-    records = parse_property(r, "HEXEIGHTTHOUSANDFLAG", 1)
-    mesh["hexeightthousandflag"] = int(records[1])
+    records = parse_property(r, "USEBOUNDINGBOX", 1)
+    mesh["use_bounding_box"] = int(records[1])
 
-    records = parse_property(r, "HEXTENTHOUSANDFLAG", 1)
-    mesh["hextenthousandflag"] = int(records[1])
+    records = parse_property(r, "USEVERTEXCOLORALPHA", 1)
+    mesh["use_vertex_color_alpha"] = int(records[1])
 
-    records = parse_property(r, "HEXTWENTYTHOUSANDFLAG", 1)
-    mesh["hextwentythousandflag"] = int(records[1])
+    records = parse_property(r, "SPRITEDEFPOLYHEDRON", 1)
+    mesh["sprite_def_polyhedron"] = int(records[1])
 
     return mesh

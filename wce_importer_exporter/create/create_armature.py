@@ -63,8 +63,8 @@ def create_armature(armature_data, armature_tracks, parent_obj):
                 pose_bone["track"] = bone_track  # Assign track as custom property
 
     # Set armature custom properties based on flags
-    armature_obj["HEXTWOHUNDREDFLAG"] = bool(armature_data.get("hextwohundredflag", 0))
-    armature_obj["HEXTWENTYTHOUSANDFLAG"] = bool(armature_data.get("hextwentythousandflag", 0))
+    armature_obj["HAVEATTACHEDSKINS"] = bool(armature_data.get("have_attached_skins", 0))
+    armature_obj["DAGCOLLISIONS"] = bool(armature_data.get("dag_collisions", 0))
 
     # Add the "POLYHEDRON" custom property
     polyhedron_value = armature_data.get("polyhedron", "")

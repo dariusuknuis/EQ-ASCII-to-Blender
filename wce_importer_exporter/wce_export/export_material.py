@@ -164,8 +164,10 @@ def write_materials_and_sprites(mesh, file, written_sprites=set(), written_mater
             file.write(f'\tSIMPLESPRITEINST\n')
             file.write(f'\t\tSIMPLESPRITETAG "{sprite_tag}"\n')
             file.write(f'\t\tSIMPLESPRITETAGINDEX {simple_sprite_tag_index}\n')
-            hex_flag = 1 if material.get("SIMPLESPRITEHEXFIFTYFLAG", False) else 0
-            file.write(f'\t\tSIMPLESPRITEHEXFIFTYFLAG {hex_flag}\n')
+            hex_ten_flag = 1 if material.get("SIMPLESPRITEHAVESKIPFRAMES", False) else 0
+            file.write(f'\t\tSIMPLESPRITEHAVESKIPFRAMES {hex_ten_flag}\n')
+            hex_forty_flag = 1 if material.get("SIMPLESPRITESKIPFRAMES", False) else 0
+            file.write(f'\t\tSIMPLESPRITESKIPFRAMES {hex_forty_flag}\n')
             uvshiftperms = material.get("UVSHIFTPERMS", [0.0, 0.0])
             file.write(f'\tUVSHIFTPERMS? {uvshiftperms[0]:.8e} {uvshiftperms[1]:.8e}\n')
             file.write(f'\tDOUBLESIDED {0 if material.use_backface_culling else 1}\n')

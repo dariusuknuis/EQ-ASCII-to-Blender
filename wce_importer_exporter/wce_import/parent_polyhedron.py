@@ -24,17 +24,45 @@ def parent_polyhedron(polyhedron_obj, base_name, main_obj, armature_obj, meshes,
         for bone_data in armature_data['bones']:
             if bone_data.get('sprite') == base_name:
                 bone_name = bone_data['name']
-                bone_obj = armature_obj.pose.bones.get(bone_name)
-                if bone_obj:
-                    polyhedron_obj.parent = armature_obj
-                    polyhedron_obj.parent_bone = bone_name
-                    polyhedron_obj.parent_type = 'BONE'
-                    # Adjust the origin by subtracting the Y-length of the bone tail
-                    bone_tail_y = bone_obj.tail.y
-                    polyhedron_obj.location.y -= bone_tail_y
-                    print(f"Polyhedron '{base_name}' parented to bone '{bone_name}' in armature '{armature_obj.name}'")
-                    assigned = True
-                    break
+                pb = armature_obj.pose.bones.get(bone_name)
+                if not pb:
+                    continue
+
+                # Parent polyhedron to the *parent of the armature* (or world if none)
+                polyhedron_obj.parent_type = 'OBJECT'
+                polyhedron_obj.parent_bone = ""
+                polyhedron_obj.parent = armature_obj.parent  # None => world
+
+                # Remove any existing duplicate Child Of to the same bone (idempotent runs)
+                for c in list(polyhedron_obj.constraints):
+                    if c.type == 'CHILD_OF' and c.target == armature_obj and c.subtarget == pb.name:
+                        polyhedron_obj.constraints.remove(c)
+
+                # Add Child Of constraint targeting the bone
+                con = polyhedron_obj.constraints.new('CHILD_OF')
+                con.name = f"ChildOf_{armature_obj.name}_{pb.name}"
+                con.target = armature_obj
+                con.subtarget = pb.name
+                con.use_location_x = con.use_location_y = con.use_location_z = True
+                con.use_rotation_x = con.use_rotation_y = con.use_rotation_z = True
+                con.use_scale_x = con.use_scale_y = con.use_scale_z = True
+                con.influence = 1.0
+
+                # "Clear Inverse" so the object snaps to the bone HEAD and then follows it
+                bpy.context.view_layer.update()
+                con.inverse_matrix.identity()
+
+                # (Optional) If you want the polyhedron's local transforms reset right now:
+                # polyhedron_obj.location = (0.0, 0.0, 0.0)
+                # polyhedron_obj.rotation_euler = (0.0, 0.0, 0.0)
+                # polyhedron_obj.scale = (1.0, 1.0, 1.0)
+
+                print(
+                    f"Polyhedron '{base_name}' parented to armature parent and "
+                    f"constrained to bone '{bone_name}' (Child Of with Clear Inverse)."
+                )
+                assigned = True
+                break
 
     # 4. Fallback: Parent to main empty object if no other match
     if not assigned:

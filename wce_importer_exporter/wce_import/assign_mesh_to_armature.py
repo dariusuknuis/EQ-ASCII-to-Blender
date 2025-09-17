@@ -1,3 +1,5 @@
+import bpy
+
 def assign_mesh_to_armature(mesh_obj, armature_obj, armature_data, cumulative_matrices):
     mesh_name = mesh_obj.name
     assigned = False
@@ -20,18 +22,49 @@ def assign_mesh_to_armature(mesh_obj, armature_obj, armature_data, cumulative_ma
     if not assigned:
         for bone in armature_data['bones']:
             if bone.get('sprite') == mesh_name:
-                bone_obj = armature_obj.pose.bones.get(bone['name'])
-                if bone_obj:
-                    mesh_obj.parent = armature_obj
-                    mesh_obj.parent_bone = bone_obj.name
-                    mesh_obj.parent_type = 'BONE'
-                    # Adjust the origin by subtracting the Y-length of the bone tail
-                    bone_tail_y = bone_obj.tail.y
-                    mesh_obj.location.y -= bone_tail_y
-                    mesh_obj["SPRITEINDEX"] = bone.get("sprite_index", 0)
-                    print(f"Mesh '{mesh_name}' parented to bone '{bone['name']}' with origin adjusted by tail length: {bone_tail_y}")
-                    assigned = True
-                    break  # Mesh is assigned, no need to check further
+                pb = armature_obj.pose.bones.get(bone['name'])
+                if not pb:
+                    continue
+
+                # 1) Parent mesh to the *parent of the armature* (or world if none)
+                mesh_obj.parent_type = 'OBJECT'
+                mesh_obj.parent_bone = ""
+                mesh_obj.parent = armature_obj.parent  # can be None (world)
+
+                # Optional: ensure no stale "Child Of" from earlier runs
+                for c in list(mesh_obj.constraints):
+                    if c.type == 'CHILD_OF' and c.target == armature_obj and c.subtarget == pb.name:
+                        mesh_obj.constraints.remove(c)
+
+                # 2) Add "Child Of" constraint targeting the bone
+                con = mesh_obj.constraints.new('CHILD_OF')
+                con.name = f"ChildOf_{armature_obj.name}_{pb.name}"
+                con.target = armature_obj
+                con.subtarget = pb.name
+                con.use_location_x = con.use_location_y = con.use_location_z = True
+                con.use_rotation_x = con.use_rotation_y = con.use_rotation_z = True
+                con.use_scale_x = con.use_scale_y = con.use_scale_z = True
+                con.influence = 1.0
+
+                # 3) "Clear Inverse" so the child snaps to the bone HEAD and then follows it
+                # (In UI this is Constraint > Clear Inverse; in API it's zeroing the inverse matrix)
+                # Note: needs depsgraph update so constraint has valid matrices
+                bpy.context.view_layer.update()
+                con.inverse_matrix.identity()
+
+                # (Optional) If you want the mesh geometry centered exactly at the head right now
+                # without changing its origin permanently, you can zero its local transforms:
+                # mesh_obj.location = (0.0, 0.0, 0.0)
+                # mesh_obj.rotation_euler = (0.0, 0.0, 0.0)
+                # mesh_obj.scale = (1.0, 1.0, 1.0)
+
+                mesh_obj["SPRITEINDEX"] = bone.get("sprite_index", 0)
+                print(
+                    f"Mesh '{mesh_name}' parented to armature parent "
+                    f"and constrained to bone '{bone['name']}' (Child Of with Clear Inverse)."
+                )
+                assigned = True
+                break  # Mesh is assigned; stop searching
 
     # If not assigned to a skin or bone, add the armature modifier without parenting
     if not assigned:

@@ -89,7 +89,7 @@ def write_dm_sprite_def(mesh, file):
         file.write(f'\n\tNUMVERTEXCOLORS {len(col_attr.data)}\n')
         for el in col_attr.data:
             r,g,b,a = (round(c*255) for c in el.color)
-            file.write(f'\t\tBGRA {b} {g} {r} {a}\n')
+            file.write(f'\t\tRGBA {r} {g} {b} {a}\n')
     else:
         file.write('\n\tNUMVERTEXCOLORS 0\n')
 
@@ -173,6 +173,9 @@ def write_dm_sprite_def(mesh, file):
     else:
         # No shape keys other than "Basis," so print empty DMTRACKINST
         file.write('\tDMTRACKINST ""\n')
+
+    dmrgbtrack = mesh.get("DMRGBTRACK", "")
+    file.write(f'\tDMRGBTRACK "{dmrgbtrack}"\n')
         
     # Write POLYHEDRON
     polyhedron_mesh = find_child_mesh(mesh, '_POLYHDEF')
@@ -281,6 +284,10 @@ def write_dm_sprite_def(mesh, file):
     else:
         file.write(f'\tVERTEXMATERIALGROUPS 0\n')
 
+    params2 = mesh.get("PARAMS2", (0.0, 0.0, 0.0))
+    x, y, z = params2
+    file.write(f'\tPARAMS2 {x:.8e} {y:.8e} {z:.8e}\n')
+
     # Write bounding box and bounding radius
     bounding_box_mesh = find_child_mesh(mesh, '_BB')
     if bounding_box_mesh:
@@ -300,19 +307,19 @@ def write_dm_sprite_def(mesh, file):
         file.write(f'\tBOUNDINGRADIUS 0.00000000e+00\n')
 
     # Write custom properties
-    hex_one_flag = 1 if mesh.get("HEXONEFLAG", False) else 0
-    hex_two_flag = 1 if mesh.get("HEXTWOFLAG", False) else 0
-    hex_four_thousand_flag = 1 if mesh.get("HEXFOURTHOUSANDFLAG", False) else 0
-    hex_eight_thousand_flag = 1 if mesh.get("HEXEIGHTTHOUSANDFLAG", False) else 0
-    hex_ten_thousand_flag = 1 if mesh.get("HEXTENTHOUSANDFLAG", False) else 0
-    hex_twenty_thousand_flag = 1 if mesh.get("HEXTWENTYTHOUSANDFLAG", False) else 0
-    file.write(f'\n\tFPSCALE {mesh.get("FPSCALE", 0)}\n')
-    file.write(f'\tHEXONEFLAG {hex_one_flag}\n')
-    file.write(f'\tHEXTWOFLAG {hex_two_flag}\n')
-    file.write(f'\tHEXFOURTHOUSANDFLAG {hex_four_thousand_flag}\n')
-    file.write(f'\tHEXEIGHTTHOUSANDFLAG {hex_eight_thousand_flag}\n')
-    file.write(f'\tHEXTENTHOUSANDFLAG {hex_ten_thousand_flag}\n')
-    file.write(f'\tHEXTWENTYTHOUSANDFLAG {hex_twenty_thousand_flag}\n')
+    hex_one_flag = 1 if mesh.get("USECENTEROFFSET", False) else 0
+    hex_two_flag = 1 if mesh.get("USEBOUNDINGRADIUS", False) else 0
+    hex_two_thousand_flag = 1 if mesh.get("USEPARAMS2", False) else 0
+    hex_four_thousand_flag = 1 if mesh.get("USEBOUNDINGBOX", False) else 0
+    hex_eight_thousand_flag = 1 if mesh.get("USEVERTEXCOLORALPHA", False) else 0
+    hex_ten_thousand_flag = 1 if mesh.get("SPRITEDEFPOLYHEDRON", False) else 0
+    file.write(f'\n\tFPSCALE {mesh.get("FPSCALE", 1)}\n')
+    file.write(f'\tUSECENTEROFFSET {hex_one_flag}\n')
+    file.write(f'\tUSEBOUNDINGRADIUS {hex_two_flag}\n')
+    file.write(f'\tUSEPARAMS2 {hex_two_thousand_flag}\n')
+    file.write(f'\tUSEBOUNDINGBOX {hex_four_thousand_flag}\n')
+    file.write(f'\tUSEVERTEXCOLORALPHA {hex_eight_thousand_flag}\n')
+    file.write(f'\tSPRITEDEFPOLYHEDRON {hex_ten_thousand_flag}\n')
 
 # Helper function to find the armature associated with a mesh
 def find_armature_for_mesh(mesh):

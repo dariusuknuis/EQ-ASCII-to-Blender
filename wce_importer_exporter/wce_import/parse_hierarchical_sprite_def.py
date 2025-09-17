@@ -124,10 +124,10 @@ def parse_hierarchical_sprite_def(r, parse_property, current_line):
         armature_data['bounding_radius'] = float(bounding_radius_value)
 
     # Parse FLAGS
-    records = parse_property(r, "HEXTWOHUNDREDFLAG", 1)
-    armature_data["hextwohundredflag"] = int(records[1])
+    records = parse_property(r, "HAVEATTACHEDSKINS", 1)
+    armature_data["have_attached_skins"] = int(records[1])
 
-    records = parse_property(r, "HEXTWENTYTHOUSANDFLAG", 1)
-    armature_data["hextwentythousandflag"] = int(records[1])
+    records = parse_property(r, "DAGCOLLISIONS", 1)
+    armature_data["dag_collisions"] = int(records[1])
 
     return armature_data
