@@ -170,7 +170,7 @@ def write_materials_and_sprites(mesh, file, written_sprites=set(), written_mater
             file.write(f'\t\tSIMPLESPRITESKIPFRAMES {hex_forty_flag}\n')
             uvshiftperms = material.get("UVSHIFTPERMS", [0.0, 0.0])
             file.write(f'\tUVSHIFTPERMS? {uvshiftperms[0]:.8e} {uvshiftperms[1]:.8e}\n')
-            file.write(f'\tDOUBLESIDED {0 if material.use_backface_culling else 1}\n')
+            file.write(f'\tTWOSIDED {0 if material.use_backface_culling else 1}\n')
     
         return palette_name, unique_materials
 
