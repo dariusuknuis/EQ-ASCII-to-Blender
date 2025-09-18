@@ -52,5 +52,5 @@ def create_vertex_animation(mesh_obj, dmtrack_name, vertex_animations):
         current_frame += frames_per_sleep
 
     # Ensure shape key animation is visible in playback
-    mesh_obj.active_shape_key_index = 0
-    bpy.context.view_layer.objects.active = mesh_obj
+    # mesh_obj.active_shape_key_index = 0
+    # bpy.context.view_layer.objects.active = mesh_obj
