@@ -45,6 +45,16 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
 
     # == Apply Custom Normals ==
     if 'normals' in mesh_data and len(mesh_data['normals']) == len(mesh_data['vertices']):
+        attr_name = "vertex_normals"
+        if attr_name in mesh.color_attributes:
+            mesh.color_attributes.remove(mesh.color_attributes[attr_name])
+
+        vattr = mesh.color_attributes.new(name=attr_name, type='FLOAT_COLOR', domain='POINT')
+
+        for i, n in enumerate(mesh_data['normals']):
+            x, y, z = n
+            vattr.data[i].color = (x, y, z, 1.0)
+
         loop_normals = []
         for loop in mesh.loops:
             v_index = loop.vertex_index
