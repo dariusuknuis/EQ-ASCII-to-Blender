@@ -3,7 +3,7 @@
 import bpy
 import struct
 import os
-from .material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes
+from .material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes, _add_group_socket, _get_group_io_sockets
 
 def read_bmp_palette_color(file_path):
     with open(file_path, 'rb') as f:
@@ -39,26 +39,39 @@ def create_node_group_ud26(image_texture_file):
         group_input.location = (-400, 0)
         group_output = node_group.nodes.new('NodeGroupOutput')
         group_output.location = (400, 0)
-        node_group.inputs.new('NodeSocketColor', 'Color')
-        node_group.inputs.new('NodeSocketFloat', 'Alpha')
-        node_group.outputs.new('NodeSocketShader', 'Shader')
+        _add_group_socket(node_group, 'Color',  'NodeSocketColor', is_input=True)
+        _add_group_socket(node_group, 'Alpha',  'NodeSocketFloat', is_input=True)
+        _add_group_socket(node_group, 'Shader', 'NodeSocketShader', is_input=False)
 
         # Create Principled BSDF node
         principled_bsdf_node = node_group.nodes.new(type='ShaderNodeBsdfPrincipled')
         principled_bsdf_node.location = (0, 0)
-        principled_bsdf_node.inputs['Emission Strength'].default_value = 1
-        principled_bsdf_node.inputs['Subsurface'].default_value = 0
-        principled_bsdf_node.inputs['Specular'].default_value = 0
+        principled_bsdf_node.inputs['Emission Strength'].default_value = 0
+        principled_bsdf_node.inputs['Subsurface Scale'].default_value = 0
+        principled_bsdf_node.inputs['Specular IOR Level'].default_value = 0
         principled_bsdf_node.inputs['Metallic'].default_value = 0
         principled_bsdf_node.inputs['Roughness'].default_value = 0
-        principled_bsdf_node.inputs['Sheen'].default_value = 0
-        principled_bsdf_node.inputs['Clearcoat'].default_value = 0
+        principled_bsdf_node.inputs['Sheen Roughness'].default_value = 0
+        principled_bsdf_node.inputs['Coat IOR'].default_value = 0
+
+        # Attribute node for vertex_normals
+        attr_node = node_group.nodes.new("ShaderNodeAttribute")
+        attr_node.location = (-200, -180)
+        attr_node.attribute_name = "vertex_normals"
+
+        if hasattr(attr_node, "attribute_type"):
+            try:
+                attr_node.attribute_type = 'GEOMETRY'
+            except:
+                pass
 
         # Connect inputs to Principled BSDF
+        in_sock, out_sock = _get_group_io_sockets(node_group)
         group_links = node_group.links
-        group_links.new(group_input.outputs['Color'], principled_bsdf_node.inputs['Base Color'])
-        group_links.new(group_input.outputs['Alpha'], principled_bsdf_node.inputs['Alpha'])
-        group_links.new(principled_bsdf_node.outputs['BSDF'], group_output.inputs['Shader'])
+        group_links.new(in_sock['Color'], principled_bsdf_node.inputs['Base Color'])
+        group_links.new(in_sock['Alpha'], principled_bsdf_node.inputs['Alpha'])
+        group_links.new(attr_node.outputs['Vector'], principled_bsdf_node.inputs['Normal'])
+        group_links.new(principled_bsdf_node.outputs['BSDF'], out_sock['Shader'])
     
     else:
         # Create the node group for Indexed Color BMP
@@ -69,10 +82,10 @@ def create_node_group_ud26(image_texture_file):
         group_input.location = (-800, 0)
         group_output = node_group.nodes.new('NodeGroupOutput')
         group_output.location = (800, 0)
-        node_group.inputs.new('NodeSocketColor', 'Index 0 Color')
-        node_group.inputs.new('NodeSocketColor', 'Non-Color Texture')
-        node_group.inputs.new('NodeSocketColor', 'sRGB Texture')
-        node_group.outputs.new('NodeSocketShader', 'Shader')
+        _add_group_socket(node_group, 'Index 0 Color',     'NodeSocketColor', is_input=True)
+        _add_group_socket(node_group, 'Non-Color Texture', 'NodeSocketColor', is_input=True)
+        _add_group_socket(node_group, 'sRGB Texture',      'NodeSocketColor', is_input=True)
+        _add_group_socket(node_group, 'Shader',            'NodeSocketShader', is_input=False)
 
         # Create nodes in the node group
         math_node1 = node_group.nodes.new(type='ShaderNodeMath')
@@ -111,6 +124,17 @@ def create_node_group_ud26(image_texture_file):
         diffuse_bsdf_node = node_group.nodes.new(type='ShaderNodeBsdfDiffuse')
         diffuse_bsdf_node.location = (-200, -200)
 
+        # Attribute node for vertex_normals
+        attr_node = node_group.nodes.new("ShaderNodeAttribute")
+        attr_node.location = (-400, -380)
+        attr_node.attribute_name = "vertex_normals"
+
+        if hasattr(attr_node, "attribute_type"):
+            try:
+                attr_node.attribute_type = 'GEOMETRY'
+            except:
+                pass
+
         add_node1 = node_group.nodes.new(type='ShaderNodeMath')
         add_node1.operation = 'ADD'
         add_node1.location = (0, 400)
@@ -128,6 +152,7 @@ def create_node_group_ud26(image_texture_file):
         mix_shader_node.location = (600, 100)
 
         # Create links within the node group
+        in_sock, out_sock = _get_group_io_sockets(node_group)
         group_links = node_group.links
         group_links.new(separate_color_node1.outputs['Red'], math_node1.inputs[1])
         group_links.new(separate_color_node1.outputs['Green'], math_node2.inputs[1])
@@ -135,9 +160,9 @@ def create_node_group_ud26(image_texture_file):
         group_links.new(separate_color_node2.outputs['Red'], math_node1.inputs[0])
         group_links.new(separate_color_node2.outputs['Green'], math_node2.inputs[0])
         group_links.new(separate_color_node2.outputs['Blue'], math_node3.inputs[0])
-        group_links.new(group_input.outputs['Non-Color Texture'], separate_color_node2.inputs['Color'])
-        group_links.new(group_input.outputs['sRGB Texture'], diffuse_bsdf_node.inputs['Color'])
-        group_links.new(group_input.outputs['Index 0 Color'], separate_color_node1.inputs['Color'])
+        group_links.new(in_sock['Non-Color Texture'], separate_color_node2.inputs['Color'])
+        group_links.new(in_sock['sRGB Texture'], diffuse_bsdf_node.inputs['Color'])
+        group_links.new(in_sock['Index 0 Color'], separate_color_node1.inputs['Color'])
 
         group_links.new(math_node1.outputs['Value'], abs_node1.inputs[0])
         group_links.new(math_node2.outputs['Value'], abs_node2.inputs[0])
@@ -150,7 +175,8 @@ def create_node_group_ud26(image_texture_file):
         group_links.new(less_than_node.outputs['Value'], mix_shader_node.inputs['Fac'])
         group_links.new(diffuse_bsdf_node.outputs['BSDF'], mix_shader_node.inputs[1])
         group_links.new(transparent_bsdf_node.outputs['BSDF'], mix_shader_node.inputs[2])
-        group_links.new(mix_shader_node.outputs['Shader'], group_output.inputs['Shader'])
+        group_links.new(attr_node.outputs['Vector'],  diffuse_bsdf_node.inputs['Normal'])
+        group_links.new(mix_shader_node.outputs['Shader'], out_sock['Shader'])
 
     return node_group
 
@@ -176,7 +202,10 @@ def create_material_with_node_group_ud26(material_name, image_texture_file, node
         # Add an Image Texture node
         image_texture_node = nodes.new(type='ShaderNodeTexImage')
         image_texture_node.location = (-300, 0)
-        image_texture_node.image = bpy.data.images.load(image_texture_file)
+        try:
+            image_texture_node.image = bpy.data.images.load(image_texture_file)
+        except RuntimeError:
+            image_texture_node.image = None
         image_texture_node.interpolation = 'Linear'
         image_texture_node.name = f"{os.path.basename(image_texture_file)}"
         image_texture_node.label = f"{os.path.basename(image_texture_file)}"
@@ -222,15 +251,25 @@ def create_material_with_node_group_ud26(material_name, image_texture_file, node
 
         image_texture_node1 = nodes.new(type='ShaderNodeTexImage')
         image_texture_node1.location = (-300, -400)
-        image_texture_node1.image = bpy.data.images.load(image_texture_file)
+        try:
+            image_texture_node1.image = bpy.data.images.load(image_texture_file)
+        except RuntimeError:
+            image_texture_node1.image = None
         image_texture_node1.name = f"{os.path.basename(image_texture_file)}"
         image_texture_node1.label = f"{os.path.basename(image_texture_file)}"
 
         image_texture_node2 = nodes.new(type='ShaderNodeTexImage')
         image_texture_node2.location = (-300, -50)
-        image_texture_node2.image = bpy.data.images.load(image_texture_file)
+        try:
+            image_texture_node2.image = bpy.data.images.load(image_texture_file)
+        except RuntimeError:
+            image_texture_node2.image = None
         image_texture_node2.interpolation = 'Closest'
-        image_texture_node2.image.colorspace_settings.name = 'Non-Color'
+        if image_texture_node2.image:
+            try:
+                image_texture_node2.image.colorspace_settings.name = 'Non-Color'
+            except Exception:
+                pass
         image_texture_node2.name = f"{os.path.basename(image_texture_file)}_NC"
         image_texture_node2.label = f"{os.path.basename(image_texture_file)}_NC"
 

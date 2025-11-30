@@ -102,7 +102,7 @@ def create_worldtree(worldtree_data, pending_objects=None):
             bsdf.inputs["Base Color"].default_value = (1.0, 1.0, 0.0, 0.25)  # yellow, alpha 0.25
             bsdf.inputs["Alpha"].default_value = 0.25
         mat.blend_method = 'BLEND'
-        mat.shadow_method = 'NONE'
+        # mat.shadow_method = 'NONE'
         mat.use_backface_culling = False
 
     node_objects = {}

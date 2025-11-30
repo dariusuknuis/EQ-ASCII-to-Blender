@@ -2,107 +2,127 @@ import bpy
 import mathutils
 from mathutils import Quaternion
 
-def create_default_pose(armature_obj, track_definitions, armature_data, cumulative_matrices, prefix):
-    # Get the scene's frame rate
-    frame_rate = bpy.context.scene.render.fps
-
-    # Create a default pose action
-    action_name = f"POS_{prefix}"
-    action = bpy.data.actions.new(name=action_name)
-
-    # Ensure the armature has animation data and assign the action
+def _ensure_anim_and_action(armature_obj, action_name: str):
+    """Return (anim, action) correctly wired for Blender 5 slotted actions, with 3.6 fallback."""
     if armature_obj.animation_data is None:
         armature_obj.animation_data_create()
+    anim = armature_obj.animation_data
 
-    # Create an NLA track for this action
-    nla_tracks = armature_obj.animation_data.nla_tracks
-    nla_track = nla_tracks.new()
-    nla_track.name = action_name
+    # Create action
+    action = bpy.data.actions.new(action_name)
 
-    # Set a start frame for the NLA strip
-    start_frame = 1  # Adjust as needed
-    nla_strip = nla_track.strips.new(action_name, start=start_frame, action=action)
-    nla_strip.action = action
-    nla_strip.name = action_name
+    # Blender 5: add an OBJECT slot so Blender knows what this action targets
+    # (Pose-bone paths still live on the OBJECT owner.)
+    if hasattr(action, "slots"):
+        if not any(s.target_id_type == 'OBJECT' for s in action.slots):
+            action.slots.new(id_type='OBJECT', name=armature_obj.name)
 
-    fcurves = {}  # Initialize the fcurves dictionary
+    # Assign to anim; in 5.0 this does NOT always auto-pick a slot, so set it.
+    anim.action = action
+    try:
+        # Prefer a suitable slot (guaranteed compatible)
+        if hasattr(anim, "action_suitable_slots") and anim.action_suitable_slots:
+            anim.action_slot = anim.action_suitable_slots[0]
+        elif hasattr(action, "slots") and action.slots:
+            anim.action_slot = action.slots[0]
+    except Exception:
+        # If the build auto-assigned, this may be unnecessary.
+        pass
 
-    #Iterate over the bones in the armature in order
-    for bone_name, bone in armature_obj.pose.bones.items():
-        # Check if the bone has a 'track' value
-        track_name = bone.get('track', None)
+    return anim, action
 
-        if track_name and track_name in track_definitions['armature_tracks']:
-            # Retrieve the corresponding track definition and instance
-            track_def = track_definitions['armature_tracks'][track_name]['definition']
-            track_instance = track_definitions['armature_tracks'][track_name]['instance']
+def create_default_pose(armature_obj, track_definitions, armature_data, cumulative_matrices, prefix):
+    frame_rate  = bpy.context.scene.render.fps
+    start_frame = 1
 
-            # Get the sleep value for frame timing
-            sleep = track_instance.get('sleep', None)
-            frames_per_sleep = (sleep / 1000) * frame_rate if sleep else 1
+    # Set up action & slot correctly
+    action_name = f"POS_{prefix}"
+    anim, action = _ensure_anim_and_action(armature_obj, action_name)
 
-            current_frame = start_frame
+    # Pose bones animate in quaternion space here
+    for pb in armature_obj.pose.bones:
+        pb.rotation_mode = 'QUATERNION'
 
-            # Iterate over all frames to create keyframes
-            for frame_index, frame_data in enumerate(track_def['frames']):
-                armature_translation = frame_data.get('translation', [0, 0, 0])
-                armature_rotation = frame_data.get('rotation', Quaternion((1, 0, 0, 0)))
-                xyz_scale = track_def.get('xyz_scale', 256)
-                scale_factor = xyz_scale / 256.0
+    # Build curves per bone using the **new** API
+    def ensure_curve(dp: str, idx: int, group: str):
+        """
+        Blender 5: use fcurve_ensure_for_datablock (creates layer/strip/slot if needed).
+        Blender 3.6: legacy method exists too; signature is slightly different but
+        the keyword-only form works in 5.0: (datablock, data_path, *, index=..., group_name=...)
+        """
+        return action.fcurve_ensure_for_datablock(
+            datablock=armature_obj,
+            data_path=dp,
+            index=idx,
+            group_name=group,
+        )
 
-                # Create the transformation matrix
-                scale_matrix = mathutils.Matrix.Scale(scale_factor, 4)
-                rotation_matrix = armature_rotation.to_matrix().to_4x4()
-                translation_matrix = mathutils.Matrix.Translation(armature_translation)
+    # Iterate only bones with tracks
+    for bone_name, pb in armature_obj.pose.bones.items():
+        track_name = pb.get('track', None)
+        if not (track_name and track_name in track_definitions['armature_tracks']):
+            continue
 
-                bone_matrix = (
-                    translation_matrix @ rotation_matrix @ scale_matrix @
-                    cumulative_matrices.get(bone_name, mathutils.Matrix.Identity(4))
-                )
+        track_def  = track_definitions['armature_tracks'][track_name]['definition']
+        track_inst = track_definitions['armature_tracks'][track_name]['instance']
 
-                # Initialize fcurves for location, rotation, and scale
-                if bone_name not in fcurves:
-                    fcurves[bone_name] = {
-                        'location': [],
-                        'rotation_quaternion': [],
-                        'scale': []
-                    }
+        sleep_ms        = track_inst.get('sleep', None)
+        frames_per_step = (sleep_ms / 1000) * frame_rate if sleep_ms else 1
+        current_frame   = start_frame
 
-                    for i in range(3):  # Location and Scale
-                        fcurves[bone_name]['location'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].location', index=i))
-                        fcurves[bone_name]['scale'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].scale', index=i))
+        # Ensure curves once per bone
+        loc_curves = [ensure_curve(f'pose.bones["{bone_name}"].location',            i, bone_name) for i in range(3)]
+        rot_curves = [ensure_curve(f'pose.bones["{bone_name}"].rotation_quaternion', i, bone_name) for i in range(4)]
+        scl_curves = [ensure_curve(f'pose.bones["{bone_name}"].scale',               i, bone_name) for i in range(3)]
 
-                    for i in range(4):  # Rotation quaternion
-                        fcurves[bone_name]['rotation_quaternion'].append(action.fcurves.new(data_path=f'pose.bones["{bone_name}"].rotation_quaternion', index=i))
+        xyz_scale    = track_def.get('xyz_scale', 256)
+        scale_factor = xyz_scale / 256.0
 
-                # Extract translation, rotation, and scale
-                translation = bone_matrix.to_translation()
-                rotation = bone_matrix.to_quaternion()
-                scale = [scale_factor] * 3
+        for frame_data in track_def['frames']:
+            arm_translation = frame_data.get('translation', [0, 0, 0])
+            arm_rotation    = frame_data.get('rotation', Quaternion((1, 0, 0, 0)))
 
-                # Insert keyframes for location, rotation, and scale
-                for i, value in enumerate(translation):
-                    fcurve = fcurves[bone_name]['location'][i]
-                    kf = fcurve.keyframe_points.insert(current_frame, value)
-                    kf.interpolation = 'LINEAR'
+            # Compose transform in your space
+            S = mathutils.Matrix.Scale(scale_factor, 4)
+            R = arm_rotation.to_matrix().to_4x4()
+            T = mathutils.Matrix.Translation(arm_translation)
+            bone_m = T @ R @ S @ cumulative_matrices.get(bone_name, mathutils.Matrix.Identity(4))
 
-                for i, value in enumerate(rotation):
-                    fcurve = fcurves[bone_name]['rotation_quaternion'][i]
-                    kf = fcurve.keyframe_points.insert(current_frame, value)
-                    kf.interpolation = 'LINEAR'
+            translation = bone_m.to_translation()
+            rotation    = bone_m.to_quaternion()
+            scale_vec   = (scale_factor, scale_factor, scale_factor)
 
-                for i, value in enumerate(scale):
-                    fcurve = fcurves[bone_name]['scale'][i]
-                    kf = fcurve.keyframe_points.insert(current_frame, value)
-                    kf.interpolation = 'LINEAR'
+            # Insert keyframes on the F-Curves we ensured
+            for i, v in enumerate(translation):
+                kf = loc_curves[i].keyframe_points.insert(current_frame, float(v))
+                kf.interpolation = 'LINEAR'
+            for i, v in enumerate(rotation):
+                kf = rot_curves[i].keyframe_points.insert(current_frame, float(v))
+                kf.interpolation = 'LINEAR'
+            for i, v in enumerate(scale_vec):
+                kf = scl_curves[i].keyframe_points.insert(current_frame, float(v))
+                kf.interpolation = 'LINEAR'
 
-                # Advance the current frame
-                current_frame += frames_per_sleep
+            current_frame += frames_per_step
 
-            # Add custom properties to the action
-            action["TAGINDEX"] = track_instance.get('tag_index', 0)
-            action["SPRITEINDEX"] = track_instance.get('definition_index', 0)
-            action["INTERPOLATE"] = track_instance.get('interpolate', False)
-            action["REVERSE"] = track_instance.get('reverse', False)
+        # Optional metadata on the Action (works fine with slots)
+        action["TAGINDEX"]    = track_inst.get('tag_index', 0)
+        action["SPRITEINDEX"] = track_inst.get('definition_index', 0)
+        action["INTERPOLATE"] = track_inst.get('interpolate', False)
+        action["REVERSE"]     = track_inst.get('reverse', False)
 
-    #print(f"Created default pose action '{action_name}' with multiple keyframes")
+    # (Optional) Also add an NLA strip that references the same action
+    nla_track = anim.nla_tracks.new()
+    nla_track.name = action.name
+    strip = nla_track.strips.new(action.name, start_frame, action)
+    strip.name = action.name
+
+    # If you prefer NLA-only control, you can detach the active action here.
+    try:
+        # Blender 5 may expose an ActionSlot at anim.action; detach safely:
+        if hasattr(anim, "action") and hasattr(anim.action, "action"):
+            anim.action.action = None
+        else:
+            anim.action = None
+    except Exception:
+        pass

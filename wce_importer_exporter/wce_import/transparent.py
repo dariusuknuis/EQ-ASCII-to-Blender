@@ -1,4 +1,5 @@
 import bpy
+from .material_utils import _add_group_socket, _get_group_io_sockets
 
 def create_node_group_transparent():
     # Check if the node group already exists, and return it if it does
@@ -11,21 +12,34 @@ def create_node_group_transparent():
     # Add Group Output node to the node group
     group_output = node_group.nodes.new('NodeGroupOutput')
     group_output.location = (600, 0)
-    node_group.outputs.new('NodeSocketShader', 'Shader')
-    
+    _add_group_socket(node_group, 'Shader', 'NodeSocketShader', is_input=False)
+
     # Create nodes inside the node group
     # Add a Principled BSDF node
     principled_bsdf_node = node_group.nodes.new(type='ShaderNodeBsdfPrincipled')
     principled_bsdf_node.location = (300, 0)
-    principled_bsdf_node.inputs['Specular'].default_value = 0.0
+    principled_bsdf_node.inputs['Specular IOR Level'].default_value = 0.0
     principled_bsdf_node.inputs['Roughness'].default_value = 0.6  # Slight roughness for frosted effect
-    principled_bsdf_node.inputs['Transmission'].default_value = 1.0  # Full transmission for glass effect
+    principled_bsdf_node.inputs['Transmission Weight'].default_value = 1.0  # Full transmission for glass effect
     principled_bsdf_node.inputs['Base Color'].default_value = (1.0, 1.0, 1.0, 0.05)  # Subtle white color with slight transparency
     principled_bsdf_node.inputs['Alpha'].default_value = 0.3  # Set alpha under Emission to 0.3
 
+    # Attribute node for vertex_normals
+    attr_node = node_group.nodes.new("ShaderNodeAttribute")
+    attr_node.location = (100, -180)
+    attr_node.attribute_name = "vertex_normals"
+
+    if hasattr(attr_node, "attribute_type"):
+        try:
+            attr_node.attribute_type = 'GEOMETRY'
+        except:
+            pass
+
     # Create links within the node group
+    _, out_sock = _get_group_io_sockets(node_group)
     group_links = node_group.links
-    group_links.new(principled_bsdf_node.outputs['BSDF'], group_output.inputs['Shader'])
+    group_links.new(attr_node.outputs['Vector'], principled_bsdf_node.inputs['Normal'])
+    group_links.new(principled_bsdf_node.outputs['BSDF'], out_sock['Shader'])
 
     return node_group
 

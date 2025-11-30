@@ -4,6 +4,7 @@ import numpy as np
 import mathutils
 from mathutils import Vector
 from math import pi, radians
+from ..wce_import.material_utils import _add_group_socket, _get_group_io_sockets
 
 EPSILON = 1e-1
 
@@ -20,8 +21,8 @@ def ensure_pvp_node_group():
     # Group I/O
     inp = nodes.new('NodeGroupInput');  inp.location=(-700,225)
     out = nodes.new('NodeGroupOutput'); out.location=( 800,330)
-    ng.inputs .new('NodeSocketShader',"Shader")
-    ng.outputs.new('NodeSocketShader',"Shader")
+    _add_group_socket(ng, 'Shader', 'NodeSocketShader', is_input=True)
+    _add_group_socket(ng, 'Shader', 'NodeSocketShader', is_input=False)
 
     # Wave→Ramp→Mix #1
     w1 = nodes.new('ShaderNodeTexWave');     w1.location=(-335,590)
@@ -64,19 +65,20 @@ def ensure_pvp_node_group():
     p2.inputs["Alpha"].default_value      = 1.0
 
     # internal links
+    in_sock, out_sock = _get_group_io_sockets(ng)
     links.new(w1.outputs["Fac"], r1.inputs["Fac"])
     links.new(r1.outputs["Color"], m1.inputs["Fac"])
 
     links.new(w2.outputs["Fac"], r2.inputs["Fac"])
     links.new(r2.outputs["Color"], m2.inputs["Fac"])
 
-    links.new(inp.outputs["Shader"], m1.inputs[1])
+    links.new(in_sock["Shader"], m1.inputs[1])
     links.new(p1.outputs["BSDF"],   m1.inputs[2])
 
     links.new(m1.outputs["Shader"], m2.inputs[1])
     links.new(p2.outputs["BSDF"],   m2.inputs[2])
 
-    links.new(m2.outputs["Shader"], out.inputs["Shader"])
+    links.new(m2.outputs["Shader"], out_sock["Shader"])
     return ng
 
 def ensure_tp_node_group():
@@ -89,8 +91,8 @@ def ensure_tp_node_group():
     # Group I/O
     inp = nodes.new('NodeGroupInput');  inp.location=(-700,225)
     out = nodes.new('NodeGroupOutput'); out.location=( 800,330)
-    ng.inputs .new('NodeSocketShader',"Shader")
-    ng.outputs.new('NodeSocketShader',"Shader")
+    _add_group_socket(ng, 'Shader', 'NodeSocketShader', is_input=True)
+    _add_group_socket(ng, 'Shader', 'NodeSocketShader', is_input=False)
 
     # Voronoi→Ramp→Mix #1
     v1 = nodes.new('ShaderNodeTexVoronoi')
@@ -132,19 +134,20 @@ def ensure_tp_node_group():
     p2.inputs["Base Color"].default_value=(0x83/255,0x94/255,0x8F/255,1); p2.inputs["Alpha"].default_value=1
 
     # links
+    in_sock, out_sock = _get_group_io_sockets(ng)
     links.new(v1.outputs["Distance"], r1.inputs["Fac"])
     links.new(r1.outputs["Color"],   m1.inputs["Fac"])
 
     links.new(v2.outputs["Distance"],r2.inputs["Fac"])
     links.new(r2.outputs["Color"],   m2.inputs["Fac"])
 
-    links.new(inp.outputs["Shader"], m1.inputs[1])
+    links.new(in_sock["Shader"], m1.inputs[1])
     links.new(p1.outputs["BSDF"],    m1.inputs[2])
     
     links.new(m1.outputs["Shader"], m2.inputs[1])
     links.new(p2.outputs["BSDF"],    m2.inputs[2])
 
-    links.new(m2.outputs["Shader"], out.inputs["Shader"])
+    links.new(m2.outputs["Shader"], out_sock["Shader"])
     return ng
 
 def ensure_slippery_node_group():
@@ -157,8 +160,8 @@ def ensure_slippery_node_group():
     # Group I/O
     inp = nodes.new('NodeGroupInput');  inp.location=(-700,225)
     out = nodes.new('NodeGroupOutput'); out.location=( 800,330)
-    ng.inputs .new('NodeSocketShader',"Shader")
-    ng.outputs.new('NodeSocketShader',"Shader")
+    _add_group_socket(ng, 'Shader', 'NodeSocketShader', is_input=True)
+    _add_group_socket(ng, 'Shader', 'NodeSocketShader', is_input=False)
 
     # Noise→Ramp→Mix #1
     n1 = nodes.new('ShaderNodeTexNoise'); n1.location=(-335,590)
@@ -197,19 +200,20 @@ def ensure_slippery_node_group():
     p2.inputs["Base Color"].default_value=(0xA4/255,0xC1/255,0xD0/255,1); p2.inputs["Alpha"].default_value=1
 
     # links
+    in_sock, out_sock = _get_group_io_sockets(ng)
     links.new(n1.outputs["Fac"],    r1.inputs["Fac"])
     links.new(r1.outputs["Color"],  m1.inputs["Fac"])
 
     links.new(n2.outputs["Fac"],    r2.inputs["Fac"])
     links.new(r2.outputs["Color"],  m2.inputs["Fac"])
 
-    links.new(inp.outputs["Shader"],m1.inputs[1])
+    links.new(in_sock["Shader"],m1.inputs[1])
     links.new(p1.outputs["BSDF"],   m1.inputs[2])
 
     links.new(m1.outputs["Shader"],m2.inputs[1])
     links.new(p2.outputs["BSDF"],   m2.inputs[2])
 
-    links.new(m2.outputs["Shader"], out.inputs["Shader"])
+    links.new(m2.outputs["Shader"], out_sock["Shader"])
     return ng
 
 # ─── CHAINED OVERLAY UTILITY ────────────────────────────────────────────────

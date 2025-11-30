@@ -46,22 +46,28 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
     # == Apply Custom Normals ==
     if 'normals' in mesh_data and len(mesh_data['normals']) == len(mesh_data['vertices']):
         attr_name = "vertex_normals"
-        if attr_name in mesh.color_attributes:
-            mesh.color_attributes.remove(mesh.color_attributes[attr_name])
+        # if attr_name in mesh.color_attributes:
+        #     mesh.color_attributes.remove(mesh.color_attributes[attr_name])
 
-        vattr = mesh.color_attributes.new(name=attr_name, type='FLOAT_COLOR', domain='POINT')
+        if attr_name in mesh.attributes:
+            mesh.attributes.remove(mesh.attributes[attr_name])
+
+        # vattr = mesh.color_attributes.new(name=attr_name, type='FLOAT_COLOR', domain='POINT')
+
+        vattr = mesh.attributes.new(name=attr_name, type='FLOAT_VECTOR', domain='POINT')
 
         for i, n in enumerate(mesh_data['normals']):
-            x, y, z = n
-            vattr.data[i].color = (x, y, z, 1.0)
+            vattr.data[i].vector = n
 
-        loop_normals = []
-        for loop in mesh.loops:
-            v_index = loop.vertex_index
-            normal = mathutils.Vector(mesh_data['normals'][v_index])
-            loop_normals.append(normal.normalized())
-        mesh.normals_split_custom_set(loop_normals)
-        mesh.use_auto_smooth = True
+        # loop_normals = []
+        # for loop in mesh.loops:
+        #     v_index = loop.vertex_index
+        #     normal = mathutils.Vector(mesh_data['normals'][v_index])
+        #     loop_normals.append(normal.normalized())
+        # mesh.normals_split_custom_set(loop_normals)
+        # # Blender 3.x: keep old flag; Blender 4/5: it no longer exists
+        # if hasattr(mesh, "use_auto_smooth"):
+        #     mesh.use_auto_smooth = True
 
     # == Color Attribute (Vertex Colors per Vertex) ==
     if 'colors' in mesh_data and len(mesh_data['colors']) == len(mesh_data['vertices']):

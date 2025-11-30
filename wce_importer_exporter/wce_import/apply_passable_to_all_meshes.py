@@ -1,4 +1,5 @@
 import bpy
+from .material_utils import _add_group_socket
 
 # Function to ensure we are in object mode
 def ensure_object_mode():
@@ -13,11 +14,11 @@ def create_passable_geometry_node_group():
     node_group = bpy.data.node_groups.new(name="PASSABLE", type="GeometryNodeTree")
     
     # Create the input and output nodes
-    group_input = node_group.nodes.new(type='NodeGroupInput')
-    group_output = node_group.nodes.new(type='NodeGroupOutput')
+    group_input = node_group.nodes.new('NodeGroupInput')
+    group_output = node_group.nodes.new('NodeGroupOutput')
     
-    node_group.inputs.new('NodeSocketGeometry', 'Geometry')
-    node_group.outputs.new('NodeSocketGeometry', 'Geometry')
+    _add_group_socket(node_group, 'Geometry', 'NodeSocketGeometry', True)
+    _add_group_socket(node_group, 'Geometry', 'NodeSocketGeometry', False)
     
     group_input.location = (-300, 0)
     group_output.location = (300, 0)
@@ -25,13 +26,15 @@ def create_passable_geometry_node_group():
     # Add the Named Attribute and Compare (Equal) nodes
     named_attribute = node_group.nodes.new('GeometryNodeInputNamedAttribute')
     named_attribute.data_type = 'INT'
-    named_attribute.inputs[0].default_value = "PASSABLE"
+    name_socket = named_attribute.inputs.get('Name')
+    if name_socket:
+        name_socket.default_value = "PASSABLE"
     named_attribute.location = (-300, -100)
     
     equal_node = node_group.nodes.new('FunctionNodeCompare')
     equal_node.data_type = 'INT'
     equal_node.operation = 'EQUAL'
-    equal_node.inputs[3].default_value = 1
+    equal_node.inputs['B'].default_value = 1
     equal_node.location = (-100, -100)
     
     # Add the Set Material node
@@ -41,24 +44,11 @@ def create_passable_geometry_node_group():
     set_material.inputs['Material'].default_value = passable_material
     
     # Create the links between nodes
-    node_group.links.new(group_input.outputs['Geometry'], set_material.inputs['Geometry'])
-    
-    # Correctly get the 'Attribute' output from Named Attribute for the 'INT' type
-    attribute_output = next(s for s in named_attribute.outputs if s.name == 'Attribute' and s.type == 'INT')
-    
-    # Correctly get the input for the Compare node based on the INT type
-    compare_value_input = next(s for s in equal_node.inputs if s.name == 'A' and s.type == 'INT')
-    
-    # Link the Named Attribute to the correct Compare node input
-    node_group.links.new(attribute_output, compare_value_input)
-    
-    # Link the result of the Equal node to the Set Material selection input
-    equal_output = equal_node.outputs.get('Result')
-    set_material_input = set_material.inputs.get('Selection')
-    node_group.links.new(equal_output, set_material_input)
-    
-    # Connect to output
-    node_group.links.new(set_material.outputs['Geometry'], group_output.inputs['Geometry'])
+    link = node_group.links
+    link.new(group_input.outputs['Geometry'], set_material.inputs['Geometry'])
+    link.new(named_attribute.outputs['Attribute'], equal_node.inputs['A'])
+    link.new(equal_node.outputs['Result'], set_material.inputs['Selection'])
+    link.new(set_material.outputs['Geometry'], group_output.inputs['Geometry'])
     
     return node_group
 

@@ -5,6 +5,7 @@
     #"texture_style": "None"
 
 import bpy
+from .material_utils import _add_group_socket, _get_group_io_sockets
 
 # Function to create the node group SOLIDFILLAMBIENTGOURAUD1
 def create_node_group_sfag1():
@@ -18,7 +19,7 @@ def create_node_group_sfag1():
     group_output.location = (400, 0)
 
     # Add an output socket of type Shader (instead of the default)
-    node_group.outputs.new('NodeSocketShader', 'Shader')
+    _add_group_socket(node_group, 'Shader', 'NodeSocketShader', is_input=False)
 
     # Create Emission and Diffuse BSDF nodes
     emission = node_group.nodes.new('ShaderNodeEmission')
@@ -28,29 +29,44 @@ def create_node_group_sfag1():
     diffuse.location = (0, -300)
     diffuse.inputs['Roughness'].default_value = 0.0  # Set roughness to 0 as per the image
 
+    # Attribute node for vertex_normals
+    attr_node = node_group.nodes.new("ShaderNodeAttribute")
+    attr_node.location = (-200, -480)
+    attr_node.attribute_name = "vertex_normals"
+
+    if hasattr(attr_node, "attribute_type"):
+        try:
+            attr_node.attribute_type = 'GEOMETRY'
+        except:
+            pass
+
     # Create Mix Shader node
     mix_shader = node_group.nodes.new('ShaderNodeMixShader')
     mix_shader.location = (200, 0)
 
     # Add inputs to the group
-    node_group.inputs.new('NodeSocketFloat', 'ScaledAmbient')
-    node_group.inputs.new('NodeSocketFloat', 'Brightness')
-    node_group.inputs.new('NodeSocketColor', 'Color')
+    _add_group_socket(node_group, 'ScaledAmbient', 'NodeSocketFloat', is_input=True)
+    _add_group_socket(node_group, 'Brightness', 'NodeSocketFloat', is_input=True)
+    _add_group_socket(node_group, 'Color', 'NodeSocketColor', is_input=True)
+
+    
+    # Link the nodes within the group
+    in_sock, out_sock = _get_group_io_sockets(node_group)
+    group_links = node_group.links
+    group_links.new(in_sock['ScaledAmbient'], mix_shader.inputs['Fac'])
+    group_links.new(in_sock['Brightness'], emission.inputs['Strength'])
+    group_links.new(in_sock['Color'], emission.inputs['Color'])
+    group_links.new(in_sock['Color'], diffuse.inputs['Color'])
+
+    group_links.new(emission.outputs['Emission'], mix_shader.inputs[1])  # Link Emission to Mix Shader
+    group_links.new(diffuse.outputs['BSDF'], mix_shader.inputs[2])  # Link Diffuse to Mix Shader
 
     # Set default values
-    group_input.outputs['ScaledAmbient'].default_value = 0.0
-    group_input.outputs['Brightness'].default_value = 0.0
+    in_sock['ScaledAmbient'].default_value = 0.0
+    in_sock['Brightness'].default_value = 0.0
 
-    # Link the nodes within the group
-    node_group.links.new(group_input.outputs['ScaledAmbient'], mix_shader.inputs['Fac'])
-    node_group.links.new(group_input.outputs['Brightness'], emission.inputs['Strength'])
-    node_group.links.new(group_input.outputs['Color'], emission.inputs['Color'])
-    node_group.links.new(group_input.outputs['Color'], diffuse.inputs['Color'])
-
-    node_group.links.new(emission.outputs['Emission'], mix_shader.inputs[1])  # Link Emission to Mix Shader
-    node_group.links.new(diffuse.outputs['BSDF'], mix_shader.inputs[2])  # Link Diffuse to Mix Shader
-
-    node_group.links.new(mix_shader.outputs['Shader'], group_output.inputs['Shader'])  # Connect to output
+    group_links.new(attr_node.outputs['Vector'], diffuse.inputs['Normal'])
+    group_links.new(mix_shader.outputs['Shader'], out_sock['Shader'])  # Connect to output
 
     return node_group
 

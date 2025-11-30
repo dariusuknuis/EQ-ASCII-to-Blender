@@ -2,7 +2,7 @@
 
 import bpy
 import os
-from .material_utils import add_texture_coordinate_and_mapping_nodes
+from .material_utils import add_texture_coordinate_and_mapping_nodes, _add_group_socket, _get_group_io_sockets
 
 def create_node_group_ud25():
     # Create the node group
@@ -13,13 +13,30 @@ def create_node_group_ud25():
     group_input.location = (0, 0)
     group_output = node_group.nodes.new('NodeGroupOutput')
     group_output.location = (800, 0)
-    node_group.inputs.new('NodeSocketColor', 'sRGB Texture')
-    node_group.outputs.new('NodeSocketShader', 'Shader')
+    _add_group_socket(node_group, 'sRGB Texture', 'NodeSocketColor', is_input=True)
+    _add_group_socket(node_group, 'Shader',       'NodeSocketShader', is_input=False)
+    
+    # Use Principled, but ONLY its Emission channel.
+    principled = node_group.nodes.new(type='ShaderNodeBsdfPrincipled')
+    principled.location = (200, 0)
+    principled.inputs['Base Color'].default_value = (0, 0, 0, 1)  # no diffuse
+    principled.inputs['Metallic'].default_value = 0.0
+    principled.inputs['Specular IOR Level'].default_value = 0.0
+    principled.inputs['Roughness'].default_value = 1.0
+    principled.inputs['Transmission Weight'].default_value = 0.0
+    # drive emission
+    principled.inputs['Emission Strength'].default_value = 0.75
 
-    # Create the internal nodes
-    emission_node = node_group.nodes.new(type='ShaderNodeEmission')
-    emission_node.location = (200, 0)
-    emission_node.inputs['Strength'].default_value = 0.75
+    # Attribute node for vertex_normals
+    attr_node = node_group.nodes.new("ShaderNodeAttribute")
+    attr_node.location = (0, -180)
+    attr_node.attribute_name = "vertex_normals"
+
+    if hasattr(attr_node, "attribute_type"):
+        try:
+            attr_node.attribute_type = 'GEOMETRY'
+        except:
+            pass
     
     transparent_node = node_group.nodes.new(type='ShaderNodeBsdfTransparent')
     transparent_node.location = (200, 200)
@@ -32,13 +49,15 @@ def create_node_group_ud25():
     add_shader_node2.location = (600, 0)
 
     # Create links within the node group
+    in_sock, out_sock = _get_group_io_sockets(node_group)
     group_links = node_group.links
-    group_links.new(group_input.outputs['sRGB Texture'], emission_node.inputs['Color'])
-    group_links.new(emission_node.outputs['Emission'], add_shader_node1.inputs[1])
+    group_links.new(in_sock['sRGB Texture'], principled.inputs['Color'])
+    group_links.new(principled.outputs['Emission'], add_shader_node1.inputs[1])
     group_links.new(transparent_node.outputs['BSDF'], add_shader_node1.inputs[0])
     group_links.new(add_shader_node1.outputs['Shader'], add_shader_node2.inputs[0])
-    group_links.new(emission_node.outputs['Emission'], add_shader_node2.inputs[1])
-    group_links.new(add_shader_node2.outputs['Shader'], group_output.inputs['Shader'])
+    group_links.new(principled.outputs['Emission'], add_shader_node2.inputs[1])
+    group_links.new(attr_node.outputs['Vector'], principled.inputs['Normal'])
+    group_links.new(add_shader_node2.outputs['Shader'], out_sock['Shader'])
 
     return node_group
 
@@ -64,9 +83,16 @@ def create_material_with_node_group_ud25(material_name, texture_path, node_group
     # Add an Image Texture node
     image_texture_node = nodes.new(type='ShaderNodeTexImage')
     image_texture_node.location = (-300, 0)
-    image_texture_node.image = bpy.data.images.load(texture_path)
+    try:
+        image_texture_node.image = bpy.data.images.load(texture_path)
+    except RuntimeError:
+        image_texture_node.image = None
     image_texture_node.interpolation = 'Linear'
-    image_texture_node.image.colorspace_settings.name = 'sRGB'
+    if image_texture_node.image:
+        try:
+            image_texture_node.image.colorspace_settings.name = 'sRGB'
+        except Exception:
+            pass
     image_texture_node.name = f"{os.path.basename(texture_path)}"
     image_texture_node.label = f"{os.path.basename(texture_path)}"
 

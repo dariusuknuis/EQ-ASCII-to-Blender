@@ -1,6 +1,7 @@
 import bpy
 import re
 import mathutils
+from ..wce_import.material_utils import _add_group_socket, _get_group_io_sockets
 
 def create_bounding_volume_for_region_empties():
     # Define a regex to match region empty names, e.g., R000007
@@ -95,12 +96,13 @@ def create_zone_bounds_intersect_geometry_node():
     # Create the group input node
     group_input = gn_tree.nodes.new("NodeGroupInput")
     group_input.location = (-600, 0)
-    gn_tree.inputs.new("NodeSocketGeometry", "Geometry")
     
     # Create the group output node
     group_output = gn_tree.nodes.new("NodeGroupOutput")
     group_output.location = (200, 0)
-    gn_tree.outputs.new("NodeSocketGeometry", "Geometry")
+    
+    _add_group_socket(gn_tree, "Geometry", "NodeSocketGeometry", is_input=True)
+    _add_group_socket(gn_tree, "Geometry", "NodeSocketGeometry", is_input=False)
     
     # Create the Object Info node (points to the WORLD_BOUNDS empty)
     zone_bounds_obj = bpy.data.objects.get("WORLD_BOUNDS")
@@ -127,9 +129,10 @@ def create_zone_bounds_intersect_geometry_node():
     boolean_node.location = (0, 0)
     
     # Link everything
+    in_sock, out_sock = _get_group_io_sockets(gn_tree)
     links = gn_tree.links
     # 1) Group Input -> Boolean (Mesh 2)
-    links.new(group_input.outputs["Geometry"], boolean_node.inputs["Mesh 2"])
+    links.new(in_sock["Geometry"], boolean_node.inputs["Mesh 2"])
     # 2) Cube -> Transform
     links.new(cube_node.outputs["Mesh"], transform_node.inputs["Geometry"])
     # 3) Object Info -> Transform (Translation/Rotation/Scale)
@@ -139,7 +142,7 @@ def create_zone_bounds_intersect_geometry_node():
     # 4) Transform -> Boolean (Mesh 1)
     links.new(transform_node.outputs["Geometry"], boolean_node.inputs["Mesh 2"])
     # 5) Boolean -> Group Output
-    links.new(boolean_node.outputs["Mesh"], group_output.inputs["Geometry"])
+    links.new(boolean_node.outputs["Mesh"], out_sock["Geometry"])
     
     return gn_tree
 
