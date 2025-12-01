@@ -4,6 +4,8 @@ import bpy
 import struct
 import os
 from .material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes, _add_group_socket, _get_group_io_sockets
+from .material_utils import _attach_scene_flag_driver_to_group_input
+from .passable_nodegroup import create_node_group_passable
 
 def read_bmp_palette_color(file_path):
     with open(file_path, 'rb') as f:
@@ -39,9 +41,18 @@ def create_node_group_ud20(image_texture_file):
         group_input.location = (-400, 0)
         group_output = node_group.nodes.new('NodeGroupOutput')
         group_output.location = (400, 0)
-        _add_group_socket(node_group, 'Color',  'NodeSocketColor', is_input=True)
-        _add_group_socket(node_group, 'Alpha',  'NodeSocketFloat', is_input=True)
-        _add_group_socket(node_group, 'Shader', 'NodeSocketShader', is_input=False)
+        _add_group_socket(node_group, 'Color',              'NodeSocketColor', is_input=True)
+        _add_group_socket(node_group, 'Alpha',              'NodeSocketFloat', is_input=True)
+        _add_group_socket(node_group, 'PassableDisplay',    'NodeSocketFloat', is_input=True)
+        _add_group_socket(node_group, 'Shader',             'NodeSocketShader', is_input=False)
+
+        # Attach driver so this material instance reads the scene flag
+        _attach_scene_flag_driver_to_group_input(
+            node_group,
+            input_name='PassableDisplay',
+            # choose which you prefer to drive:
+            use_id_prop=False  # False → Scene.passable_display_enabled, True → Scene["PassableDisplay"]
+        )
 
         # Create Principled BSDF node
         principled_bsdf_node = node_group.nodes.new(type='ShaderNodeBsdfPrincipled')

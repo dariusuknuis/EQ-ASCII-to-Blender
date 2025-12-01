@@ -139,3 +139,30 @@ def _get_group_io_sockets(node_group):
     gi = {sock.name: sock for sock in gi_node.outputs}  # inputs of the group appear as outputs on Group Input
     go = {sock.name: sock for sock in go_node.inputs}   # outputs of the group appear as inputs on Group Output
     return gi, go
+
+def _attach_scene_flag_driver_to_group_input(group_node, input_name='PassableDisplay',
+                                             use_id_prop=False, scene=None):
+    """
+    Adds a driver to group_node.inputs[input_name].default_value so it follows the scene flag.
+    If use_id_prop is True, uses Scene['PassableDisplay']; otherwise uses Scene.passable_display_enabled.
+    """
+    if scene is None:
+        scene = bpy.context.scene
+
+    sock = group_node.inputs.get(input_name)
+    if not sock:
+        return
+
+    # Drivers are added to the default_value of the socket
+    fcu = sock.driver_add("default_value")
+    drv = fcu.driver
+    drv.type = 'SCRIPTED'
+
+    var = drv.variables.new()
+    var.name = "s"
+    tgt = var.targets[0]
+    tgt.id_type = 'SCENE'
+    tgt.id = scene
+    tgt.data_path = '["PassableDisplay"]' if use_id_prop else 'passable_display_enabled'
+
+    drv.expression = "s"

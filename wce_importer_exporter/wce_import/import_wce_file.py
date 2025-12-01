@@ -8,7 +8,6 @@ modules_loaded = False
 # Function that loads external modules only during execution
 def load_modules():
     global eq_ascii_parse, create_materials, register_passable_editor, unregister_passable_editor, create_region
-    global apply_passable_to_all_meshes, apply_passable_to_mesh, create_passable_geometry_node_group, create_passable_material
     global create_mesh, create_armature, assign_mesh_to_armature, create_animation, add_actordef_to_object, create_worldtree
     global create_default_pose, create_polyhedron, create_bounding_sphere, create_bounding_box, parent_polyhedron
     global modify_regions_and_worldtree, create_bounding_volume_for_region_empties, create_worlddef,create_zone
@@ -17,7 +16,6 @@ def load_modules():
     if not modules_loaded:
         from .eq_ascii_wld_parser import eq_ascii_parse
         from .material_creator import create_materials
-        from .apply_passable_to_all_meshes import apply_passable_to_all_meshes, apply_passable_to_mesh, create_passable_geometry_node_group, create_passable_material
         from ..create.create_mesh import create_mesh
         from ..create.create_armature import create_armature
         from .assign_mesh_to_armature import assign_mesh_to_armature
@@ -83,18 +81,12 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         armature_obj, bone_map, cumulative_matrices = create_armature(armature_data, armature_tracks, main_obj)
         for mesh_data in meshes:
             mesh_obj = create_mesh(mesh_data, main_obj, armature_obj, armature_data, material_palettes, created_materials, vertex_animations, pending_objects)
-            geo_node_group = create_passable_geometry_node_group()
-            passable_mat = create_passable_material()
-            apply_passable_to_mesh(mesh_obj, geo_node_group, passable_mat)
             assign_mesh_to_armature(mesh_obj, armature_obj, armature_data, cumulative_matrices)
         create_default_pose(armature_obj, track_definitions, armature_data, cumulative_matrices, model_prefix)
         create_animation(armature_obj, track_definitions, armature_data, model_prefix)
     else:
         for mesh_data in meshes:
             mesh_obj = create_mesh(mesh_data, main_obj, None, None, material_palettes, created_materials, vertex_animations, pending_objects)
-            geo_node_group = create_passable_geometry_node_group()
-            passable_mat = create_passable_material()
-            apply_passable_to_mesh(mesh_obj, geo_node_group, passable_mat)
 
     for mesh_data in meshes:
         mesh_obj = bpy.data.objects.get(mesh_data['name'])

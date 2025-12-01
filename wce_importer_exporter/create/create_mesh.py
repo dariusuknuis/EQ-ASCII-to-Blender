@@ -59,16 +59,6 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
         for i, n in enumerate(mesh_data['normals']):
             vattr.data[i].vector = n
 
-        # loop_normals = []
-        # for loop in mesh.loops:
-        #     v_index = loop.vertex_index
-        #     normal = mathutils.Vector(mesh_data['normals'][v_index])
-        #     loop_normals.append(normal.normalized())
-        # mesh.normals_split_custom_set(loop_normals)
-        # # Blender 3.x: keep old flag; Blender 4/5: it no longer exists
-        # if hasattr(mesh, "use_auto_smooth"):
-        #     mesh.use_auto_smooth = True
-
     # == Color Attribute (Vertex Colors per Vertex) ==
     if 'colors' in mesh_data and len(mesh_data['colors']) == len(mesh_data['vertices']):
         # Remove existing color attributes, if any
