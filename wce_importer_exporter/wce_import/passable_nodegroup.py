@@ -72,7 +72,7 @@ def create_node_group_passable(name: str = "Passable"):
 
     # Transparent BSDF
     n_tr = ng.nodes.new("ShaderNodeBsdfTransparent")
-    n_tr.location = (360, -60)
+    n_tr.location = (360, -110)
 
     # --- Links ---
     in_sock, out_sock = _get_group_io_sockets(ng)

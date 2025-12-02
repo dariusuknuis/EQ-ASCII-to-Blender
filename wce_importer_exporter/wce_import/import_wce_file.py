@@ -11,11 +11,13 @@ def load_modules():
     global create_mesh, create_armature, assign_mesh_to_armature, create_animation, add_actordef_to_object, create_worldtree
     global create_default_pose, create_polyhedron, create_bounding_sphere, create_bounding_box, parent_polyhedron
     global modify_regions_and_worldtree, create_bounding_volume_for_region_empties, create_worlddef,create_zone
+    global apply_vertex_normal_geo_node
     global modules_loaded
 
     if not modules_loaded:
         from .eq_ascii_wld_parser import eq_ascii_parse
         from .material_creator import create_materials
+        from .vertex_normal_geo_node import apply_vertex_normal_geo_node
         from ..create.create_mesh import create_mesh
         from ..create.create_armature import create_armature
         from .assign_mesh_to_armature import assign_mesh_to_armature
@@ -82,12 +84,14 @@ def process_include_file(include_line, file_dir, root_file_path, node_group_cach
         for mesh_data in meshes:
             mesh_obj = create_mesh(mesh_data, main_obj, armature_obj, armature_data, material_palettes, created_materials, vertex_animations, pending_objects)
             assign_mesh_to_armature(mesh_obj, armature_obj, armature_data, cumulative_matrices)
+            apply_vertex_normal_geo_node(mesh_obj)
         create_default_pose(armature_obj, track_definitions, armature_data, cumulative_matrices, model_prefix)
         create_animation(armature_obj, track_definitions, armature_data, model_prefix)
     else:
         for mesh_data in meshes:
             mesh_obj = create_mesh(mesh_data, main_obj, None, None, material_palettes, created_materials, vertex_animations, pending_objects)
-
+            apply_vertex_normal_geo_node(mesh_obj)
+    
     for mesh_data in meshes:
         mesh_obj = bpy.data.objects.get(mesh_data['name'])
         if mesh_obj:

@@ -12,7 +12,7 @@ def create_node_group_ud21():
     
     # Add Group Input and Output nodes to the node group
     group_input = node_group.nodes.new('NodeGroupInput')
-    group_input.location = (0, 0)
+    group_input.location = (-400, 0)
     group_output = node_group.nodes.new('NodeGroupOutput')
     group_output.location = (400, 0)
     _add_group_socket(node_group, 'sRGB Texture',       'NodeSocketColor', is_input=True)
@@ -21,11 +21,11 @@ def create_node_group_ud21():
     
     # Create a Diffuse BSDF node inside the node group
     diffuse_node = node_group.nodes.new(type='ShaderNodeBsdfDiffuse')
-    diffuse_node.location = (200, 0)
+    diffuse_node.location = (50, 0)
 
     # Attribute node for vertex_normals
     attr_node = node_group.nodes.new("ShaderNodeAttribute")
-    attr_node.location = (0, -180)
+    attr_node.location = (-150, -180)
     attr_node.attribute_name = "vertex_normals"
 
     if hasattr(attr_node, "attribute_type"):
@@ -39,7 +39,7 @@ def create_node_group_ud21():
     passable.node_tree = passable_group_tree
     passable.location = (-220, 80)
 
-    mix_shader = node_group.nodes.new('ShaderNodeMixShader'); mix_shader.location = (320, 0)
+    mix_shader = node_group.nodes.new('ShaderNodeMixShader'); mix_shader.location = (240, 110)
 
     # Create links within the node group
     in_sock, out_sock = _get_group_io_sockets(node_group)

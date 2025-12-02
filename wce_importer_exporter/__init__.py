@@ -28,6 +28,7 @@ from .wce_import import import_wce_file
 from .wce_export import master_export  # Assuming 'master_export.py' is in the export folder
 from .passable_flag_editor import register_passable_editor, unregister_passable_editor
 from .ui_world_tools import register as register_world_tools, unregister as unregister_world_tools
+from .wld_normal_editor import register_wld_normal_editor, unregister_wld_normal_editor
 
 from .update_handler import update_animated_texture_nodes
 
@@ -269,6 +270,7 @@ def register():
     bpy.utils.register_class(ExportWCEPanel)
     register_passable_editor()  # Register the Passable Flag Editor
     register_world_tools()
+    register_wld_normal_editor()
 
     if update_animated_texture_nodes not in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.append(update_animated_texture_nodes)
@@ -287,6 +289,7 @@ def unregister():
     bpy.utils.unregister_class(ExportWCEPanel)
     unregister_passable_editor()  # Unregister the Passable Flag Editor
     unregister_world_tools()
+    unregister_wld_normal_editor()
 
     if update_animated_texture_nodes in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.remove(update_animated_texture_nodes)
