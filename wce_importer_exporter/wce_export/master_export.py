@@ -166,7 +166,11 @@ def export_dm_sprite_def(obj, file):
         if mesh.data.uv_layers:
             split_vertices_by_uv(mesh)
         update_vertex_material_indices(mesh)
-        reindex_vertices_and_faces(mesh)
+        try:
+            reindex_vertices_and_faces(mesh)
+        except Exception as e:
+            print(f"[ERROR] {obj.name}: {e}")
+            continue
         write_dm_sprite_def(mesh, file)
 
 # def export_pos_animation(armature, file):

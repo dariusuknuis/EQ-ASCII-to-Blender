@@ -4,7 +4,8 @@ import bpy
 import struct
 import os
 from .material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes, _add_group_socket, _get_group_io_sockets
-
+from .material_utils import _attach_scene_flag_driver_to_group_input
+from .passable_nodegroup import create_node_group_passable
 
 def read_bmp_palette_color(file_path):
     with open(file_path, 'rb') as f:
@@ -40,9 +41,14 @@ def create_node_group_ud08(image_texture_file):
         group_input.location = (-400, 0)
         group_output = node_group.nodes.new('NodeGroupOutput')
         group_output.location = (400, 0)
-        _add_group_socket(node_group, 'Color',  'NodeSocketColor', is_input=True)
-        _add_group_socket(node_group, 'Alpha',  'NodeSocketFloat', is_input=True)
-        _add_group_socket(node_group, 'Shader', 'NodeSocketShader', is_input=False)
+        _add_group_socket(node_group, 'Color',              'NodeSocketColor', is_input=True)
+        _add_group_socket(node_group, 'Alpha',              'NodeSocketFloat', is_input=True)
+        _add_group_socket(node_group, 'PassableDisplay',    'NodeSocketFloat', is_input=True)
+        _add_group_socket(node_group, 'Shader',             'NodeSocketShader', is_input=False)
+
+        for item in node_group.interface.items_tree:
+            if item.name == "PassableDisplay":
+                item.hide_value = True
 
         # Create Principled BSDF node
         principled_bsdf_node = node_group.nodes.new(type='ShaderNodeBsdfPrincipled')
@@ -66,13 +72,25 @@ def create_node_group_ud08(image_texture_file):
             except:
                 pass
 
+        passable_group_tree = create_node_group_passable()
+        passable = node_group.nodes.new('ShaderNodeGroup')
+        passable.node_tree = passable_group_tree
+        passable.location = (-220, 80)
+
+        mix_shader = node_group.nodes.new('ShaderNodeMixShader'); mix_shader.location = (240, 110)
+
         # Connect inputs to Principled BSDF
         in_sock, out_sock = _get_group_io_sockets(node_group)
         group_links = node_group.links
-        group_links.new(in_sock['Color'], principled_bsdf_node.inputs['Base Color'])
+        group_links.new(in_sock['Color'], passable.inputs['Texture'])
         group_links.new(in_sock['Alpha'], principled_bsdf_node.inputs['Alpha'])
+        group_links.new(in_sock['PassableDisplay'], passable.inputs['PassableDisplay'])
+        group_links.new(passable.outputs['Result'], principled_bsdf_node.inputs['Base Color'])
+        group_links.new(passable.outputs['Value'],  mix_shader.inputs['Fac'])
+        group_links.new(passable.outputs['BSDF'],   mix_shader.inputs[2])
         group_links.new(attr_node.outputs['Vector'], principled_bsdf_node.inputs['Normal'])
-        group_links.new(principled_bsdf_node.outputs['BSDF'], out_sock['Shader'])
+        group_links.new(principled_bsdf_node.outputs['BSDF'], mix_shader.inputs[1])
+        group_links.new(mix_shader.outputs['Shader'], out_sock['Shader'])
     
     else:
         # Create the node group for Indexed Color BMP
@@ -83,10 +101,15 @@ def create_node_group_ud08(image_texture_file):
         group_input.location = (-800, 0)
         group_output = node_group.nodes.new('NodeGroupOutput')
         group_output.location = (800, 0)
-        _add_group_socket(node_group, 'Index 0 Color',     'NodeSocketColor', is_input=True)
-        _add_group_socket(node_group, 'Non-Color Texture', 'NodeSocketColor', is_input=True)
-        _add_group_socket(node_group, 'sRGB Texture',      'NodeSocketColor', is_input=True)
-        _add_group_socket(node_group, 'Shader',            'NodeSocketShader', is_input=False)
+        _add_group_socket(node_group, 'Index 0 Color',      'NodeSocketColor', is_input=True)
+        _add_group_socket(node_group, 'Non-Color Texture',  'NodeSocketColor', is_input=True)
+        _add_group_socket(node_group, 'sRGB Texture',       'NodeSocketColor', is_input=True)
+        _add_group_socket(node_group, 'PassableDisplay',    'NodeSocketFloat', is_input=True)
+        _add_group_socket(node_group, 'Shader',             'NodeSocketShader', is_input=False)
+
+        for item in node_group.interface.items_tree:
+            if item.name == "PassableDisplay":
+                item.hide_value = True
 
         # Create nodes in the node group
         math_node1 = node_group.nodes.new(type='ShaderNodeMath')
@@ -149,8 +172,15 @@ def create_node_group_ud08(image_texture_file):
         less_than_node.location = (400, 200)
         less_than_node.inputs[1].default_value = 1.5e-05  # Threshold value
 
-        mix_shader_node = node_group.nodes.new(type='ShaderNodeMixShader')
-        mix_shader_node.location = (600, 100)
+        mix_shader1 = node_group.nodes.new(type='ShaderNodeMixShader')
+        mix_shader1.location = (600, 100)
+
+        passable_group_tree = create_node_group_passable()
+        passable = node_group.nodes.new('ShaderNodeGroup')
+        passable.node_tree = passable_group_tree
+        passable.location = (-220, 80)
+
+        mix_shader2 = node_group.nodes.new('ShaderNodeMixShader'); mix_shader2.location = (240, 110)
 
         # Create links within the node group
         in_sock, out_sock = _get_group_io_sockets(node_group)
@@ -162,8 +192,13 @@ def create_node_group_ud08(image_texture_file):
         group_links.new(separate_color_node2.outputs['Green'], math_node2.inputs[0])
         group_links.new(separate_color_node2.outputs['Blue'], math_node3.inputs[0])
         group_links.new(in_sock['Non-Color Texture'], separate_color_node2.inputs['Color'])
-        group_links.new(in_sock['sRGB Texture'], diffuse_bsdf_node.inputs['Color'])
+        group_links.new(in_sock['sRGB Texture'], passable.inputs['Texture'])
         group_links.new(in_sock['Index 0 Color'], separate_color_node1.inputs['Color'])
+        group_links.new(in_sock['PassableDisplay'], passable.inputs['PassableDisplay'])
+
+        group_links.new(passable.outputs['Result'], diffuse_bsdf_node.inputs['Color'])
+        group_links.new(passable.outputs['Value'],  mix_shader2.inputs['Fac'])
+        group_links.new(passable.outputs['BSDF'],   mix_shader2.inputs[2])
 
         group_links.new(math_node1.outputs['Value'], abs_node1.inputs[0])
         group_links.new(math_node2.outputs['Value'], abs_node2.inputs[0])
@@ -173,11 +208,12 @@ def create_node_group_ud08(image_texture_file):
         group_links.new(abs_node3.outputs['Value'], add_node2.inputs[1])
         group_links.new(add_node1.outputs['Value'], add_node2.inputs[0])
         group_links.new(add_node2.outputs['Value'], less_than_node.inputs[0])
-        group_links.new(less_than_node.outputs['Value'], mix_shader_node.inputs['Fac'])
-        group_links.new(diffuse_bsdf_node.outputs['BSDF'], mix_shader_node.inputs[1])
-        group_links.new(transparent_bsdf_node.outputs['BSDF'], mix_shader_node.inputs[2])
+        group_links.new(less_than_node.outputs['Value'], mix_shader1.inputs['Fac'])
+        group_links.new(diffuse_bsdf_node.outputs['BSDF'], mix_shader1.inputs[1])
+        group_links.new(transparent_bsdf_node.outputs['BSDF'], mix_shader1.inputs[2])
         group_links.new(attr_node.outputs['Vector'],  diffuse_bsdf_node.inputs['Normal'])
-        group_links.new(mix_shader_node.outputs['Shader'], out_sock['Shader'])
+        group_links.new(mix_shader1.outputs['Shader'], mix_shader2.inputs[1])
+        group_links.new(mix_shader2.outputs['Shader'], out_sock['Shader'])
 
     return node_group
 
@@ -187,7 +223,7 @@ def create_material_with_node_group_ud08(material_name, image_texture_file, node
         # Create a new material for DXT5 DDS
         material = bpy.data.materials.new(name=material_name)
         material.use_nodes = True
-        material.blend_method = 'CLIP'  # Set blend mode to Alpha Clip
+        material.use_transparency_overlap = False
         nodes = material.node_tree.nodes
         links = material.node_tree.links
 
@@ -199,6 +235,14 @@ def create_material_with_node_group_ud08(material_name, image_texture_file, node
         group_node = nodes.new(type='ShaderNodeGroup')
         group_node.node_tree = node_group
         group_node.location = (0, 0)
+
+        # Attach driver so this material instance reads the scene flag
+        _attach_scene_flag_driver_to_group_input(
+            group_node,
+            input_name='PassableDisplay',
+            # choose which you prefer to drive:
+            use_id_prop=False  # False → Scene.passable_display_enabled, True → Scene["PassableDisplay"]
+        )
 
         # Add an Image Texture node
         image_texture_node = nodes.new(type='ShaderNodeTexImage')
@@ -230,6 +274,7 @@ def create_material_with_node_group_ud08(material_name, image_texture_file, node
         material = bpy.data.materials.new(name=material_name)
         material.use_nodes = True
         material.blend_method = 'CLIP'  # Set blend mode to Alpha Clip
+        material.use_transparency_overlap = False
         nodes = material.node_tree.nodes
         links = material.node_tree.links
 
@@ -247,6 +292,14 @@ def create_material_with_node_group_ud08(material_name, image_texture_file, node
         group_node = nodes.new(type='ShaderNodeGroup')
         group_node.node_tree = node_group
         group_node.location = (0, 0)
+
+        # Attach driver so this material instance reads the scene flag
+        _attach_scene_flag_driver_to_group_input(
+            group_node,
+            input_name='PassableDisplay',
+            # choose which you prefer to drive:
+            use_id_prop=False  # False → Scene.passable_display_enabled, True → Scene["PassableDisplay"]
+        )
 
         # Add other nodes outside the group
 

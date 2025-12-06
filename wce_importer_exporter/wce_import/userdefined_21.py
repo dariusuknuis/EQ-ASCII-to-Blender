@@ -18,6 +18,10 @@ def create_node_group_ud21():
     _add_group_socket(node_group, 'sRGB Texture',       'NodeSocketColor', is_input=True)
     _add_group_socket(node_group, 'PassableDisplay',    'NodeSocketFloat', is_input=True)
     _add_group_socket(node_group, 'Shader',             'NodeSocketShader', is_input=False)
+
+    for item in node_group.interface.items_tree:
+        if item.name == "PassableDisplay":
+            item.hide_value = True
     
     # Create a Diffuse BSDF node inside the node group
     diffuse_node = node_group.nodes.new(type='ShaderNodeBsdfDiffuse')
@@ -59,7 +63,6 @@ def create_material_with_node_group_ud21(material_name, texture_path, node_group
     # Create a new material
     material = bpy.data.materials.new(name=material_name)
     material.use_nodes = True
-    material.blend_method = 'BLEND'
     material.use_transparency_overlap = False
     nodes = material.node_tree.nodes
     links = material.node_tree.links

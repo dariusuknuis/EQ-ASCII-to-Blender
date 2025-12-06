@@ -70,8 +70,8 @@ def split_vertices_by_uv(mesh_obj):
     bm.faces.ensure_lookup_table()
 
     # remember existing custom normals per loop
-    mesh.calc_normals_split()
-    saved_normals = [loop.normal.copy() for loop in mesh.loops]
+    # mesh.calc_normals_split()
+    # saved_normals = [loop.normal.copy() for loop in mesh.loops]
 
     uv_layer = bm.loops.layers.uv.active
     if not uv_layer:
@@ -104,8 +104,7 @@ def split_vertices_by_uv(mesh_obj):
     # write back & reapply normals
     bm.to_mesh(mesh)
     bm.free()
-    mesh.use_auto_smooth = True
-    mesh.normals_split_custom_set(saved_normals)
+    # mesh.update()
 
     print(f"✅ Finished UV‑aware split for: {mesh_obj.name}")
     
@@ -116,12 +115,20 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
     #     return
     mesh = mesh_obj.data
 
+    # Save POINT vertex colors (if present)
     col_attr = mesh.color_attributes.get("Color")
     if col_attr and col_attr.domain == 'POINT':
         saved_colors = [tuple(el.color) for el in col_attr.data]
     else:
         saved_colors = []
     print(f"[DEBUG] saved_colors count = {len(saved_colors)}")
+
+    # Save POINT vertex_normals (FLOAT_VECTOR) if present
+    vn_attr = mesh.attributes.get("vertex_normals")
+    saved_vertex_normals = []
+    if vn_attr and vn_attr.domain == 'POINT' and vn_attr.data_type == 'FLOAT_VECTOR':
+        saved_vertex_normals = [el.vector.copy() for el in vn_attr.data]
+    print(f"[DEBUG] saved_vertex_normals count = {len(saved_vertex_normals)}")
 
     bm = bmesh.new()
     bm.from_mesh(mesh)
@@ -135,7 +142,7 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
         'vertices': [],
         'faces': [],
         'uvs': [],
-        'normals': [],
+        'vertex_normals': saved_vertex_normals,
         'vertex_materials': [],
         'passable': [],
         'face_materials': [],
@@ -180,16 +187,16 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
             mesh_data['uvs'].append([loop[uv_layer].uv.copy() for loop in face.loops])
 
     # Collect and store custom split normals (before reindexing)
-    mesh.calc_normals_split()
-    mesh_data['normals'] = []
+    # mesh.calc_normals_split()
+    # mesh_data['normals'] = []
 
     # Access split normals from the mesh, not bmesh
-    for poly in mesh.polygons:
-        face_normals = []
-        for loop_index in poly.loop_indices:
-            loop = mesh.loops[loop_index]
-            face_normals.append(loop.normal.copy())
-        mesh_data['normals'].append(face_normals)
+    # for poly in mesh.polygons:
+    #     face_normals = []
+    #     for loop_index in poly.loop_indices:
+    #         loop = mesh.loops[loop_index]
+    #         face_normals.append(loop.normal.copy())
+    #     mesh_data['normals'].append(face_normals)
 
     # print("\nCustom Split Normals Before Reindexing:")
     # for loop in normals_before:
@@ -230,29 +237,32 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
     # 🔹 Sort faces, passable values, and optionally UVs by face material index
     if has_uvs:
         sorted_faces_data = sorted(enumerate(zip(mesh_data['faces'], mesh_data['face_materials'],
-                                                mesh_data['passable'], mesh_data['uvs'], mesh_data['normals'])),
+                                                mesh_data['passable'], mesh_data['uvs'])),
                                 key=lambda x: x[1][1])  # Sort by material index
 
         old_to_new_face_index = {original_idx: new_idx for new_idx, (original_idx, _) in enumerate(sorted_faces_data)}
 
         # Extract the sorted lists
-        mesh_data['faces'] = [face for _, (face, _, _, _, _) in sorted_faces_data]
-        mesh_data['face_materials'] = [mat for _, (_, mat, _, _, _) in sorted_faces_data]
-        mesh_data['passable'] = [pas for _, (_, _, pas, _, _) in sorted_faces_data]
-        mesh_data['uvs'] = [uvs for _, (_, _, _, uvs, _) in sorted_faces_data]
-        mesh_data['normals'] = [normals for _, (_, _, _, _, normals) in sorted_faces_data]
+        mesh_data['faces'] = [face for _, (face, _, _, _) in sorted_faces_data]
+        mesh_data['face_materials'] = [mat for _, (_, mat, _, _) in sorted_faces_data]
+        mesh_data['passable'] = [pas for _, (_, _, pas, _) in sorted_faces_data]
+        mesh_data['uvs'] = [uvs for _, (_, _, _, uvs) in sorted_faces_data]
     else:
         sorted_faces_data = sorted(enumerate(zip(mesh_data['faces'], mesh_data['face_materials'],
-                                                mesh_data['passable'], mesh_data['normals'])),
+                                                mesh_data['passable'])),
                                 key=lambda x: x[1][1])  # Sort by material index
 
         old_to_new_face_index = {original_idx: new_idx for new_idx, (original_idx, _) in enumerate(sorted_faces_data)}
 
         # Extract the sorted lists without UVs
-        mesh_data['faces'] = [face for _, (face, _, _, _) in sorted_faces_data]
-        mesh_data['face_materials'] = [mat for _, (_, mat, _, _) in sorted_faces_data]
-        mesh_data['passable'] = [pas for _, (_, _, pas, _) in sorted_faces_data]
-        mesh_data['normals'] = [normals for _, (_, _, _, normals) in sorted_faces_data]
+        mesh_data['faces'] = [face for _, (face, _, _) in sorted_faces_data]
+        mesh_data['face_materials'] = [mat for _, (_, mat, _) in sorted_faces_data]
+        mesh_data['passable'] = [pas for _, (_, _, pas) in sorted_faces_data]
+
+    bm.free()
+
+    # Save material slots BEFORE clear_geometry()
+    saved_mats = list(mesh.materials[:])  # copies slot reference
 
     # Step 4: Clear the original mesh data
     mesh.clear_geometry()
@@ -262,28 +272,29 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
     mesh.from_pydata(new_vertices, [], mesh_data['faces'])
     mesh.update()
 
+    # Restore material slots BEFORE you reassign polygon.material_index
+    mesh.materials.clear()
+    for m in saved_mats:
+        mesh.materials.append(m)
+
     for poly in mesh.polygons:
         poly.use_smooth = True
 
     # Step 6: Reapply UVs, normals, vertex materials, material index, and passable flags
     if has_uvs and 'uvs' in mesh_data and mesh_data['uvs']:
-        uvlayer = mesh.uv_layers.new(name=mesh_obj.name + "_uv")
+        uvlayer = mesh.uv_layers.new(name="UVMap")
         for i, poly in enumerate(mesh.polygons):
             for j, loop_index in enumerate(poly.loop_indices):
                 uv = mesh_data['uvs'][i][j]
                 uvlayer.data[loop_index].uv = uv
 
-    # Step 7: Reapply custom split normals (reorder them based on new vertex indices)
-    if 'normals' in mesh_data and mesh_data['normals']:
-        mesh.use_auto_smooth = True
-        reordered_normals = []
-
-        for i, poly in enumerate(mesh.polygons):
-            for j, loop_index in enumerate(poly.loop_indices):
-                normal = mesh_data['normals'][i][j]  # Extract normal
-                reordered_normals.append(normal)
-
-        mesh.normals_split_custom_set(reordered_normals)
+    # Step 7: Reapply vertex normals (reorder them based on new vertex indices)
+    if 'vertex_normals' in mesh_data and mesh_data['vertex_normals']:
+        vnorm_attr = mesh.attributes.get("vertex_normals")
+        if not vnorm_attr or vnorm_attr.domain != 'POINT' or vnorm_attr.data_type != 'FLOAT_VECTOR':
+            vnorm_attr = mesh.attributes.new(name="vertex_normals", type='FLOAT_VECTOR', domain='POINT')
+        for new_i, old_i in enumerate(sorted_vertex_indices):
+            vnorm_attr.data[new_i].vector = mesh_data['vertex_normals'][old_i]
 
     if mesh_data['vertex_colors']:
         dst = mesh.attributes.new(name="Color", type='FLOAT_COLOR', domain='POINT')
@@ -320,7 +331,7 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
                     group = mesh_obj.vertex_groups.new(name=group_name)
                 group.add([new_index], weight, 'ADD')
 
-    mesh.calc_normals_split()
+    # mesh.calc_normals_split()
     # normals_after = []
     # for loop in mesh.loops:
     #     normals_after.append((loop.vertex_index, loop.normal.copy()))
@@ -333,56 +344,100 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
 
     # print(f"Reindexed and modified the object: {mesh_obj.name}")
 
-    # Reindex MESHOPS within the same function
+    # Reindex MESHOPS within the same function (symbolic + legacy) using pattern matching to avoid tuple-size warnings.
+    def _parse_meshop(line: str):
+        raw = line.rstrip("\n")
+        s = raw.strip()
+        if not s.startswith("MESHOP"):
+            return ("RAW", raw)
+
+        parts = s.split()
+
+        # Symbolic forms
+        if len(parts) >= 2 and parts[1] in {"SW", "FA", "VA", "EL"}:
+            kind = parts[1]
+            try:
+                if kind == "SW" and len(parts) == 5:
+                    # MESHOP SW <face> <param1> <vertex>
+                    return ("SW", int(parts[2]), int(parts[3]), int(parts[4]))
+                if kind == "FA" and len(parts) == 3:
+                    # MESHOP FA <face>
+                    return ("FA", int(parts[2]))
+                if kind == "VA" and len(parts) == 3:
+                    # MESHOP VA <vertex>
+                    return ("VA", int(parts[2]))
+                if kind == "EL" and len(parts) == 3:
+                    # MESHOP EL <offset>
+                    return ("EL", float(parts[2]))
+                return ("UNKNOWN", raw)
+            except Exception:
+                return ("UNKNOWN", raw)
+
+        # Legacy numeric: MESHOP <i1> <i2> <dist> <i3> <type>
+        if len(parts) == 6:
+            _, i1, i2, dist, i3, typ = parts
+            try:
+                return ("NUMERIC", int(i1), int(i2), float(dist), int(i3), int(typ))
+            except Exception:
+                return ("UNKNOWN", raw)
+
+        return ("UNKNOWN", raw)
+
     meshops_name = f"{mesh_obj.name}_MESHOPS"
     if meshops_name in bpy.data.texts:
         meshops_text = bpy.data.texts[meshops_name]
         updated_lines = []
 
         for line in meshops_text.lines:
-            if not line.body.strip().startswith("MESHOP"):
-                updated_lines.append(line.body)
-                continue
+            parsed = _parse_meshop(line.body)
 
-            parts = line.body.strip().split()
-            if len(parts) != 6:
-                print(f"Invalid MESHOP line: {line.body}")
-                updated_lines.append(line.body)
-                continue
+            match parsed:
+                case ("RAW", raw) | ("UNKNOWN", raw):
+                    updated_lines.append(raw)
 
-            _, idx1, idx2, distance, idx3, op_type = parts
+                case ("SW", i_face, param1, i_vert):
+                    new_face = old_to_new_face_index.get(i_face, i_face)
+                    new_vert = old_to_new_vertex_index.get(i_vert, i_vert)
+                    updated_lines.append(f"\t\tMESHOP SW {new_face} {param1} {new_vert}")
 
-            idx1 = int(idx1)
-            idx2 = int(idx2)
-            idx3 = int(idx3)
-            op_type = int(op_type)
+                case ("FA", i_face):
+                    new_face = old_to_new_face_index.get(i_face, i_face)
+                    updated_lines.append(f"\t\tMESHOP FA {new_face}")
 
-            # Apply reindexing based on MESHOP type
-            if op_type == 1:
-                face_idx = old_to_new_face_index.get(idx1, idx1)
-                dest_vertex_idx = old_to_new_vertex_index.get(idx2, idx2)
-                updated_line = f"MESHOP {face_idx} {dest_vertex_idx} {distance} {idx3} {op_type}"
+                case ("VA", i_vert):
+                    new_vert = old_to_new_vertex_index.get(i_vert, i_vert)
+                    updated_lines.append(f"\t\tMESHOP VA {new_vert}")
 
-            elif op_type == 2:
-                face_idx = old_to_new_face_index.get(idx1, idx1)
-                updated_line = f"MESHOP {face_idx} {idx2} {distance} {idx3} {op_type}"
+                case ("EL", offset):
+                    updated_lines.append(f"\t\tMESHOP EL {offset:.8e}")
 
-            elif op_type == 3:
-                vertex_idx = old_to_new_vertex_index.get(idx1, idx1)
-                updated_line = f"MESHOP {vertex_idx} {idx2} {distance} {idx3} {op_type}"
+                case ("NUMERIC", i1, i2, dist, i3, typ):
+                    if typ == 1:
+                        # SW-like: remap face & vertex
+                        new_i1 = old_to_new_face_index.get(i1, i1)
+                        new_i2 = old_to_new_vertex_index.get(i2, i2)
+                        updated_lines.append(f"\t\tMESHOP {new_i1} {new_i2} {dist:.8e} {i3} {typ}")
+                    elif typ == 2:
+                        # FA-like: remap face
+                        new_i1 = old_to_new_face_index.get(i1, i1)
+                        updated_lines.append(f"\t\tMESHOP {new_i1} {i2} {dist:.8e} {i3} {typ}")
+                    elif typ == 3:
+                        # VA-like: remap vertex
+                        new_i1 = old_to_new_vertex_index.get(i1, i1)
+                        updated_lines.append(f"\t\tMESHOP {new_i1} {i2} {dist:.8e} {i3} {typ}")
+                    elif typ == 4:
+                        # EL / other — leave numeric
+                        updated_lines.append(f"\t\tMESHOP {i1} {i2} {dist:.8e} {i3} {typ}")
+                    else:
+                        updated_lines.append(line.body)
 
-            elif op_type == 4:
-                updated_line = f"MESHOP {idx1} {idx2} {distance} {idx3} {op_type}"
+                case _:
+                    updated_lines.append(line.body)
 
-            else:
-                updated_line = line.body
-
-            updated_lines.append(updated_line)
-
-        # Clear and update MESHOPS text block
+        # Clear and update the text block
         meshops_text.clear()
         for updated_line in updated_lines:
-            meshops_text.write(updated_line + "\n")
+            meshops_text.write(updated_line + ("\n" if not updated_line.endswith("\n") else ""))
 
 def reindex_faces_by_material(mesh_obj):
     """

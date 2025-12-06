@@ -41,6 +41,8 @@ def create_node_group_passable(name: str = "Passable"):
     _add_group_socket(ng, 'Value',           'NodeSocketFloat',  is_input=False)
     _add_group_socket(ng, 'BSDF',            'NodeSocketShader', is_input=False)
 
+    group_in.outputs["Texture"].default_value = (1.0, 1.0, 1.0, 1.0)
+
     # --- Nodes (as in your screenshot) ---
     # Attribute PASSABLE
     n_attr = ng.nodes.new("ShaderNodeAttribute")
@@ -101,14 +103,31 @@ def create_node_group_passable(name: str = "Passable"):
 
 
 def _ensure_io(ng: bpy.types.NodeTree):
-    """Make sure the group has the expected sockets (safe on existing groups)."""
-    want_in = {"Texture": "NodeSocketColor", "PassableDisplay": "NodeSocketFloat"}
+    """
+    Blender 4.x/5.x-safe:
+    Ensure the group interface has the expected input/output sockets.
+    Does *not* modify UI visibility, labels, defaults, etc.
+    """
+    want_in  = {"Texture": "NodeSocketColor", "PassableDisplay": "NodeSocketFloat"}
     want_out = {"Result": "NodeSocketColor", "Value": "NodeSocketFloat", "BSDF": "NodeSocketShader"}
+
+    # Collect existing sockets by direction
+    existing_in  = set()
+    existing_out = set()
+
+    for item in ng.interface.items_tree:
+        io = getattr(item, "in_out", None)
+        if io == 'INPUT':
+            existing_in.add(item.name)
+        elif io == 'OUTPUT':
+            existing_out.add(item.name)
+
+    # Create missing input sockets
     for name, stype in want_in.items():
-        if name not in ng.inputs:
-            ng.inputs.new(stype, name)
-    if "PassableDisplay" in ng.inputs:
-        ng.inputs["PassableDisplay"].default_value = ng.inputs["PassableDisplay"].default_value or 0.0
+        if name not in existing_in:
+            ng.interface.new_socket(name=name, in_out='INPUT', socket_type=stype)
+
+    # Create missing output sockets
     for name, stype in want_out.items():
-        if name not in ng.outputs:
-            ng.outputs.new(stype, name)
+        if name not in existing_out:
+            ng.interface.new_socket(name=name, in_out='OUTPUT', socket_type=stype)

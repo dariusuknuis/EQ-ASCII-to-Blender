@@ -192,6 +192,7 @@ def apply_vertex_normal_geo_node(
 
         # Assign the group every time (idempotent)
         mod.node_group = ng
+        mod.show_viewport = False
 
         # Optional: ensure the vertex attribute exists (creates empty layer if missing)
         _ensure_float_vector_layer(obj.data, "vertex_normals")

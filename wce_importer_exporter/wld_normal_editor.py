@@ -1,8 +1,10 @@
 import bpy
 import bmesh
 from bpy.props import FloatVectorProperty
+from mathutils import Vector
 
 LAYER_NAME = "vertex_normals"
+_UPDATING = False
 
 # ---------- helpers ----------
 
@@ -62,25 +64,68 @@ def _write_active_vert_value(context, vec3):
     bmesh.update_edit_mesh(me, loop_triangles=False, destructive=False)
     return True
 
-# ---------- properties ----------
+def _sync_ui_from_vec(context, vec: Vector):
+    """Update both UI fields from a vector (widget gets normalized preview)."""
+    global _UPDATING
+    try:
+        _UPDATING = True
+        # Raw numeric boxes reflect exact stored value
+        context.scene.vertex_normals_vec_xyz = vec[:]
+        # Direction widget shows normalized (if non-zero), else fallback +Z
+        if vec.length_squared > 0.0:
+            context.scene.vertex_normals_edit_vec = vec.normalized()
+        else:
+            context.scene.vertex_normals_edit_vec = (0.0, 0.0, 1.0)
+    finally:
+        _UPDATING = False
 
-def _update_vec(self, context):
-    # On change in UI, push to active vertex if possible
-    if not _in_edit_vertex_mode(context):
+# ---------- properties (two synced fields: widget + raw xyz) ----------
+
+def _update_vec_widget(self, context):
+    """Dragged the sphere: write normalized direction; sync raw boxes."""
+    global _UPDATING
+    if _UPDATING or not _in_edit_vertex_mode(context):
         return
-    _write_active_vert_value(context, tuple(context.scene.vertex_normals_edit_vec))
+    w = Vector(context.scene.vertex_normals_edit_vec)
+    if w.length_squared == 0.0:
+        # Avoid writing zero from the widget; keep previous
+        return
+    w.normalize()
+    _write_active_vert_value(context, w[:])
+    _sync_ui_from_vec(context, w)
+
+def _update_vec_xyz(self, context):
+    """Edited raw XYZ boxes: write exact values; widget shows normalized preview."""
+    global _UPDATING
+    if _UPDATING or not _in_edit_vertex_mode(context):
+        return
+    v = Vector(context.scene.vertex_normals_vec_xyz)
+    _write_active_vert_value(context, v[:])
+    _sync_ui_from_vec(context, v)
 
 def register_props():
-    bpy.types.Scene.vertex_normals_edit_vec = FloatVectorProperty(
-        name="vertex_normals",
-        description=f"Edit value for '{LAYER_NAME}' on the active vertex",
+    s = bpy.types.Scene
+    # Direction widget (unit preview)
+    s.vertex_normals_edit_vec = FloatVectorProperty(
+        name="Direction",
+        description=f"Normalized direction preview for '{LAYER_NAME}' (drag to rotate)",
         size=3,
         subtype='DIRECTION',
         default=(0.0, 0.0, 1.0),
-        update=_update_vec,
+        update=_update_vec_widget,
+    )
+    # Raw XYZ numeric boxes (exact stored values; no normalization)
+    s.vertex_normals_vec_xyz = FloatVectorProperty(
+        name="Vector XYZ",
+        description=f"Raw values stored in '{LAYER_NAME}' (no normalization applied)",
+        size=3,
+        subtype='XYZ',
+        default=(0.0, 0.0, 1.0),
+        update=_update_vec_xyz,
     )
 
 def unregister_props():
+    del bpy.types.Scene.vertex_normals_vec_xyz
     del bpy.types.Scene.vertex_normals_edit_vec
 
 # ---------- operators ----------
@@ -160,13 +205,13 @@ class VIEW3D_PT_vertex_layer_normals(bpy.types.Panel):
 
         bm, layer = _get_bm_and_layer(me)
         row = layout.row()
-        if layer:
-            row.label(text=f"Layer: '{LAYER_NAME}' ✓")
-        else:
-            row.label(text=f"Layer: '{LAYER_NAME}' ✗")
+        row.label(text=f"Layer: '{LAYER_NAME}' " + ("✓" if layer else "✗"))
 
         col = layout.column(align=True)
-        col.prop(context.scene, "vertex_normals_edit_vec", text="Value")
+        # 1) direction widget (normalized preview)
+        col.prop(context.scene, "vertex_normals_edit_vec", text="Direction")
+        # 2) raw numeric vector fields (exact)
+        col.prop(context.scene, "vertex_normals_vec_xyz", text="Vector XYZ")
 
         row = layout.row(align=True)
         row.operator("mesh.vn_load_from_active", icon='EYEDROPPER')

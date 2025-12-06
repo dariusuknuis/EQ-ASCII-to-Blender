@@ -3,6 +3,8 @@
 import bpy
 import os
 from .material_utils import add_texture_coordinate_and_mapping_nodes, _add_group_socket, _get_group_io_sockets
+from .material_utils import _attach_scene_flag_driver_to_group_input
+from .passable_nodegroup import create_node_group_passable
 
 def create_node_group_ud19():
     # Create the node group
@@ -13,8 +15,13 @@ def create_node_group_ud19():
     group_input.location = (0, 0)
     group_output = node_group.nodes.new('NodeGroupOutput')
     group_output.location = (400, 0)
-    _add_group_socket(node_group, 'sRGB Texture', 'NodeSocketColor', is_input=True)
-    _add_group_socket(node_group, 'Shader',       'NodeSocketShader', is_input=False)
+    _add_group_socket(node_group, 'sRGB Texture',       'NodeSocketColor', is_input=True)
+    _add_group_socket(node_group, 'PassableDisplay',    'NodeSocketFloat', is_input=True)
+    _add_group_socket(node_group, 'Shader',             'NodeSocketShader', is_input=False)
+
+    for item in node_group.interface.items_tree:
+        if item.name == "PassableDisplay":
+            item.hide_value = True
     
     # Create a Diffuse BSDF node inside the node group
     diffuse_node = node_group.nodes.new(type='ShaderNodeBsdfDiffuse')
@@ -31,12 +38,26 @@ def create_node_group_ud19():
         except:
             pass
 
+    passable_group_tree = create_node_group_passable()
+    passable = node_group.nodes.new('ShaderNodeGroup')
+    passable.node_tree = passable_group_tree
+    passable.location = (-220, 80)
+
+    # Create Mix Shader node
+    mix_shader = node_group.nodes.new('ShaderNodeMixShader')
+    mix_shader.location = (200, 0)
+
     # Create links within the node group
     in_sock, out_sock = _get_group_io_sockets(node_group)
     group_links = node_group.links
-    group_links.new(in_sock['sRGB Texture'], diffuse_node.inputs['Color'])
+    group_links.new(in_sock['sRGB Texture'], passable.inputs['Texture'])
+    group_links.new(in_sock['PassableDisplay'], passable.inputs['PassableDisplay'])
+    group_links.new(passable.outputs['Result'], diffuse_node.inputs['Color'])
+    group_links.new(passable.outputs['Value'],  mix_shader.inputs['Fac'])
+    group_links.new(passable.outputs['BSDF'],   mix_shader.inputs[2])
     group_links.new(attr_node.outputs['Vector'], diffuse_node.inputs['Normal'])
-    group_links.new(diffuse_node.outputs['BSDF'], out_sock['Shader'])
+    group_links.new(diffuse_node.outputs['BSDF'], mix_shader.inputs[1])
+    group_links.new(mix_shader.outputs['Shader'], out_sock['Shader'])
 
     return node_group
 
@@ -44,6 +65,7 @@ def create_material_with_node_group_ud19(material_name, texture_path, node_group
     # Create a new material
     material = bpy.data.materials.new(name=material_name)
     material.use_nodes = True
+    material.use_transparency_overlap = False
     nodes = material.node_tree.nodes
     links = material.node_tree.links
 
@@ -55,6 +77,14 @@ def create_material_with_node_group_ud19(material_name, texture_path, node_group
     group_node = nodes.new(type='ShaderNodeGroup')
     group_node.node_tree = node_group
     group_node.location = (0, 0)
+
+    # Attach driver so this material instance reads the scene flag
+    _attach_scene_flag_driver_to_group_input(
+        group_node,
+        input_name='PassableDisplay',
+        # choose which you prefer to drive:
+        use_id_prop=False  # False → Scene.passable_display_enabled, True → Scene["PassableDisplay"]
+    )
 
     # Add an Image Texture node
     image_texture_node = nodes.new(type='ShaderNodeTexImage')

@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Attach",
+            "name": "Python: Attach to Blender",
             "type": "python",
             "request": "attach",
             "connect": {

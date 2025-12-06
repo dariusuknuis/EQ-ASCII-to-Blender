@@ -1,5 +1,7 @@
 import bpy
 from .material_utils import _add_group_socket, _get_group_io_sockets
+from .material_utils import _attach_scene_flag_driver_to_group_input
+from .passable_nodegroup import create_node_group_passable
 
 def create_node_group_transparent():
     # Check if the node group already exists, and return it if it does
@@ -12,7 +14,12 @@ def create_node_group_transparent():
     # Add Group Output node to the node group
     group_output = node_group.nodes.new('NodeGroupOutput')
     group_output.location = (600, 0)
-    _add_group_socket(node_group, 'Shader', 'NodeSocketShader', is_input=False)
+    _add_group_socket(node_group, 'PassableDisplay', 'NodeSocketFloat', is_input=True)
+    _add_group_socket(node_group, 'Shader',          'NodeSocketShader', is_input=False)
+
+    for item in node_group.interface.items_tree:
+        if item.name == "PassableDisplay":
+            item.hide_value = True
 
     # Create nodes inside the node group
     # Add a Principled BSDF node
@@ -35,11 +42,23 @@ def create_node_group_transparent():
         except:
             pass
 
+    passable_group_tree = create_node_group_passable()
+    passable = node_group.nodes.new('ShaderNodeGroup')
+    passable.node_tree = passable_group_tree
+    passable.location = (-220, 80)
+
+    mix_shader = node_group.nodes.new('ShaderNodeMixShader'); mix_shader.location = (240, 110)
+
     # Create links within the node group
-    _, out_sock = _get_group_io_sockets(node_group)
+    in_sock, out_sock = _get_group_io_sockets(node_group)
     group_links = node_group.links
+    group_links.new(in_sock['PassableDisplay'], passable.inputs['PassableDisplay'])
+    group_links.new(passable.outputs['Result'], principled_bsdf_node.inputs['Base Color'])
+    group_links.new(passable.outputs['Value'],  mix_shader.inputs['Fac'])
+    group_links.new(passable.outputs['BSDF'],   mix_shader.inputs[2])
     group_links.new(attr_node.outputs['Vector'], principled_bsdf_node.inputs['Normal'])
-    group_links.new(principled_bsdf_node.outputs['BSDF'], out_sock['Shader'])
+    group_links.new(principled_bsdf_node.outputs['BSDF'], mix_shader.inputs[1])
+    group_links.new(mix_shader.outputs['Shader'], out_sock['Shader'])
 
     return node_group
 
@@ -54,8 +73,7 @@ def create_material_with_node_group_transparent(material_name, node_group):
     # Create a new material
     material = bpy.data.materials.new(name=material_name)
     material.use_nodes = True
-    material.blend_method = 'BLEND'  # Set blend mode to Alpha Blend
-    
+    material.use_transparency_overlap = False
     nodes = material.node_tree.nodes
     links = material.node_tree.links
 
@@ -67,6 +85,14 @@ def create_material_with_node_group_transparent(material_name, node_group):
     group_node = nodes.new(type='ShaderNodeGroup')
     group_node.node_tree = node_group
     group_node.location = (0, 0)
+
+    # Attach driver so this material instance reads the scene flag
+    _attach_scene_flag_driver_to_group_input(
+        group_node,
+        input_name='PassableDisplay',
+        # choose which you prefer to drive:
+        use_id_prop=False  # False → Scene.passable_display_enabled, True → Scene["PassableDisplay"]
+    )
 
     # Add a Material Output node
     material_output_node = nodes.new(type='ShaderNodeOutputMaterial')
