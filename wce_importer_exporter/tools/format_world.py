@@ -1,7 +1,7 @@
 # Tools/format_world.py
 import bpy, bmesh, re
 from mathutils import Matrix, Vector
-from ..core.bmesh_utils import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms 
+from ..core.bmesh_utils import bmesh_from_mesh, mesh_from_bmesh 
 from ..core.bmesh_utils import rearrange_uvs, merge_verts_by_attrs
 
 def run_format_world():
@@ -31,10 +31,10 @@ def run_format_world():
         return {'CANCELLED'}
     
     for mesh in meshes:
-        bm = bmesh_with_split_norms(mesh)
+        bm = bmesh_from_mesh(mesh)
         rearrange_uvs(bm)
         merge_verts_by_attrs(bm)
-        mesh_from_bmesh_with_split_norms(bm, mesh)
+        mesh_from_bmesh(bm, mesh)
         for e in mesh.data.edges:
             e.use_edge_sharp = False
 
@@ -63,13 +63,6 @@ def run_format_world():
         joined.location = Vector((0.0, 0.0, 0.0))
 
     bm = bmesh.new(); bm.from_mesh(joined.data)
-    joined.data.calc_normals_split()
-    joined.data.use_auto_smooth = True
-
-    ln_layer = bm.loops.layers.float_vector.new("orig_normals")
-    loops = (l for f in bm.faces for l in f.loops)
-    for loop in loops:
-        loop[ln_layer] = joined.data.loops[loop.index].normal
 
     rearrange_uvs(bm)
     merge_verts_by_attrs(bm)
@@ -81,13 +74,6 @@ def run_format_world():
     mesh = joined.data
     for poly in mesh.polygons:
         poly.use_smooth = True
-    mesh.use_auto_smooth = True
-
-    ln_attr = mesh.attributes.get("orig_normals")
-    if ln_attr:
-        custom_nors = [ Vector(cd.vector) for cd in ln_attr.data ]
-        mesh.normals_split_custom_set(custom_nors)
-        mesh.attributes.remove(ln_attr)
 
     # Clean up unwanted objects
     # Delete empty named WORLD_BOUNDS

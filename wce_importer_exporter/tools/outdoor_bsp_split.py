@@ -8,7 +8,7 @@ from .finalize_region_meshes import finalize_region_meshes
 from ..core.cleanup import cleanup_mesh_geometry
 from ..core.math_helpers import aabb_intersects, aabb_mesh_local, aabb_mesh_world, aabb_bmesh_local
 from ..core.math_helpers import compute_bmesh_volume_centroid, point_inside_convex, point_in_face_polygon
-from ..core.bmesh_utils import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms
+from ..core.bmesh_utils import bmesh_from_mesh, mesh_from_bmesh
 
 # ------------------------------------------------------------
 # --- Standard Helper Functions
@@ -227,18 +227,12 @@ def create_mesh_object_from_bmesh(bm, name, original_obj, pending_objects):
         if key != "_RNA_UI":
             new_obj[key] = original_obj[key]
 
-    mesh_from_bmesh_with_split_norms(bm, new_obj)
+    mesh_from_bmesh(bm, new_obj)
 
     # --- Set vertex color layer as active (or it doesn't display automatically) ---
     col_attr = me.color_attributes.get("Color")
     if col_attr:
         me.color_attributes.active_color = col_attr
-
-    # add PASSABLE geo‑node modifier if available
-    if "PASSABLE" in bpy.data.node_groups:
-        gn_mod = new_obj.modifiers.new(name="PASSABLE", type='NODES')
-        gn_mod.node_group = bpy.data.node_groups["PASSABLE"]
-        gn_mod.show_viewport = False
 
     # --- bake original_obj's world matrix into the mesh data ---
     me.transform(original_obj.matrix_world)
@@ -747,18 +741,8 @@ def run_outdoor_bsp_split(target_size=282.0):
         bounds_min, bounds_max = aabb_mesh_local(src)
         vol_min, vol_max = normalize_bounds(bounds_min, bounds_max, target_size)
 
-        bm = bmesh_with_split_norms(src)
+        bm = bmesh_from_mesh(src)
         bm_vol = create_world_volume(vol_min, vol_max)
-
-        # --- Collect custom split normals from source mesh ---
-        src.data.calc_normals_split()
-        src.data.use_auto_smooth = True
-
-        # --- Create generic loop float BMesh layer for split normals
-        ln_layer = bm.loops.layers.float_vector.new("orig_normals")
-        loops = (l for f in bm.faces for l in f.loops)
-        for loop in loops:
-            loop[ln_layer] = src.data.loops[loop.index].normal
         
         region_centroids = {}
 

@@ -44,7 +44,7 @@ def mesh_boundary_cleanup(bm, thin_thresh=0.001, angle_tol=1e-3):
     In-place on `bm`:
       1) Dissolve vertices on any face whose thinness ratio ≤ thin_thresh,
          but only those vertices that have exactly 2 incident edges.
-      2) Rebuild normals & lookup tables.
+      2) Rebuild lookup tables.
       3) Dissolve any boundary-vert with exactly 2 boundary edges that are nearly colinear
          (dot(d1,d2) ≈ -1 within angle_tol).
     Returns the modified bm.
@@ -72,7 +72,7 @@ def mesh_boundary_cleanup(bm, thin_thresh=0.001, angle_tol=1e-3):
                                  use_face_split=False)
 
     # ——— Refresh normals & tables ———
-    bm.normal_update()
+    # bm.normal_update()
     bm.verts.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
 

@@ -3,7 +3,7 @@ from mathutils import Vector
 from mathutils.kdtree import KDTree
 from ..core.cleanup import cleanup_mesh_geometry, mesh_boundary_cleanup
 from ..core.math_helpers import aabb_intersects, aabb_mesh_world
-from ..core.bmesh_utils import bmesh_with_split_norms, mesh_from_bmesh_with_split_norms, merge_verts_by_attrs
+from ..core.bmesh_utils import bmesh_from_mesh, mesh_from_bmesh, merge_verts_by_attrs
 
 def collapse_vertices_across_objects(objs, threshold=0.05):
     eps = 1e-6
@@ -17,7 +17,7 @@ def collapse_vertices_across_objects(objs, threshold=0.05):
         if ob.type != 'MESH':
             continue
 
-        bm = bmesh_with_split_norms(ob)
+        bm = bmesh_from_mesh(ob)
         bm.verts.ensure_lookup_table()
         bm_by_obj[ob] = bm
 
@@ -100,22 +100,21 @@ def collapse_vertices_across_objects(objs, threshold=0.05):
             if v1.is_valid and v2.is_valid:
                 bmesh.ops.pointmerge(bm, verts=[v1, v2], merge_co=v1.co)
 
-    # 5) Write back and restore split normals
+    # 5) Write back
     for ob, bm in bm_by_obj.items():
-        mesh_from_bmesh_with_split_norms(bm, ob)
+        mesh_from_bmesh(bm, ob)
 
 def region_mesh_cleanup(objs):
     for ob in objs:
-        bm = bmesh_with_split_norms(ob)
+        bm = bmesh_from_mesh(ob)
         mesh_boundary_cleanup(bm)
         cleanup_mesh_geometry(bm)
         mesh_boundary_cleanup(bm)
-        mesh_from_bmesh_with_split_norms(bm, ob)
+        mesh_from_bmesh(bm, ob)
 
 def split_edges_to_snap_verts(objs, threshold=1e-4):
     """
     For each pair A,B in objs, split B's edges wherever any A-vertex projects onto them.
-    Preserves *all* splits and interpolates normals.
     """
     # 1) cache all world‐space vertex positions for quick lookup
     world_verts = {
@@ -124,7 +123,7 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
     }
 
     for ob_B in objs:
-        bm = bmesh_with_split_norms(ob_B)
+        bm = bmesh_from_mesh(ob_B)
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
 
@@ -153,8 +152,9 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
                     if 0.0 < t < 1.0:
                         proj = w1 + seg * t
                         if (proj - p).length <= threshold:
-                            interp_n = (v1.normal * (1 - t) + v2.normal * t).normalized()
-                            edge_hits.setdefault(edge, []).append((t, interp_n))
+                            # interp_n = (v1.normal * (1 - t) + v2.normal * t).normalized()
+                            # edge_hits.setdefault(edge, []).append((t, interp_n))
+                            edge_hits.setdefault(edge, []).append(t)
 
         if not edge_hits:
             bm.free()
@@ -167,13 +167,13 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
                 continue
 
             # sort along the original edge
-            hits.sort(key=lambda x: x[0])
+            hits.sort(key=float)
             v1, v2 = edge.verts
             orig_v2 = v2  # we'll always split towards v2
             current_edge = edge
             offset = 0.0
 
-            for t, interp_n in hits:
+            for t in hits:
                 # adjust t to the remaining segment
                 local_t = (t - offset) / (1.0 - offset)
                 # cut it once at local_t
@@ -200,18 +200,18 @@ def split_edges_to_snap_verts(objs, threshold=1e-4):
                 offset = t
 
         merge_verts_by_attrs(bm)
-        mesh_from_bmesh_with_split_norms(bm, ob_B)
+        mesh_from_bmesh(bm, ob_B)
 
 def triangulate_meshes(objs):
-    """Triangulate faces and very quickly preserve custom split normals."""
+    """Triangulate faces and very quickly."""
     for ob in objs:
-        bm = bmesh_with_split_norms(ob)
+        bm = bmesh_from_mesh(ob)
         
         bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
         cleanup_mesh_geometry(bm)
         bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
         
-        mesh_from_bmesh_with_split_norms(bm, ob)
+        mesh_from_bmesh(bm, ob)
         
 def delete_empty_region_meshes_and_clear_sprite(region_objs):
     """
