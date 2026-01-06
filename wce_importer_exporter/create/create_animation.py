@@ -124,15 +124,33 @@ def create_animation(armature_obj, track_definitions, armature_data, model_prefi
             # If not found and not first track, create an _ANIDAG child under parent
             if not bone_name and track_index != 0:
                 bpy.ops.object.mode_set(mode='EDIT')
-                parent_bone_name = stripped_track_instance_name[:-1] + '_DAG'
-                parent_bone = armature_obj.data.edit_bones.get(parent_bone_name)
+
+                parent_bone = None
+
+                # --- 1) Original behavior: remove final character ---
+                legacy_parent_bone_name = stripped_track_instance_name[:-1] + "_DAG"
+                parent_bone = armature_obj.data.edit_bones.get(legacy_parent_bone_name)
+
+                if not parent_bone:
+                    # --- 2) Numeric suffix + 1 (preserve zero padding) ---
+                    import re
+                    m = re.match(r"^(.*?)(\d+)$", stripped_track_instance_name)
+                    if m:
+                        prefix, digits = m.group(1), m.group(2)
+                        n = int(digits) + 1
+                        inc_digits = str(n).zfill(len(digits))
+                        numeric_parent_bone_name = f"{prefix}{inc_digits}_DAG"
+                        parent_bone = armature_obj.data.edit_bones.get(numeric_parent_bone_name)
+
                 if parent_bone:
                     anim_bone_name = f"{stripped_track_instance_name}_ANIDAG"
                     anim_bone = armature_obj.data.edit_bones.new(anim_bone_name)
                     anim_bone.head   = parent_bone.tail
                     anim_bone.tail   = anim_bone.head + mathutils.Vector((0, 0.1, 0))
                     anim_bone.parent = parent_bone
+
                 bpy.ops.object.mode_set(mode='OBJECT')
+
                 # retry match
                 for pb in armature_obj.pose.bones:
                     if pb.name.replace('_ANIDAG', '') == stripped_track_instance_name:
