@@ -2,6 +2,7 @@ import bpy
 import os
 import struct
 from .material_utils import has_dds_header, add_texture_coordinate_and_mapping_nodes, apply_tiled_mapping
+from .material_utils import _add_group_socket, _get_group_io_sockets
 
 def add_tiled_texture_nodes(material, frame_data, texture_info, node_group_cache, base_path=None):
     """
@@ -215,18 +216,20 @@ def create_palette_mask_node_group(palette_mask_node_group):
     nodes = palette_mask_node_group.nodes
     links = palette_mask_node_group.links
 
-    # Create nodes inside the PaletteMask node group
-    group_input = nodes.new('NodeGroupInput')
-    group_input.location = (-800, 0)
-    palette_mask_node_group.inputs.new('NodeSocketColor', 'ClrPalette')
-    palette_mask_node_group.inputs.new('NodeSocketColor', 'NdxClr')
-    palette_mask_node_group.inputs.new('NodeSocketShader', 'Mix')
-    palette_mask_node_group.inputs.new('NodeSocketColor', 'Texture')
+    nodes.clear()
 
-    group_output = nodes.new('NodeGroupOutput')
-    group_output.location = (600, 0)
-    palette_mask_node_group.outputs.new('NodeSocketShader', 'Shader')
+    # ---- Create Interface Sockets (Blender 4/5 way, 3.6 safe via helper) ----
+    _add_group_socket(palette_mask_node_group, "ClrPalette", "NodeSocketColor", True)
+    _add_group_socket(palette_mask_node_group, "NdxClr", "NodeSocketColor", True)
+    _add_group_socket(palette_mask_node_group, "Mix", "NodeSocketShader", True)
+    _add_group_socket(palette_mask_node_group, "Texture", "NodeSocketColor", True)
 
+    _add_group_socket(palette_mask_node_group, "Shader", "NodeSocketShader", False)
+
+    # ---- Get actual linkable IO sockets ----
+    gi, go = _get_group_io_sockets(palette_mask_node_group)
+
+    # ---- Create nodes ----
     separate_clr_palette = nodes.new(type='ShaderNodeSeparateColor')
     separate_clr_palette.location = (-400, 300)
 
@@ -257,36 +260,20 @@ def create_palette_mask_node_group(palette_mask_node_group):
     greater_than_blue.operation = 'GREATER_THAN'
     greater_than_blue.location = (-200, 50)
 
-    # Math nodes with updated default values for the second input
-    add_red = nodes.new(type='ShaderNodeMath')
-    add_red.operation = 'ADD'
-    add_red.location = (-400, -100)
-    add_red.inputs[1].default_value = 0.001  # Updated default value
+    # --- math offset nodes ---
+    def _offset_math(op, y):
+        n = nodes.new(type='ShaderNodeMath')
+        n.operation = op
+        n.location = (-400, y)
+        n.inputs[1].default_value = 0.001
+        return n
 
-    sub_red = nodes.new(type='ShaderNodeMath')
-    sub_red.operation = 'SUBTRACT'
-    sub_red.location = (-400, -150)
-    sub_red.inputs[1].default_value = 0.001  # Updated default value
-
-    add_green = nodes.new(type='ShaderNodeMath')
-    add_green.operation = 'ADD'
-    add_green.location = (-400, -200)
-    add_green.inputs[1].default_value = 0.001  # Updated default value
-
-    sub_green = nodes.new(type='ShaderNodeMath')
-    sub_green.operation = 'SUBTRACT'
-    sub_green.location = (-400, -250)
-    sub_green.inputs[1].default_value = 0.001  # Updated default value
-
-    add_blue = nodes.new(type='ShaderNodeMath')
-    add_blue.operation = 'ADD'
-    add_blue.location = (-400, -300)
-    add_blue.inputs[1].default_value = 0.001  # Updated default value
-
-    sub_blue = nodes.new(type='ShaderNodeMath')
-    sub_blue.operation = 'SUBTRACT'
-    sub_blue.location = (-400, -350)
-    sub_blue.inputs[1].default_value = 0.001  # Updated default value
+    add_red = _offset_math('ADD', -100)
+    sub_red = _offset_math('SUBTRACT', -150)
+    add_green = _offset_math('ADD', -200)
+    sub_green = _offset_math('SUBTRACT', -250)
+    add_blue = _offset_math('ADD', -300)
+    sub_blue = _offset_math('SUBTRACT', -350)
 
     multiply_red = nodes.new(type='ShaderNodeMath')
     multiply_red.operation = 'MULTIPLY'
@@ -312,50 +299,53 @@ def create_palette_mask_node_group(palette_mask_node_group):
     mix_shader.location = (500, 0)
 
     emission_shader = nodes.new(type='ShaderNodeEmission')
-    emission_shader.inputs['Strength'].default_value = 5
     emission_shader.location = (200, -100)
+    emission_shader.inputs['Strength'].default_value = 5
 
-    # Create links within the PaletteMask node group
-    links.new(group_input.outputs['ClrPalette'], separate_clr_palette.inputs['Color'])
-    links.new(group_input.outputs['NdxClr'], separate_ndx_clr.inputs['Color'])
+    # ---- Interface → nodes ----
+    links.new(gi["ClrPalette"], separate_clr_palette.inputs["Color"])
+    links.new(gi["NdxClr"], separate_ndx_clr.inputs["Color"])
 
-    links.new(separate_clr_palette.outputs['Red'], less_than_red.inputs[0])  # Corrected output name
-    links.new(separate_clr_palette.outputs['Red'], greater_than_red.inputs[0])  # Corrected output name
-    links.new(separate_clr_palette.outputs['Green'], less_than_green.inputs[0])  # Corrected output name
-    links.new(separate_clr_palette.outputs['Green'], greater_than_green.inputs[0])  # Corrected output name
-    links.new(separate_clr_palette.outputs['Blue'], less_than_blue.inputs[0])  # Corrected output name
-    links.new(separate_clr_palette.outputs['Blue'], greater_than_blue.inputs[0])  # Corrected output name
+    # Palette comparisons
+    links.new(separate_clr_palette.outputs["Red"], less_than_red.inputs[0])
+    links.new(separate_clr_palette.outputs["Red"], greater_than_red.inputs[0])
+    links.new(separate_clr_palette.outputs["Green"], less_than_green.inputs[0])
+    links.new(separate_clr_palette.outputs["Green"], greater_than_green.inputs[0])
+    links.new(separate_clr_palette.outputs["Blue"], less_than_blue.inputs[0])
+    links.new(separate_clr_palette.outputs["Blue"], greater_than_blue.inputs[0])
 
-    links.new(separate_ndx_clr.outputs['Red'], add_red.inputs[0])  # Corrected output name
-    links.new(separate_ndx_clr.outputs['Red'], sub_red.inputs[0])  # Corrected output name
-    links.new(separate_ndx_clr.outputs['Green'], add_green.inputs[0])  # Corrected output name
-    links.new(separate_ndx_clr.outputs['Green'], sub_green.inputs[0])  # Corrected output name
-    links.new(separate_ndx_clr.outputs['Blue'], add_blue.inputs[0])  # Corrected output name
-    links.new(separate_ndx_clr.outputs['Blue'], sub_blue.inputs[0])  # Corrected output name
+    # Index offsets
+    links.new(separate_ndx_clr.outputs["Red"], add_red.inputs[0])
+    links.new(separate_ndx_clr.outputs["Red"], sub_red.inputs[0])
+    links.new(separate_ndx_clr.outputs["Green"], add_green.inputs[0])
+    links.new(separate_ndx_clr.outputs["Green"], sub_green.inputs[0])
+    links.new(separate_ndx_clr.outputs["Blue"], add_blue.inputs[0])
+    links.new(separate_ndx_clr.outputs["Blue"], sub_blue.inputs[0])
 
-    links.new(add_red.outputs['Value'], less_than_red.inputs[1])
-    links.new(sub_red.outputs['Value'], greater_than_red.inputs[1])
-    links.new(add_green.outputs['Value'], less_than_green.inputs[1])
-    links.new(sub_green.outputs['Value'], greater_than_green.inputs[1])
-    links.new(add_blue.outputs['Value'], less_than_blue.inputs[1])
-    links.new(sub_blue.outputs['Value'], greater_than_blue.inputs[1])
+    links.new(add_red.outputs["Value"], less_than_red.inputs[1])
+    links.new(sub_red.outputs["Value"], greater_than_red.inputs[1])
+    links.new(add_green.outputs["Value"], less_than_green.inputs[1])
+    links.new(sub_green.outputs["Value"], greater_than_green.inputs[1])
+    links.new(add_blue.outputs["Value"], less_than_blue.inputs[1])
+    links.new(sub_blue.outputs["Value"], greater_than_blue.inputs[1])
 
-    links.new(less_than_red.outputs['Value'], multiply_red.inputs[0])
-    links.new(greater_than_red.outputs['Value'], multiply_red.inputs[1])
-    links.new(less_than_green.outputs['Value'], multiply_green.inputs[0])
-    links.new(greater_than_green.outputs['Value'], multiply_green.inputs[1])
-    links.new(less_than_blue.outputs['Value'], multiply_blue.inputs[0])
-    links.new(greater_than_blue.outputs['Value'], multiply_blue.inputs[1])
+    links.new(less_than_red.outputs["Value"], multiply_red.inputs[0])
+    links.new(greater_than_red.outputs["Value"], multiply_red.inputs[1])
+    links.new(less_than_green.outputs["Value"], multiply_green.inputs[0])
+    links.new(greater_than_green.outputs["Value"], multiply_green.inputs[1])
+    links.new(less_than_blue.outputs["Value"], multiply_blue.inputs[0])
+    links.new(greater_than_blue.outputs["Value"], multiply_blue.inputs[1])
 
-    links.new(multiply_red.outputs['Value'], final_multiply.inputs[0])
-    links.new(multiply_green.outputs['Value'], final_multiply.inputs[1])
-    links.new(final_multiply.outputs['Value'], final_multiply_2.inputs[0])
-    links.new(multiply_blue.outputs['Value'], final_multiply_2.inputs[1])
+    links.new(multiply_red.outputs["Value"], final_multiply.inputs[0])
+    links.new(multiply_green.outputs["Value"], final_multiply.inputs[1])
+    links.new(final_multiply.outputs["Value"], final_multiply_2.inputs[0])
+    links.new(multiply_blue.outputs["Value"], final_multiply_2.inputs[1])
 
-    links.new(final_multiply_2.outputs['Value'], mix_shader.inputs['Fac'])
-    links.new(group_input.outputs['Mix'], mix_shader.inputs[1])
-    links.new(group_input.outputs['Texture'], emission_shader.inputs['Color'])
-    links.new(emission_shader.outputs['Emission'], mix_shader.inputs[2])
-    links.new(mix_shader.outputs['Shader'], group_output.inputs['Shader'])
+    links.new(final_multiply_2.outputs["Value"], mix_shader.inputs["Fac"])
 
-#    print("Created PaletteMask node group")
+    links.new(gi["Mix"], mix_shader.inputs[1])
+    links.new(gi["Texture"], emission_shader.inputs["Color"])
+    links.new(emission_shader.outputs["Emission"], mix_shader.inputs[2])
+
+    # ---- Output ----
+    links.new(mix_shader.outputs["Shader"], go["Shader"])

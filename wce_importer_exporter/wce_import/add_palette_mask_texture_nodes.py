@@ -1,5 +1,6 @@
 import bpy
 import os
+from .material_utils import _add_group_socket, _get_group_io_sockets
 
 def add_palette_mask_texture_nodes(material, texture_info, node_group_cache, base_path=None):
     """
@@ -62,21 +63,28 @@ def add_palette_mask_texture_nodes(material, texture_info, node_group_cache, bas
                 # Store the palette mask node for future use in tiled textures
                 texture_info['palette_mask_node'] = palette_mask_texture_node
     #            print(f"Added palette mask texture node to material: {material.name}")
-
+    
 def create_blur_node_group(blur_node_group):
+
     """
     Creates the Blur node group used for palette mask textures.
 
     :param blur_node_group: The node group to be populated.
     """
+
     nodes = blur_node_group.nodes
     links = blur_node_group.links
 
-    # Add nodes inside the Blur node group
-    group_output = nodes.new('NodeGroupOutput')
-    group_output.location = (400, 0)
-    blur_node_group.outputs.new('NodeSocketVector', 'Vector')
+    # Clear existing nodes if recreating
+    nodes.clear()
 
+    # Add interface output socket (Vector)
+    _add_group_socket(blur_node_group, "Vector", "NodeSocketVector", is_input=False)
+
+    # Ensure Group Input / Output nodes exist and get real sockets
+    gi, go = _get_group_io_sockets(blur_node_group)
+
+    # Create nodes
     tex_coord_node = nodes.new(type='ShaderNodeTexCoord')
     tex_coord_node.location = (-600, 0)
 
@@ -88,7 +96,7 @@ def create_blur_node_group(blur_node_group):
     noise_texture_node.location = (-400, -100)
 
     map_range_node = nodes.new(type='ShaderNodeMapRange')
-    map_range_node.data_type = 'FLOAT_VECTOR'  # Updated data type to 'FLOAT_VECTOR'
+    map_range_node.data_type = 'FLOAT_VECTOR'
     map_range_node.location = (-200, -100)
 
     value_node = nodes.new(type='ShaderNodeValue')
@@ -100,24 +108,21 @@ def create_blur_node_group(blur_node_group):
     multiply_node.location = (-600, -300)
     multiply_node.inputs[1].default_value = -1
 
-    # Create links within the Blur node group
+    # --- Links ---
 
-    # Connect TexCoord and Noise Texture
     links.new(tex_coord_node.outputs['UV'], add_vector_node.inputs[0])
     links.new(tex_coord_node.outputs['UV'], noise_texture_node.inputs['Vector'])
-    links.new(noise_texture_node.outputs['Color'], map_range_node.inputs['Vector'])  
+    links.new(noise_texture_node.outputs['Color'], map_range_node.inputs['Vector'])
 
-    # Correctly get the 'From Max' and 'From Min' sockets for the vector type
+    # Safe socket lookup
     to_max_vector_input = next(s for s in map_range_node.inputs if s.name == 'To Max' and s.type == 'VECTOR')
     to_min_vector_input = next(s for s in map_range_node.inputs if s.name == 'To Min' and s.type == 'VECTOR')
 
-    # Link Value node and Multiply node to Map Range node using the correct vector inputs
     links.new(value_node.outputs[0], to_max_vector_input)
     links.new(value_node.outputs[0], multiply_node.inputs[0])
     links.new(multiply_node.outputs[0], to_min_vector_input)
 
-    # Continue with the rest of the connections
-    links.new(map_range_node.outputs['Vector'], add_vector_node.inputs[1])  
-    links.new(add_vector_node.outputs['Vector'], group_output.inputs['Vector'])
+    links.new(map_range_node.outputs['Vector'], add_vector_node.inputs[1])
 
-#    print("Created Blur node group")
+    # Output to group
+    links.new(add_vector_node.outputs['Vector'], go["Vector"])
