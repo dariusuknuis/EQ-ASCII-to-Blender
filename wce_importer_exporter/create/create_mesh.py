@@ -41,7 +41,7 @@ def create_mesh(mesh_data, parent_obj, armature_obj=None, armature_data=None, ma
         for i, triangle in enumerate(mesh.polygons):
             vertices = list(triangle.vertices)
             for j, vertex in enumerate(vertices):
-                uvlayer.data[triangle.loop_indices[j]].uv = (mesh_data['uvs'][vertex][0], mesh_data['uvs'][vertex][1] - 1)
+                uvlayer.data[triangle.loop_indices[j]].uv = (mesh_data['uvs'][vertex][0], mesh_data['uvs'][vertex][1]-1)
 
     # == Apply Custom Normals ==
     if 'normals' in mesh_data and len(mesh_data['normals']) == len(mesh_data['vertices']):
