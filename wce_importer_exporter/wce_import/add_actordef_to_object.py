@@ -8,7 +8,7 @@ def add_actordef_to_object(obj, actordef_data):
     obj["LOCATION"] = json.dumps(actordef_data["location"])
     obj["ACTIVEGEOMETRY"] = actordef_data["activegeometry"]
     obj["USERDATA"] = actordef_data["userdata"]
-    obj["USEMODELCOLLIDER"] = actordef_data["usemodelcollider"]
+    obj["SPRITEVOLUMEONLY"] = actordef_data["spritevolumeonly"]
 
     # Add actions with sub-properties as JSON strings
     for i, action in enumerate(actordef_data["actions"], 1):

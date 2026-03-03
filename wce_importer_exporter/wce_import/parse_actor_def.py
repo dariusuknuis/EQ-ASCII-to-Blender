@@ -92,9 +92,9 @@ def parse_actor_def(r, parse_property, current_line):
         # Append the action to the actions list in actordef
         actordef_data["actions"].append(action)
 
-    # Parse USEMODELCOLLIDER (SPRITEVOLUMEONLY)
-    records = parse_property(r, "USEMODELCOLLIDER", 1)
-    actordef_data["usemodelcollider"] = bool(int(records[1]))
+    # Parse SPRITEVOLUMEONLY
+    records = parse_property(r, "SPRITEVOLUMEONLY", 1)
+    actordef_data["spritevolumeonly"] = bool(int(records[1]))
 
     # Parse USERDATA
     records = parse_property(r, "USERDATA", 1)

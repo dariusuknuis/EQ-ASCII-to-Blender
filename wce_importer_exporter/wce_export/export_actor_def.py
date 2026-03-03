@@ -17,7 +17,7 @@ def write_actor_def(empty_obj, file):
     location = empty_obj.get("LOCATION", ["NULL"] * 6)
     active_geometry = empty_obj.get("ACTIVEGEOMETRY", "NULL")
     userdata = empty_obj.get("USERDATA", "")
-    use_model_collider = 1 if empty_obj.get("USEMODELCOLLIDER", False) else 0
+    sprite_volume_only = 1 if empty_obj.get("SPRITEVOLUMEONLY", False) else 0
 
     # Write the core properties to the file
     file.write(f'\tCALLBACK "{callback}"\n')
@@ -63,8 +63,8 @@ def write_actor_def(empty_obj, file):
             file.write(f'\t\t\t\t\tSPRITEINDEX {sprite_index}\n')
             file.write(f'\t\t\t\t\tMINDISTANCE {min_distance:.8e}\n')
 
-    # Write remaining properties USEMODELCOLLIDER and USERDATA
-    file.write(f'\tUSEMODELCOLLIDER {use_model_collider}\n')
+    # Write remaining properties SPRITEVOLUMEONLY and USERDATA
+    file.write(f'\tSPRITEVOLUMEONLY {sprite_volume_only}\n')
     file.write(f'\tUSERDATA "{userdata}"\n')
 
     print(f'ACTORDEF data for "{actordef_name}" exported.')
