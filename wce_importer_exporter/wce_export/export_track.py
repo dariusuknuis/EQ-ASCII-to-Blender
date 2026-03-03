@@ -108,6 +108,8 @@ def export_animation_data(armature_obj, file, action_filter=None):
                 scale_factor = 256
                 rotation_factor = 16384
 
+                prev_quat = None
+
                 for fr in frames:
                     # scale (avg xyz; default 1.0 each)
                     if any(fc is not None for fc in scale_fcurves):
@@ -130,6 +132,33 @@ def export_animation_data(armature_obj, file, action_filter=None):
                     qx = rotation_fcurves[1].evaluate(fr) if rotation_fcurves[1] else 0.0
                     qy = rotation_fcurves[2].evaluate(fr) if rotation_fcurves[2] else 0.0
                     qz = rotation_fcurves[3].evaluate(fr) if rotation_fcurves[3] else 0.0
+
+                    # normalize to be safe (Blender usually is, but this guarantees it)
+                    length = (qw*qw + qx*qx + qy*qy + qz*qz) ** 0.5
+                    if length != 0:
+                        qw /= length
+                        qx /= length
+                        qy /= length
+                        qz /= length
+
+                    # Hemisphere continuity fix
+                    if prev_quat is not None:
+                        dot = (
+                            prev_quat[0] * qw +
+                            prev_quat[1] * qx +
+                            prev_quat[2] * qy +
+                            prev_quat[3] * qz
+                        )
+
+                        if dot < 0.0:
+                            qw = -qw
+                            qx = -qx
+                            qy = -qy
+                            qz = -qz
+
+                    # Store for next iteration
+                    prev_quat = (qw, qx, qy, qz)
+
                     rotation = [
                         round(qw * rotation_factor),
                         round(qx * rotation_factor),
