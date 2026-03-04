@@ -109,48 +109,10 @@ def parse_dm_sprite_def_2(r, parse_property, current_line):
     num_meshops = int(records[1])
     meshops = []
     for i in range(num_meshops):
-        rec = parse_property(r, "MESHOP", -1)
-        if len(rec) < 2:
-            raise ValueError(f"mesh op {i}: malformed line")
-
-        meshoptype = str(rec[1]).strip().upper()
-
-        # Defaults
-        index1 = 0
-        param1 = 0
-        index2 = 0
-        offset = 0.0
-
-        if meshoptype == "SW":
-            # MESHOP SW <Index1(face)> <Param1(0..2)> <Index2(targetVertex)>
-            if len(rec) > 2:
-                index1 = int(rec[2])
-            if len(rec) > 3:
-                param1 = int(rec[3])
-            if len(rec) > 4:
-                index2 = int(rec[4])
-
-        elif meshoptype == "FA":
-            # MESHOP FA <Index1(face)>
-            if len(rec) > 2:
-                index1 = int(rec[2])
-
-        elif meshoptype == "VA":
-            # MESHOP VA <Index1(vertex)>
-            if len(rec) > 2:
-                index1 = int(rec[2])
-
-        elif meshoptype == "EL":
-            # MESHOP EL <Offset>
-            if len(rec) > 2:
-                offset = float(rec[2])
-
-        else:
-            raise ValueError(f"mesh op {i}: unknown kind '{meshoptype}'")
-
-        meshops.append((meshoptype, index1, param1, index2, offset))
-
-    mesh["meshops"] = meshops
+        records = parse_property(r, "MESHOP", 5)
+        meshop = (int(records[1]), int(records[2]), float(records[3]), int(records[4]), int(records[5]))
+        meshops.append(meshop)
+    mesh['meshops'] = meshops
 
     # Parse FACEMATERIALGROUPS
     records = parse_property(r, "FACEMATERIALGROUPS", -1)
