@@ -39,7 +39,7 @@ def create_polyhedron(polyhedron_data):
 
     # Enable transparency in the material settings
     material.blend_method = 'BLEND'
-    material.shadow_method = 'HASHED'
+    # material.shadow_method = 'HASHED'
 
     # Assign the material to the object
     if obj.data.materials:
