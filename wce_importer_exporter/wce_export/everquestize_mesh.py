@@ -186,23 +186,6 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
         if has_uvs:
             mesh_data['uvs'].append([loop[uv_layer].uv.copy() for loop in face.loops])
 
-    # Collect and store custom split normals (before reindexing)
-    # mesh.calc_normals_split()
-    # mesh_data['normals'] = []
-
-    # Access split normals from the mesh, not bmesh
-    # for poly in mesh.polygons:
-    #     face_normals = []
-    #     for loop_index in poly.loop_indices:
-    #         loop = mesh.loops[loop_index]
-    #         face_normals.append(loop.normal.copy())
-    #     mesh_data['normals'].append(face_normals)
-
-    # print("\nCustom Split Normals Before Reindexing:")
-    # for loop in normals_before:
-    #     vertex_index, loop_index, normal = loop
-        # print(f"Loop {loop_index}: Vertex {vertex_index} - Normal {normal}")
-
     # Step 2: Reorder vertices
     sorted_vertex_indices = []
 
@@ -330,15 +313,6 @@ def reindex_vertices_and_faces(mesh_obj, armature_obj=None):
                 if not group:
                     group = mesh_obj.vertex_groups.new(name=group_name)
                 group.add([new_index], weight, 'ADD')
-
-    # mesh.calc_normals_split()
-    # normals_after = []
-    # for loop in mesh.loops:
-    #     normals_after.append((loop.vertex_index, loop.normal.copy()))
-
-    # print("\nCustom Split Normals After Reindexing:")
-    # for idx, (vertex_index, normal) in enumerate(normals_after):
-    #     print(f"Loop {idx}: Vertex {vertex_index} - Normal {normal}")
 
     mesh.update()
 
