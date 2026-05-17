@@ -45,44 +45,6 @@ def write_dm_sprite_def(mesh, file):
     else:
         file.write(f'\n\tNUMUVS 0\n')
 
-    # # Write vertex normals (NUMVERTEXNORMALS, XYZ)
-    # if mesh.data.has_custom_normals:
-    #     # ‣ calc_split will clear custom data on some Blender versions,
-    #     #   so we restore immediately after.
-    #     mesh.data.calc_normals_split()
-        
-    #     file.write(f'\n\tNUMVERTEXNORMALS {len(verts)}\n')
-    #     normal_accum = {v.index:[0,0,0] for v in mesh.data.vertices}
-    #     normal_count = {v.index:0 for v in mesh.data.vertices}
-    #     for loop in mesh.data.loops:
-    #         idx = loop.vertex_index
-    #         n = loop.normal
-    #         na = normal_accum[idx]
-    #         na[0] += n.x; na[1] += n.y; na[2] += n.z
-    #         normal_count[idx] += 1
-
-    #     for i in range(len(verts)):
-    #         if normal_count[i]:
-    #             # Compute average
-    #             avg = [c / normal_count[i] for c in normal_accum[i]]
-    #             # Normalize the average to unit vector
-    #             length = sum(c*c for c in avg) ** 0.5
-    #             if length == 0:
-    #                 nx, ny, nz = 0.0, 0.0, 0.0
-    #             else:
-    #                 nx, ny, nz = (c / length for c in avg)
-
-    #             # Scale to 127 and round to nearest int, then back to float
-    #             nx = round(nx * 127) / 127
-    #             ny = round(ny * 127) / 127
-    #             nz = round(nz * 127) / 127
-
-    #             file.write(f'\t\tNXYZ {nx:.8e} {ny:.8e} {nz:.8e}\n')
-    #         else:
-    #             file.write('\t\tNXYZ 0.00000000e+00 0.00000000e+00 0.00000000e+00\n')
-    # else:
-    #     file.write(f'\tNUMVERTEXNORMALS 0\n')
-
     # Write vertex normals (NUMVERTEXNORMALS, NXYZ) from POINT-domain float vector attr "vertex_normals"
     attr = mesh.data.attributes.get("vertex_normals")
     if attr and attr.domain == 'POINT' and attr.data_type == 'FLOAT_VECTOR':
@@ -366,22 +328,3 @@ def find_all_child_meshes(parent_obj):
         # Recursively find meshes in the child objects
         meshes.extend(find_all_child_meshes(child))
     return meshes
-
-# Main script execution
-#output_file = r"C:\Users\dariu\Documents\Quail\Exporter\haf.export.wce"  # Replace with desired path
-#with open(output_file, 'w') as file:
-#    empty_obj = bpy.data.objects.get('haf')  # Replace with your empty object name
-#    if not empty_obj:
-#        print("Empty object not found!")
-#        file.write("Empty object not found!\n")
-#    else:
-#        print(f"Empty object found: {empty_obj.name}")
-#        meshes = find_all_child_meshes(empty_obj)
-#        if not meshes:
-#            file.write("No meshes found!\n")
-#        else:
-#            for mesh in meshes:
-#                print(f"Processing mesh: {mesh.name}")
-#                write_dmspritedef(mesh, file)
-
-#print(f"ASCII data exported to {output_file}")
